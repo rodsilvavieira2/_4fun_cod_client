@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "10054594476",
+    "project_id": "fourfuncod-dev",
+    "storage_bucket": "fourfuncod-dev.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:10054594476:android:4b6d4385403011b3e9d409",
+        "android_client_info": {
+          "package_name": "com.example.u_4fun_cod_client"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCMtGiq1AgULjPG0Aot2DKCgytOgM-kaW8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

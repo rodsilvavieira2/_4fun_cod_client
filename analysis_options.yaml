@@ -5,9 +5,17 @@
 # IDEs (https://dart.dev/tools#ides-and-editors). The analyzer can also be
 # invoked from the command line by running `flutter analyze`.
 
-# The following line activates a set of recommended lints for Flutter apps,
-# packages, and plugins designed to encourage good coding practices.
-include: package:flutter_lints/flutter.yaml
+include:
+  # The following line activates a set of recommended lints for Flutter apps,
+  # packages, and plugins designed to encourage good coding practices.
+  - package:flutter_lints/flutter.yaml
+
+analyzer:
+  plugins:
+    # Riverpod lints (riverpod_lint 2.6.5): as regras vêm habilitadas por
+    # padrão via custom_lint — não há mais include de riverpod_lint.yaml
+    # nesta versão. Para ajustar regras, usar a seção `custom_lint: rules:`.
+    - custom_lint
 
 linter:
   # The lint rules applied to this project can be customized in the
