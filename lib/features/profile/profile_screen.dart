@@ -292,7 +292,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               Text('Dados do perfil', style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 4),
               Text(
-                user.email,
+                user.email ?? '',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
               const SizedBox(height: 16),

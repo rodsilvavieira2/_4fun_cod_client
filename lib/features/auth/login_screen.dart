@@ -7,8 +7,9 @@ import '../../core/auth/auth_controller.dart';
 
 /// Tela de login (email/senha via Firebase Auth + sessão no backend).
 ///
-/// Após o login, o redirect do router (§7.2) leva o usuário para a home
-/// automaticamente — não há navegação manual aqui.
+/// Após o login: se veio de um deep link com `?redirect=/caminho-interno`
+/// (ex.: /invite/:code), volta para lá; senão o redirect do router (§7.2)
+/// leva para a home.
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
 
@@ -30,6 +31,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     super.dispose();
   }
 
+  /// Retorno pós-login vindo de deep link (apenas paths internos — sem open
+  /// redirect para URLs externas).
+  String? get _redirectTarget {
+    final raw = GoRouterState.of(context).uri.queryParameters['redirect'];
+    if (raw == null || !raw.startsWith('/') || raw.startsWith('//')) {
+      return null;
+    }
+    return raw;
+  }
+
   Future<void> _submit() async {
     if (_submitting || !_formKey.currentState!.validate()) return;
     setState(() {
@@ -41,6 +52,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             email: _emailController.text.trim(),
             password: _passwordController.text,
           );
+      final redirect = _redirectTarget;
+      if (mounted && redirect != null) {
+        context.go(redirect);
+      }
     } on ApiException catch (e) {
       if (mounted) setState(() => _errorMessage = e.message);
     } catch (_) {

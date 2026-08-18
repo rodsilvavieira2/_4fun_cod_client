@@ -7,6 +7,12 @@ import '../../features/auth/login_screen.dart';
 import '../../features/auth/register_screen.dart';
 import '../../features/home/home_screen.dart';
 import '../../features/profile/profile_screen.dart';
+import '../../features/servers/create_server_screen.dart';
+import '../../features/servers/invite_screen.dart';
+import '../../features/servers/invites_screen.dart';
+import '../../features/servers/members_screen.dart';
+import '../../features/servers/server_settings_screen.dart';
+import '../../features/servers/server_shell_screen.dart';
 import '../../features/splash/splash_screen.dart';
 import '../auth/auth_controller.dart';
 import '../auth/auth_state.dart';
@@ -38,19 +44,26 @@ final routerProvider = Provider<GoRouter>((ref) {
     redirect: (context, state) {
       final authState = ref.read(authControllerProvider).valueOrNull;
       final location = state.matchedLocation;
-      final isPublicAuthRoute = location == '/login' ||
+      // Rotas públicas: fluxo de auth + deep link de convite (resolve sem
+      // sessão; o aceite exige login e volta para cá).
+      final isPublicRoute = location == '/login' ||
           location == '/register' ||
-          location == '/forgot-password';
+          location == '/forgot-password' ||
+          location.startsWith('/invite/');
 
       // Bootstrap ainda em andamento → splash.
       if (authState == null || authState is AuthUnknown) {
         return location == '/splash' ? null : '/splash';
       }
       if (authState is Unauthenticated) {
-        return isPublicAuthRoute ? null : '/login';
+        return isPublicRoute ? null : '/login';
       }
-      // Authenticated.
-      if (location == '/splash' || isPublicAuthRoute) {
+      // Authenticated: rotas de auth (e splash) redirecionam para a home;
+      // /invite/:code continua acessível.
+      if (location == '/splash' ||
+          location == '/login' ||
+          location == '/register' ||
+          location == '/forgot-password') {
         return '/';
       }
       return null;
@@ -80,6 +93,46 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/',
         name: 'home',
         builder: (context, state) => const HomeScreen(),
+      ),
+      GoRoute(
+        path: '/create-server',
+        name: 'create-server',
+        builder: (context, state) => const CreateServerScreen(),
+      ),
+      GoRoute(
+        path: '/servers/:serverId',
+        name: 'server-shell',
+        builder: (context, state) => ServerShellScreen(
+          serverId: state.pathParameters['serverId']!,
+        ),
+      ),
+      GoRoute(
+        path: '/servers/:serverId/settings',
+        name: 'server-settings',
+        builder: (context, state) => ServerSettingsScreen(
+          serverId: state.pathParameters['serverId']!,
+        ),
+      ),
+      GoRoute(
+        path: '/servers/:serverId/members',
+        name: 'server-members',
+        builder: (context, state) => MembersScreen(
+          serverId: state.pathParameters['serverId']!,
+        ),
+      ),
+      GoRoute(
+        path: '/servers/:serverId/invites',
+        name: 'server-invites',
+        builder: (context, state) => InvitesScreen(
+          serverId: state.pathParameters['serverId']!,
+        ),
+      ),
+      GoRoute(
+        path: '/invite/:code',
+        name: 'invite',
+        builder: (context, state) => InviteScreen(
+          code: state.pathParameters['code']!,
+        ),
       ),
       GoRoute(
         path: '/profile',
