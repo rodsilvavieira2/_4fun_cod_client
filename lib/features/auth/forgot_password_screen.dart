@@ -5,28 +5,27 @@ import 'package:go_router/go_router.dart';
 import '../../core/api/api_exception.dart';
 import '../../core/auth/auth_controller.dart';
 
-/// Tela de login (email/senha via Firebase Auth + sessão no backend).
-///
-/// Após o login, o redirect do router (§7.2) leva o usuário para a home
-/// automaticamente — não há navegação manual aqui.
-class LoginScreen extends ConsumerStatefulWidget {
-  const LoginScreen({super.key});
+/// Tela "esqueci minha senha": envia e-mail de redefinição via Firebase
+/// (`sendPasswordResetEmail`) — 100% client-side, sem endpoint de senha
+/// no backend (§3.1 do plano de arquitetura).
+class ForgotPasswordScreen extends ConsumerStatefulWidget {
+  const ForgotPasswordScreen({super.key});
 
   @override
-  ConsumerState<LoginScreen> createState() => _LoginScreenState();
+  ConsumerState<ForgotPasswordScreen> createState() =>
+      _ForgotPasswordScreenState();
 }
 
-class _LoginScreenState extends ConsumerState<LoginScreen> {
+class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
   bool _submitting = false;
   String? _errorMessage;
+  bool _sent = false;
 
   @override
   void dispose() {
     _emailController.dispose();
-    _passwordController.dispose();
     super.dispose();
   }
 
@@ -37,10 +36,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       _errorMessage = null;
     });
     try {
-      await ref.read(authControllerProvider.notifier).login(
-            email: _emailController.text.trim(),
-            password: _passwordController.text,
-          );
+      await ref
+          .read(authControllerProvider.notifier)
+          .sendPasswordResetEmail(_emailController.text.trim());
+      if (mounted) setState(() => _sent = true);
     } on ApiException catch (e) {
       if (mounted) setState(() => _errorMessage = e.message);
     } catch (_) {
@@ -53,6 +52,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: AppBar(title: const Text('Recuperar senha')),
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
@@ -66,14 +66,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Text(
-                      '4fun Cod',
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.headlineMedium,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Entre na sua conta',
-                      textAlign: TextAlign.center,
+                      'Informe seu e-mail para receber o link de redefinição de senha.',
                       style: Theme.of(context).textTheme.bodyMedium,
                     ),
                     const SizedBox(height: 24),
@@ -84,20 +77,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         border: OutlineInputBorder(),
                       ),
                       keyboardType: TextInputType.emailAddress,
-                      autofillHints: const [AutofillHints.email],
-                      validator: _validateEmail,
-                    ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: _passwordController,
-                      decoration: const InputDecoration(
-                        labelText: 'Senha',
-                        border: OutlineInputBorder(),
-                      ),
-                      obscureText: true,
-                      autofillHints: const [AutofillHints.password],
-                      validator: (value) =>
-                          (value == null || value.isEmpty) ? 'Informe sua senha.' : null,
+                      validator: (value) {
+                        final email = value?.trim() ?? '';
+                        if (email.isEmpty) return 'Informe seu e-mail.';
+                        if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) {
+                          return 'E-mail inválido.';
+                        }
+                        return null;
+                      },
                       onFieldSubmitted: (_) => _submit(),
                     ),
                     if (_errorMessage != null) ...[
@@ -105,6 +92,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       Text(
                         _errorMessage!,
                         style: TextStyle(color: Theme.of(context).colorScheme.error),
+                      ),
+                    ],
+                    if (_sent) ...[
+                      const SizedBox(height: 16),
+                      Text(
+                        'Enviamos um link de redefinição para ${_emailController.text.trim()}.',
+                        style: TextStyle(color: Theme.of(context).colorScheme.primary),
                       ),
                     ],
                     const SizedBox(height: 24),
@@ -116,17 +110,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                               width: 20,
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
-                          : const Text('Entrar'),
+                          : const Text('Enviar link'),
                     ),
                     const SizedBox(height: 12),
                     TextButton(
-                      onPressed:
-                          _submitting ? null : () => context.go('/forgot-password'),
-                      child: const Text('Esqueci minha senha'),
-                    ),
-                    TextButton(
-                      onPressed: _submitting ? null : () => context.go('/register'),
-                      child: const Text('Criar conta'),
+                      onPressed: _submitting ? null : () => context.go('/login'),
+                      child: const Text('Voltar para o login'),
                     ),
                   ],
                 ),
@@ -136,14 +125,5 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         ),
       ),
     );
-  }
-
-  String? _validateEmail(String? value) {
-    final email = value?.trim() ?? '';
-    if (email.isEmpty) return 'Informe seu e-mail.';
-    if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) {
-      return 'E-mail inválido.';
-    }
-    return null;
   }
 }
