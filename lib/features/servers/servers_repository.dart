@@ -1,8 +1,9 @@
 import 'package:dio/dio.dart';
 
+import '../../core/api/api_exception.dart';
 import '../../shared/models/message.dart';
 import '../../shared/models/servers.dart';
-import '../../core/api/api_exception.dart';
+import '../../shared/models/voice.dart';
 
 /// Repositório de servidores/canais/convites (§6.2 do plano) — único lugar
 /// que fala com o backend via dio (a UI usa apenas [ServersRepository] e os
@@ -225,6 +226,18 @@ class ServersRepository {
     try {
       final response = await _dio.get('/servers/$serverId/presence');
       return ServerPresence.fromJson(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      throw ApiException.fromDio(e);
+    }
+  }
+
+  /// `POST /servers/:id/channels/:id/join` → credenciais LiveKit do canal
+  /// de voz (Fase 4). O token é emitido SÓ pelo backend (10m de validade).
+  Future<VoiceJoinInfo> joinVoice(String serverId, String channelId) async {
+    try {
+      final response = await _dio
+          .post('/servers/$serverId/channels/$channelId/join');
+      return VoiceJoinInfo.fromJson(response.data as Map<String, dynamic>);
     } on DioException catch (e) {
       throw ApiException.fromDio(e);
     }

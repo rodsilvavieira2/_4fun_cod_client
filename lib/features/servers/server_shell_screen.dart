@@ -7,6 +7,7 @@ import '../../shared/models/servers.dart';
 import '../channels/channel_list.dart';
 import '../channels/channels_providers.dart';
 import '../chat/chat_screen.dart';
+import '../voice/voice_screen.dart';
 import 'server_rail.dart';
 import 'servers_providers.dart';
 
@@ -166,11 +167,14 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
           channelId: channel.id,
         );
       case ChannelType.voice:
-        return Center(
-          child: Text(
-            'Voz chega na Fase 4',
-            style: Theme.of(context).textTheme.bodyLarge,
-          ),
+        // Fase 4: view de voz embutida no shell (painel de participantes +
+        // controles). Composer de texto não aparece para VOICE (mensagens
+        // são rejeitadas pelo backend com 400).
+        return VoiceScreen(
+          key: ValueKey(channel.id),
+          serverId: widget.serverId,
+          channelId: channel.id,
+          channelName: channel.name,
         );
     }
   }

@@ -1,4 +1,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Fase 4 — LiveKit voice: captura de áudio, ajustes de áudio, rede e
+         headsets Bluetooth (Android 12+). A permissão BLUETOOTH_CONNECT é
+         ignorada em APIs < 31; RECORD_AUDIO exige pedido em runtime
+         (flutter_webrtc cuida do prompt). -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
     <application
         android:label="_4fun_cod_client"
         android:name="${applicationName}"
