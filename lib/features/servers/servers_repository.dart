@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 
+import '../../shared/models/message.dart';
 import '../../shared/models/servers.dart';
 import '../../core/api/api_exception.dart';
 
@@ -177,6 +178,53 @@ class ServersRepository {
   Future<void> deleteChannel(String channelId) async {
     try {
       await _dio.delete('/channels/$channelId');
+    } on DioException catch (e) {
+      throw ApiException.fromDio(e);
+    }
+  }
+
+  /// `GET /channels/:id/messages?limit=50&before=<messageId>` — página de
+  /// mensagens (mais recentes primeiro na API; o client inverte).
+  Future<MessagePage> fetchMessages(
+    String channelId, {
+    int limit = 50,
+    String? before,
+  }) async {
+    try {
+      final response = await _dio.get(
+        '/channels/$channelId/messages',
+        queryParameters: {'limit': limit, 'before': ?before},
+      );
+      final data = response.data as Map<String, dynamic>;
+      return MessagePage(
+        messages: (data['messages'] as List<dynamic>)
+            .map((e) => ChatMessage.fromJson(e as Map<String, dynamic>))
+            .toList(),
+        nextCursor: data['nextCursor'] as String?,
+      );
+    } on DioException catch (e) {
+      throw ApiException.fromDio(e);
+    }
+  }
+
+  /// `POST /channels/:id/messages { content }` → 201 com a mensagem criada.
+  Future<ChatMessage> sendMessage(String channelId, String content) async {
+    try {
+      final response = await _dio.post(
+        '/channels/$channelId/messages',
+        data: {'content': content},
+      );
+      return ChatMessage.fromJson(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      throw ApiException.fromDio(e);
+    }
+  }
+
+  /// `GET /servers/:id/presence` → `{ online, voiceByChannel }`.
+  Future<ServerPresence> fetchPresence(String serverId) async {
+    try {
+      final response = await _dio.get('/servers/$serverId/presence');
+      return ServerPresence.fromJson(response.data as Map<String, dynamic>);
     } on DioException catch (e) {
       throw ApiException.fromDio(e);
     }
