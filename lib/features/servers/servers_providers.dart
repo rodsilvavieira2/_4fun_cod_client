@@ -1,6 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/api/api_client.dart';
+import '../../core/websocket/realtime_event.dart';
+import '../../core/websocket/socket_service.dart';
 import '../../shared/models/servers.dart';
 import 'servers_repository.dart';
 
@@ -84,3 +88,102 @@ final inviteDetailProvider =
     FutureProvider.autoDispose.family<InviteDetail, String>((ref, code) {
   return ref.watch(serversRepositoryProvider).fetchInvite(code);
 });
+
+/// Presença online dos membros — `GET /servers/:id/presence` (estado
+/// inicial) + eventos `presence.changed` aplicados em tempo real.
+class PresenceController
+    extends AutoDisposeFamilyNotifier<Set<String>, String> {
+  StreamSubscription<RealtimeEvent>? _subscription;
+  StreamSubscription<void>? _reconnectedSub;
+  bool _disposed = false;
+  // Usuários com evento recebido: o snapshot REST não pode decidir sobre
+  // eles (evita ressuscitar quem ficou OFFLINE durante o fetch).
+  final Set<String> _seenEvents = {};
+  // Membros do servidor (filtro de escopo: o payload de presença não traz
+  // serverId — eventos de outros servidores não podem vazar para este).
+  Set<String>? _memberIds;
+
+  @override
+  Set<String> build(String serverId) {
+    // Rebuild: mesma instância do notifier é reutilizada — zera o flag e
+    // cancela listeners anteriores (senão eventos duplicam e _fetch morre).
+    _disposed = false;
+    _subscription?.cancel();
+    _reconnectedSub?.cancel();
+    _subscription = null;
+    _reconnectedSub = null;
+    // Escopo de membros: lido de forma SÍNCRONA via ref.read — o detail pode
+    // já estar resolvido quando este controller nasce, e o ref.listen sem
+    // fireImmediately não dispararia com o valor atual; com fireImmediately
+    // tocaria `state` durante o build (não suportado pelo Riverpod).
+    _memberIds = ref
+        .read(serverDetailProvider(serverId))
+        .valueOrNull
+        ?.members
+        .map((m) => m.userId)
+        .toSet();
+    ref.listen(serverDetailProvider(serverId), (_, next) {
+      final members = next.valueOrNull?.members.map((m) => m.userId).toSet();
+      _memberIds = members;
+      if (members != null && !_disposed) {
+        _seenEvents.removeWhere((id) => !members.contains(id));
+        final cleaned = {...state}..removeWhere((id) => !members.contains(id));
+        if (cleaned.length != state.length) state = cleaned;
+      }
+    });
+    _subscription = ref.read(socketServiceProvider).events.listen((event) {
+      if (event is! PresenceChangedEvent) return;
+      final members = _memberIds;
+      // Sem escopo (members ainda não carregou) → descarta o evento: o
+      // snapshot REST do _fetch cobre o estado durante a carga; aceitar
+      // eventos sem escopo poluiria _seenEvents com ids de outros servers.
+      if (members == null || !members.contains(event.userId)) return;
+      _seenEvents.add(event.userId);
+      final online = {...state};
+      if (event.status == PresenceStatus.online) {
+        online.add(event.userId);
+      } else {
+        online.remove(event.userId);
+      }
+      state = online;
+    });
+    // Reconexão: presença é efêmera (TTL 60s) — refaz o snapshot para não
+    // deixar fantasmas online após uma queda. Eventos pré-queda são MAIS
+    // ANTIGOS que o snapshot novo: limpa o rastro (_seenEvents/state) para
+    // que o snapshot decida tudo de novo.
+    _reconnectedSub = ref.read(socketServiceProvider).reconnected.listen((_) {
+      _seenEvents.clear();
+      state = const {};
+      _fetch(serverId);
+    });
+    ref.onDispose(() {
+      _disposed = true;
+      _subscription?.cancel();
+      _reconnectedSub?.cancel();
+    });
+    _fetch(serverId);
+    return const {};
+  }
+
+  Future<void> _fetch(String serverId) async {
+    try {
+      final presence =
+          await ref.read(serversRepositoryProvider).fetchPresence(serverId);
+      if (_disposed) return;
+      // Snapshot REST como base, exceto usuários com evento (o estado de
+      // eventos é sempre mais recente que o snapshot).
+      final fromSnapshot = {
+        for (final userId in presence.online)
+          if (!_seenEvents.contains(userId)) userId,
+      };
+      state = {...fromSnapshot, ...state};
+    } catch (_) {
+      // Presença é best-effort: sem resposta, todos aparecem offline.
+    }
+  }
+}
+
+/// Ids dos usuários online no servidor (autoDispose: sai da tela de membros,
+/// cancela o listener).
+final presenceProvider = NotifierProvider.autoDispose.family<
+    PresenceController, Set<String>, String>(PresenceController.new);

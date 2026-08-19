@@ -16,6 +16,7 @@ class MembersScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final detail = ref.watch(serverDetailProvider(serverId));
+    final online = ref.watch(presenceProvider(serverId));
     final authState = ref.watch(authControllerProvider).valueOrNull;
     final currentUserId = authState is Authenticated ? authState.user.id : null;
     final isOwner = detail.valueOrNull?.isOwner ?? false;
@@ -52,7 +53,18 @@ class MembersScreen extends ConsumerWidget {
                         )
                       : null,
                 ),
-                title: Text(member.user.name),
+                title: Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        member.user.name,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    _PresenceDot(online: online.contains(member.userId)),
+                  ],
+                ),
                 subtitle: Text('@${member.user.username}'),
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -114,6 +126,26 @@ class _RoleChip extends StatelessWidget {
       label: Text(role == 'OWNER' ? 'Dono' : 'Membro'),
       visualDensity: VisualDensity.compact,
       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    );
+  }
+}
+
+/// Indicador visual de presença ao lado do nome (dot verde = online,
+/// cinza = offline).
+class _PresenceDot extends StatelessWidget {
+  const _PresenceDot({required this.online});
+
+  final bool online;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: online ? 'Online' : 'Offline',
+      child: Icon(
+        Icons.circle,
+        size: 10,
+        color: online ? Colors.green : Colors.grey,
+      ),
     );
   }
 }

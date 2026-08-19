@@ -180,3 +180,33 @@ class ServerDetail {
 
   bool get isOwner => myRole == 'OWNER';
 }
+
+/// Presença do servidor — `GET /servers/:id/presence` →
+/// `{ online: string[], voiceByChannel: { channelId: string[] } }`.
+/// Estado efêmero (Redis, TTL 60s), NUNCA persistido.
+class ServerPresence {
+  const ServerPresence({
+    required this.online,
+    this.voiceByChannel = const {},
+  });
+
+  factory ServerPresence.fromJson(Map<String, dynamic> json) => ServerPresence(
+        online: {
+          ...(json['online'] as List<dynamic>? ?? const []).cast<String>(),
+        },
+        voiceByChannel: (json['voiceByChannel'] as Map<String, dynamic>? ??
+                const {})
+            .map(
+              (channelId, userIds) => MapEntry(
+                channelId,
+                (userIds as List<dynamic>).cast<String>(),
+              ),
+            ),
+      );
+
+  /// Ids dos usuários online no servidor.
+  final Set<String> online;
+
+  /// Ids dos usuários em voz, agrupados por canal (usado na Fase 4).
+  final Map<String, List<String>> voiceByChannel;
+}
