@@ -432,8 +432,11 @@ class VoiceController
         }
       case ParticipantJoinedEvent() ||
           ParticipantLeftEvent() ||
-          SpeakingChangedEvent():
-        break; // o snapshot de participants já reflete tudo
+          SpeakingChangedEvent() ||
+          ScreenShareEnabledChangedEvent() ||
+          ReconnectingEvent() ||
+          ReconnectedEvent():
+        break; // Fase 6 (Prompt 2) trata share/reconexão; aqui só mantém o switch exaustivo.
     }
   }
 
