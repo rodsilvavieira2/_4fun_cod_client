@@ -11,8 +11,9 @@ import 'rtc_service.dart';
 
 /// Implementação de [RtcService] sobre o LiveKit.
 ///
-/// ÚNICO arquivo do projeto autorizado a importar `livekit_client`
-/// (invariante de arquitetura do 4fun_cod: a UI só enxerga [RtcService]).
+/// ÚNICO arquivo de LÓGICA do projeto autorizado a importar `livekit_client`
+/// (invariante de arquitetura do 4fun_cod: a UI só enxerga [RtcService] e o
+/// widget de renderização [RtcVideoView], em `rtc_video_view.dart`).
 ///
 /// API validada na 2.11.0 (ver skill 4fun-cod-codebase):
 /// - [RoomOptions] (incl. `defaultAudioCaptureOptions`/`defaultAudioPublishOptions`)
@@ -22,12 +23,21 @@ import 'rtc_service.dart';
 /// - `TrackPublication.muted` é getter-only: mutar é via `publication.mute()`
 ///   (e desmutar via `unmute()`), que mantêm o estado `muted` em sincronia
 ///   com o servidor;
-/// - `isMicrophoneEnabled()` é MÉTODO (não getter) no [Participant];
+/// - `isMicrophoneEnabled()` é MÉTODO (não getter) no [Participant]; o mesmo
+///   vale para `isCameraEnabled()` (participant.dart:309);
 /// - `connectionState` colide com o enum `ConnectionState` do Flutter —
 ///   este serviço nunca lê esse enum, só reage a [RoomDisconnectedEvent];
 /// - `RoomOptions`/`ConnectOptions` NÃO têm `tokenGenerator` na 2.11.0: a
 ///   função recebida em [connect] é apenas armazenada (ver [tokenGenerator])
-///   para o controller obter tokens frescos e reconectar manualmente.
+///   para o controller obter tokens frescos e reconectar manualmente;
+/// - `adaptiveStream`/`dynacast` são FALSE por default no client
+///   (options.dart:298-299) — a Fase 5 os liga no [defaultRoomOptions];
+///   dynacast requer simulcast (options.dart:264);
+/// - NÃO existe `RemoteVideoTrackPublication` na 2.11.0: `setVideoQuality`
+///   vive no [RemoteTrackPublication] genérico (publication/remote.dart:302);
+/// - `LocalVideoTrack.switchCamera(deviceId)` é a API nativa de troca de
+///   câmera (track/local/video.dart:299 — restartTrack interno);
+/// - widget de renderização = `VideoTrackRenderer` (não existe `VideoView`).
 class LiveKitRtcService implements RtcService {
   LiveKitRtcService({RoomOptions? roomOptions})
       : _roomOptions = roomOptions ?? defaultRoomOptions;
@@ -39,6 +49,15 @@ class LiveKitRtcService implements RtcService {
   ///
   /// Pitfall 2.11.0: [AudioCaptureOptions] NÃO tem campo `enabled` — o
   /// "mic mutado por padrão" é feito no [connect] via `publication.mute()`.
+  ///
+  /// Vídeo (Fase 5):
+  /// - `adaptiveStream`/`dynacast` ligados no CLIENT (defaults false —
+  ///   options.dart:298-299); dynacast requer simulcast (options.dart:264);
+  /// - `defaultCameraCaptureOptions` h540_169: a 1ª publicação de câmera
+  ///   usa estes params (o SDK clampa às dimensões reais do device);
+  /// - `videoSimulcastLayers` h180/h540/h1080: `simulcast` já é default
+  ///   true, mas fica explícito; `videoEncoding` fica null de propósito —
+  ///   o SDK sugere os encodings a partir dos layers (options.dart:461-469).
   static final RoomOptions defaultRoomOptions = RoomOptions(
     defaultAudioCaptureOptions: const AudioCaptureOptions(
       echoCancellation: true,
@@ -47,6 +66,19 @@ class LiveKitRtcService implements RtcService {
     ),
     defaultAudioPublishOptions: const AudioPublishOptions(
       encoding: AudioEncoding(maxBitrate: 64000),
+    ),
+    adaptiveStream: true,
+    dynacast: true,
+    defaultCameraCaptureOptions: const CameraCaptureOptions(
+      params: VideoParametersPresets.h540_169,
+    ),
+    defaultVideoPublishOptions: const VideoPublishOptions(
+      simulcast: true,
+      videoSimulcastLayers: [
+        VideoParametersPresets.h180_169,
+        VideoParametersPresets.h540_169,
+        VideoParametersPresets.h1080_169,
+      ],
     ),
   );
 
@@ -159,6 +191,112 @@ class LiveKitRtcService implements RtcService {
     await localParticipant.setMicrophoneEnabled(false);
   }
 
+  @override
+  Future<void> enableCamera() async {
+    final room = _room;
+    if (room == null || _disposed) return;
+    final localParticipant = room.localParticipant;
+    if (localParticipant == null) return;
+    // 1ª chamada: LocalVideoTrack.createCameraTrack(captureOptions) +
+    // publish (usando os defaults do RoomOptions); com publicação
+    // existente: unmute() (participant/local.dart:762-765, 795-821).
+    // Erros de permissão/hardware (TrackCreateException, exceptions.dart:81)
+    // PROPAGAM — o controller decide a mensagem; falha de câmera NUNCA
+    // derruba a sessão (nada de _cleanupRoom aqui).
+    await localParticipant.setCameraEnabled(true);
+  }
+
+  @override
+  Future<void> disableCamera() async {
+    final room = _room;
+    if (room == null || _disposed) return;
+    final localParticipant = room.localParticipant;
+    if (localParticipant == null) return;
+    // setCameraEnabled(false) → publication.mute(stopOnMute: true)
+    // (participant/local.dart:797-814): a publicação PERMANECE publicada
+    // (como o mic); o estado é reconciliado pelos eventos já ouvidos.
+    await localParticipant.setCameraEnabled(false);
+  }
+
+  @override
+  Future<void> switchCamera(String deviceId) async {
+    final room = _room;
+    if (room == null || _disposed) return;
+    final localParticipant = room.localParticipant;
+    if (localParticipant == null) return;
+    final track = localParticipant
+        .getTrackPublicationBySource(TrackSource.camera)
+        ?.track as LocalVideoTrack?;
+    if (track == null) {
+      // Câmera OFF: sem track local para trocar — no-op. switchCamera só
+      // tem efeito com a câmera ligada; a 1ª enableCamera() usa o device
+      // default (ou o deviceId configurado em defaultCameraCaptureOptions).
+      return;
+    }
+    // API nativa 2.11.0 (track/local/video.dart:299-315): restartTrack
+    // interno — NUNCA despublicar/republicar para trocar de câmera.
+    await track.switchCamera(deviceId);
+  }
+
+  @override
+  Future<List<RtcVideoDevice>> listCameraDevices() async {
+    // Hardware.instance.enumerateDevices(type: 'videoinput') → List<MediaDevice>
+    // com deviceId/label/kind/groupId (hardware/hardware.dart:100-107) — a
+    // mesma API usada pelo exemplo oficial do SDK.
+    final devices =
+        await Hardware.instance.enumerateDevices(type: 'videoinput');
+    return [
+      for (final device in devices)
+        RtcVideoDevice(id: device.deviceId, label: device.label),
+    ];
+  }
+
+  @override
+  Future<void> setQuality(
+    String participantId,
+    RtcVideoQuality quality,
+  ) async {
+    final room = _room;
+    if (room == null || _disposed) return;
+    // Qualidade se aplica apenas à RECEPÇÃO remota: local/desconhecido → no-op.
+    final remoteParticipant = room.remoteParticipants[participantId];
+    if (remoteParticipant == null) return;
+    final publication = remoteParticipant
+        .getTrackPublicationBySource(TrackSource.camera);
+    if (publication == null) return; // câmera remota OFF/ausente → no-op
+    final videoQuality = switch (quality) {
+      RtcVideoQuality.low => VideoQuality.LOW,
+      RtcVideoQuality.medium => VideoQuality.MEDIUM,
+      RtcVideoQuality.high => VideoQuality.HIGH,
+    };
+    // 2.11.0: NÃO existe RemoteVideoTrackPublication — setVideoQuality vive
+    // no RemoteTrackPublication genérico (publication/remote.dart:302-307).
+    // Com adaptiveStream ativo, o client faz MERGE da preferência manual
+    // com a visibilidade dos views (o mais conservador vence).
+    await publication.setVideoQuality(videoQuality);
+  }
+
+  @override
+  RtcVideoTrackRef? videoTrackOf(String participantId) {
+    final room = _room;
+    if (room == null || _disposed) return null;
+    final localParticipant = room.localParticipant;
+    final TrackPublication? publication;
+    if (localParticipant?.identity == participantId) {
+      publication = localParticipant
+          ?.getTrackPublicationBySource(TrackSource.camera);
+    } else {
+      publication = room.remoteParticipants[participantId]
+          ?.getTrackPublicationBySource(TrackSource.camera);
+    }
+    if (publication == null || publication.muted) return null;
+    final track = publication.track;
+    // Defensivo: publicação de camera é sempre vídeo, mas o cast direto
+    // quebraria se algum dia mudar de source — `is VideoTrack` cobre.
+    if (track is! VideoTrack) return null;
+    return LiveKitVideoTrackRef(track);
+  }
+
   /// Encerramento definitivo (provider descartado): desconecta, limpa
   /// estado e fecha os streams.
   void dispose() {
@@ -253,8 +391,13 @@ class LiveKitRtcService implements RtcService {
   }
 
   /// Re-deriva o [RtcParticipant] de um [Participant] do LiveKit e emite
-  /// [MicEnabledChangedEvent] se o estado de mic mudou. O participante
-  /// entra no mapa mesmo se ainda não tinha evento joined (robustez).
+  /// [MicEnabledChangedEvent]/[CameraEnabledChangedEvent] se o estado de
+  /// mic/câmera mudou. O participante entra no mapa mesmo se ainda não
+  /// tinha evento joined (robustez).
+  ///
+  /// Os eventos já ouvidos em [_wire] (TrackPublished/Unpublished, local e
+  /// remoto, TrackMuted/Unmuted) cobrem câmera E mic — basta re-derivar
+  /// `isCameraEnabled` aqui; NÃO é preciso listener novo.
   void _syncParticipant(Participant participant) {
     final id = participant.identity;
     final previous = _participantsById[id];
@@ -262,6 +405,7 @@ class LiveKitRtcService implements RtcService {
       id: id,
       name: participant.name.isEmpty ? id : participant.name,
       isMicrophoneEnabled: participant.isMicrophoneEnabled(),
+      isCameraEnabled: participant.isCameraEnabled(),
       isSpeaking: previous?.isSpeaking ?? false,
     );
     _participantsById[id] = updated;
@@ -272,6 +416,15 @@ class LiveKitRtcService implements RtcService {
         MicEnabledChangedEvent(
           participantId: id,
           isMicrophoneEnabled: updated.isMicrophoneEnabled,
+        ),
+      );
+    }
+    if (previous != null &&
+        previous.isCameraEnabled != updated.isCameraEnabled) {
+      _emitEvent(
+        CameraEnabledChangedEvent(
+          participantId: id,
+          isCameraEnabled: updated.isCameraEnabled,
         ),
       );
     }
@@ -338,4 +491,17 @@ class LiveKitRtcService implements RtcService {
     }
     _emitSnapshot();
   }
+}
+
+/// Ref opaco concreto de track de vídeo (Fase 5).
+///
+/// Só o [LiveKitRtcService] cria (em [LiveKitRtcService.videoTrackOf]) e só
+/// o `RtcVideoView` (core/rtc/rtc_video_view.dart) consome — a UI em
+/// features/ nunca vê o tipo LiveKit.
+class LiveKitVideoTrackRef extends RtcVideoTrackRef {
+  const LiveKitVideoTrackRef(this.track);
+
+  /// Track de vídeo resolvida (LocalVideoTrack ou RemoteVideoTrack — ambas
+  /// usam o mixin [VideoTrack]; o renderer gerencia o ciclo de vida).
+  final VideoTrack track;
 }
