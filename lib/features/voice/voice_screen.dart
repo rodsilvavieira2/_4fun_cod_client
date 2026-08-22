@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/rtc/rtc_providers.dart';
 import '../../core/rtc/rtc_service.dart';
 import 'voice_providers.dart';
+import 'voice_video_tile.dart';
 
 /// Canal de voz: painel de participantes (nome, mute, active speaker) +
 /// barra de controles (entrar/sair, mute/unmute).
@@ -28,21 +31,57 @@ class VoiceScreen extends ConsumerWidget {
     final state = ref.watch(voiceControllerProvider(arg));
     final notifier = ref.read(voiceControllerProvider(arg).notifier);
 
+    // Erros de toggle DENTRO da sessão (mic/câmera) aparecem via SnackBar —
+    // o `errorMessage` do painel só renderiza no ramo `error` do status.
+    ref.listen(voiceControllerProvider(arg), (prev, next) {
+      final message = next.errorMessage;
+      if (message != null &&
+          message != prev?.errorMessage &&
+          next.status == VoiceSessionStatus.connected) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(SnackBar(content: Text(message)));
+      }
+    });
+
     return Column(
       children: [
         _Header(channelName: channelName, status: state.status),
         const Divider(height: 1),
-        Expanded(child: _ParticipantsPanel(state: state)),
+        Expanded(
+          child: _ParticipantsPanel(
+            state: state,
+            notifier: notifier,
+            arg: arg,
+          ),
+        ),
         const Divider(height: 1),
         _Controls(
           state: state,
           onJoin: notifier.join,
           onLeave: notifier.leave,
           onToggleMicrophone: notifier.toggleMicrophone,
+          onToggleCamera: notifier.toggleCamera,
+          onOpenSettings: () => _openCameraSettings(context, ref, arg),
         ),
         // Corrige o tom da barra inferior sobre o surface do tema.
         const SizedBox(height: 4),
       ],
+    );
+  }
+
+  /// Abre o sheet de settings de câmera; ao abrir, atualiza a lista de
+  /// dispositivos (best-effort — falha de enumeração mantém o cache).
+  void _openCameraSettings(
+    BuildContext context,
+    WidgetRef ref,
+    ({String serverId, String channelId}) arg,
+  ) {
+    unawaited(ref.read(voiceControllerProvider(arg).notifier)
+        .refreshCameraDevices());
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (_) => _CameraSettingsSheet(arg: arg),
     );
   }
 }
@@ -92,9 +131,15 @@ class _Header extends StatelessWidget {
 }
 
 class _ParticipantsPanel extends StatelessWidget {
-  const _ParticipantsPanel({required this.state});
+  const _ParticipantsPanel({
+    required this.state,
+    required this.notifier,
+    required this.arg,
+  });
 
   final VoiceState state;
+  final VoiceController notifier;
+  final ({String serverId, String channelId}) arg;
 
   @override
   Widget build(BuildContext context) {
@@ -142,8 +187,150 @@ class _ParticipantsPanel extends StatelessWidget {
           ),
         );
       case VoiceSessionStatus.connected:
-        return _ParticipantList(participants: state.participants);
+        // Com ≥1 câmera ativa o painel vira canal de MÍDIA (grid/spotlight);
+        // sem câmeras mantém a lista da Fase 4 intacta.
+        final hasActiveCamera =
+            state.participants.any((p) => p.isCameraEnabled);
+        if (!hasActiveCamera) {
+          return _ParticipantList(participants: state.participants);
+        }
+        if (state.spotlightParticipantId == null) {
+          return _VideoGrid(state: state, notifier: notifier, arg: arg);
+        }
+        return _SpotlightLayout(state: state, notifier: notifier, arg: arg);
     }
+  }
+}
+
+/// GRID de tiles de vídeo (modo mídia): um tile por participante, colunas
+/// responsivas pela largura do painel (≥900 → 3, ≥560 → 2, senão 1).
+class _VideoGrid extends StatelessWidget {
+  const _VideoGrid({
+    required this.state,
+    required this.notifier,
+    required this.arg,
+  });
+
+  final VoiceState state;
+  final VoiceController notifier;
+  final ({String serverId, String channelId}) arg;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        final columns = width >= 900 ? 3 : (width >= 560 ? 2 : 1);
+        return GridView.builder(
+          padding: const EdgeInsets.all(8),
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: columns,
+            mainAxisSpacing: 8,
+            crossAxisSpacing: 8,
+            childAspectRatio: 16 / 9,
+          ),
+          itemCount: state.participants.length,
+          itemBuilder: (context, index) {
+            final participant = state.participants[index];
+            // Só tile COM câmera ativa vira spotlight (toque ignorado sem).
+            return VoiceVideoTile(
+              arg: arg,
+              participant: participant,
+              role: VoiceVideoTileRole.grid,
+              onTap: participant.isCameraEnabled
+                  ? () => notifier.toggleSpotlight(participant.id)
+                  : null,
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+/// SPOTLIGHT: tile em destaque (Expanded) + faixa de miniaturas dos demais.
+class _SpotlightLayout extends StatelessWidget {
+  const _SpotlightLayout({
+    required this.state,
+    required this.notifier,
+    required this.arg,
+  });
+
+  final VoiceState state;
+  final VoiceController notifier;
+  final ({String serverId, String channelId}) arg;
+
+  @override
+  Widget build(BuildContext context) {
+    final spotlightId = state.spotlightParticipantId;
+
+    // Defensivo: o controller já limpa destaque órfão no snapshot; ainda
+    // assim, se não houver destaque válido, cai no grid.
+    RtcParticipant? spotlight;
+    for (final p in state.participants) {
+      if (p.id == spotlightId && p.isCameraEnabled) {
+        spotlight = p;
+        break;
+      }
+    }
+    if (spotlight == null) {
+      return _VideoGrid(state: state, notifier: notifier, arg: arg);
+    }
+    // Promoção definitiva para o closure (variável mutável não promove
+    // dentro de closure).
+    final focused = spotlight;
+
+    final others = [
+      for (final p in state.participants)
+        if (p.id != focused.id) p,
+    ];
+
+    return Column(
+      children: [
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.all(8),
+            child: VoiceVideoTile(
+              arg: arg,
+              participant: focused,
+              role: VoiceVideoTileRole.spotlight,
+              // Toque no destaque → volta ao grid.
+              onTap: () => notifier.toggleSpotlight(focused.id),
+            ),
+          ),
+        ),
+        if (others.isNotEmpty)
+          SizedBox(
+            height: 96,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              children: [
+                for (final p in others)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: Center(
+                      // Miniatura 16:9 (~128×72), centralizada na faixa.
+                      child: SizedBox(
+                        width: 128,
+                        height: 72,
+                        child: VoiceVideoTile(
+                          arg: arg,
+                          participant: p,
+                          role: VoiceVideoTileRole.miniature,
+                          onTap: p.isCameraEnabled
+                              ? () => notifier.toggleSpotlight(p.id)
+                              : null,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        const SizedBox(height: 8),
+      ],
+    );
   }
 }
 
@@ -225,6 +412,14 @@ class _ParticipantTile extends ConsumerWidget {
             ),
           const SizedBox(width: 10),
           Icon(
+            participant.isCameraEnabled ? Icons.videocam : Icons.videocam_off,
+            size: 18,
+            color: participant.isCameraEnabled
+                ? theme.colorScheme.primary
+                : theme.colorScheme.outline,
+          ),
+          const SizedBox(width: 10),
+          Icon(
             participant.isMicrophoneEnabled ? Icons.mic : Icons.mic_off,
             size: 18,
             color: participant.isMicrophoneEnabled
@@ -265,12 +460,16 @@ class _Controls extends StatelessWidget {
     required this.onJoin,
     required this.onLeave,
     required this.onToggleMicrophone,
+    required this.onToggleCamera,
+    required this.onOpenSettings,
   });
 
   final VoiceState state;
   final VoidCallback onJoin;
   final VoidCallback onLeave;
   final VoidCallback onToggleMicrophone;
+  final VoidCallback onToggleCamera;
+  final VoidCallback onOpenSettings;
 
   @override
   Widget build(BuildContext context) {
@@ -315,8 +514,131 @@ class _Controls extends StatelessWidget {
                     : theme.colorScheme.onSurfaceVariant,
               ),
             ),
+            const SizedBox(width: 8),
+            // Câmera: vermelho (error) quando ativa — padrão de call de
+            // vídeo; diferente do mic que usa primary.
+            IconButton.filledTonal(
+              onPressed: onToggleCamera,
+              tooltip: state.isCameraEnabled
+                  ? 'Desativar câmera'
+                  : 'Ativar câmera',
+              icon: Icon(
+                state.isCameraEnabled ? Icons.videocam : Icons.videocam_off,
+                color: state.isCameraEnabled
+                    ? theme.colorScheme.error
+                    : theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(width: 4),
+            IconButton(
+              onPressed: onOpenSettings,
+              tooltip: 'Configurações de câmera',
+              icon: const Icon(Icons.settings),
+            ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+/// Sheet de settings de câmera: preview local ao vivo + lista de câmeras
+/// (RadioGroup). O estado vem do [voiceControllerProvider] — o sheet apenas
+/// lê; nenhum provider novo.
+class _CameraSettingsSheet extends ConsumerWidget {
+  const _CameraSettingsSheet({required this.arg});
+
+  final ({String serverId, String channelId}) arg;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final state = ref.watch(voiceControllerProvider(arg));
+    final notifier = ref.read(voiceControllerProvider(arg).notifier);
+    final localId = ref.read(rtcServiceProvider).localParticipantId;
+
+    // Preview = tile local (placeholder de avatar quando a câmera está OFF).
+    RtcParticipant? local;
+    for (final p in state.participants) {
+      if (p.id == localId) {
+        local = p;
+        break;
+      }
+    }
+
+    final devices = state.cameraDevices;
+
+    return SafeArea(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Câmera', style: theme.textTheme.titleMedium),
+            const SizedBox(height: 12),
+            Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 320),
+                child: AspectRatio(
+                  aspectRatio: 16 / 9,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: local == null
+                        ? ColoredBox(
+                            color: theme.colorScheme.surfaceContainerHighest,
+                          )
+                        : VoiceVideoTile(
+                            arg: arg,
+                            participant: local,
+                            role: VoiceVideoTileRole.grid,
+                          ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Ative a câmera para ver o preview e trocar de dispositivo '
+              'ao vivo.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.outline,
+              ),
+            ),
+            const SizedBox(height: 12),
+            if (devices.isEmpty)
+              Text(
+                'Nenhuma câmera encontrada.',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.outline,
+                ),
+              )
+            else
+              RadioGroup<String>(
+                groupValue: state.selectedCameraId,
+                onChanged: (id) {
+                  if (id != null) notifier.selectCamera(id);
+                },
+                child: Column(
+                  children: [
+                    for (var i = 0; i < devices.length; i++)
+                      RadioListTile<String>(
+                        value: devices[i].id,
+                        // Label pode vir vazio antes da permissão (fato do
+                        // contrato) — fallback numerado.
+                        title: Text(
+                          devices[i].label.isEmpty
+                              ? 'Câmera ${i + 1}'
+                              : devices[i].label,
+                        ),
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                  ],
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
