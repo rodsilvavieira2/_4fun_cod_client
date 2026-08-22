@@ -237,7 +237,8 @@ class VoiceController
         }
       case ParticipantJoinedEvent() ||
           ParticipantLeftEvent() ||
-          SpeakingChangedEvent():
+          SpeakingChangedEvent() ||
+          CameraEnabledChangedEvent():
         break; // o snapshot de participants já reflete tudo
     }
   }
