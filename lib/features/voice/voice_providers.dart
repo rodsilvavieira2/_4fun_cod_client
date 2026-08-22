@@ -10,15 +10,28 @@ import '../servers/servers_providers.dart';
 /// Estado da sessão de voz de um canal.
 enum VoiceSessionStatus { idle, connecting, connected, error }
 
+/// Sentinel de "não fornecido": default dos parâmetros nullable de
+/// [VoiceState.copyWith]. Omitir o parâmetro mantém o valor atual; passar
+/// `null` EXPLICITAMENTE limpa o campo (nullable limpável). Padrão mínimo
+/// para limpar [VoiceState.spotlightParticipantId] e
+/// [VoiceState.selectedCameraId] — o projeto não tinha sentinel; documentado
+/// aqui.
+const Object _unset = Object();
+
 /// Estado derivado do [RtcService] para o canal selecionado: status da
-/// sessão, participantes ordenados (local primeiro, depois por nome) e o
-/// estado do microfone LOCAL (para a barra de controles).
+/// sessão, participantes ordenados (local primeiro, depois por nome), estado
+/// do microfone e da câmera LOCAIS (para a barra de controles), o tile em
+/// destaque (spotlight) e o cache de câmeras do sheet de settings.
 class VoiceState {
   const VoiceState({
     this.status = VoiceSessionStatus.idle,
     this.errorMessage,
     this.participants = const [],
     this.isMicrophoneEnabled = false,
+    this.isCameraEnabled = false,
+    this.spotlightParticipantId,
+    this.cameraDevices = const [],
+    this.selectedCameraId,
   });
 
   final VoiceSessionStatus status;
@@ -34,30 +47,57 @@ class VoiceState {
   /// estado, sincronizado pelos eventos do serviço).
   final bool isMicrophoneEnabled;
 
+  /// Se a câmera LOCAL está habilitada (espelho do botão de câmera; o
+  /// [CameraEnabledChangedEvent] do participante local reconcilia).
+  final bool isCameraEnabled;
+
+  /// Id do participante em destaque (spotlight); null = grid. O snapshot de
+  /// participantes revalida: destaque de tile sem câmera/saído é limpo.
+  final String? spotlightParticipantId;
+
+  /// Cache da lista de câmeras do dispositivo (sheet de settings).
+  final List<RtcVideoDevice> cameraDevices;
+
+  /// Última seleção de câmera do sheet (persistida só no estado; o serviço
+  /// não guarda deviceId pendente com a câmera desligada).
+  final String? selectedCameraId;
+
   VoiceState copyWith({
     VoiceSessionStatus? status,
     String? errorMessage,
     List<RtcParticipant>? participants,
     bool? isMicrophoneEnabled,
+    bool? isCameraEnabled,
+    Object? spotlightParticipantId = _unset,
+    List<RtcVideoDevice>? cameraDevices,
+    Object? selectedCameraId = _unset,
   }) {
     return VoiceState(
       status: status ?? this.status,
       errorMessage: errorMessage ?? this.errorMessage,
       participants: participants ?? this.participants,
       isMicrophoneEnabled: isMicrophoneEnabled ?? this.isMicrophoneEnabled,
+      isCameraEnabled: isCameraEnabled ?? this.isCameraEnabled,
+      spotlightParticipantId: identical(spotlightParticipantId, _unset)
+          ? this.spotlightParticipantId
+          : spotlightParticipantId as String?,
+      cameraDevices: cameraDevices ?? this.cameraDevices,
+      selectedCameraId: identical(selectedCameraId, _unset)
+          ? this.selectedCameraId
+          : selectedCameraId as String?,
     );
   }
 }
 
 /// Sessão de voz de um canal (`autoDispose`): entrar/sair do canal,
-/// mute/unmute e espelho dos participantes do [RtcService].
+/// mute/unmute, câmera/spotlight e espelho dos participantes do [RtcService].
 ///
 /// Ciclo de vida:
 /// - [join]: `POST /servers/:id/channels/:id/join` (token emitido pelo
 ///   backend) + [RtcService.connect]. Se o connect falhar (token expirado
 ///   na janela POST→handshake, servidor fora), refaz o `/join` UMA vez com
 ///   token fresco e reconecta — é o papel do `tokenGenerator` do contrato,
-///   já que o `livekit_client` 2.11.0 não tem suporte nativo a ele.
+///   já que o SDK de mídia 2.11.0 não tem suporte nativo a ele.
 /// - [leave]: [RtcService.disconnect] e volta para `idle`.
 /// - Troca de canal/fechamento da view: o `autoDispose` descarta o
 ///   provider e o `ref.onDispose` desconecta — o usuário nunca fica
@@ -70,6 +110,11 @@ class VoiceController
   StreamSubscription<List<RtcParticipant>>? _participantsSub;
   StreamSubscription<RtcEvent>? _eventsSub;
   bool _disposed = false;
+
+  /// Dedupe de qualidade por participante remoto: o tile reaplica a
+  /// qualidade ao assumir/mudar de papel; o mapa evita chamadas repetidas
+  /// de [RtcService.setQuality] para o mesmo par (id, qualidade).
+  final Map<String, RtcVideoQuality> _lastQuality = {};
 
   @override
   VoiceState build(({String serverId, String channelId}) arg) {
@@ -120,10 +165,15 @@ class VoiceController
   Future<void> leave() async {
     await ref.read(rtcServiceProvider).disconnect();
     if (_disposed) return;
+    // A sala morreu: a câmera local parou junto e o destaque não faz mais
+    // sentido. `_lastQuality` também é resetado (a sala acabou).
+    _lastQuality.clear();
     state = state.copyWith(
       status: VoiceSessionStatus.idle,
       participants: const [],
       isMicrophoneEnabled: false,
+      isCameraEnabled: false,
+      spotlightParticipantId: null,
       errorMessage: null,
     );
   }
@@ -157,6 +207,115 @@ class VoiceController
       isMicrophoneEnabled: !current.isMicrophoneEnabled,
       errorMessage: null,
     );
+  }
+
+  /// Liga/desliga a câmera local (botão da barra de controles). Espelho do
+  /// [toggleMicrophone]: sem otimismo antes do await, erro de permissão não
+  /// derruba a sessão e o [CameraEnabledChangedEvent] reconcilia.
+  Future<void> toggleCamera() async {
+    final current = state;
+    if (current.status != VoiceSessionStatus.connected) return;
+    final rtc = ref.read(rtcServiceProvider);
+    try {
+      if (current.isCameraEnabled) {
+        await rtc.disableCamera();
+      } else {
+        await rtc.enableCamera();
+      }
+    } catch (_) {
+      // Falha de permissão/hardware (TrackCreateException no LiveKit):
+      // volta ao estado anterior e avisa — a sessão NÃO cai.
+      if (_disposed) return;
+      state = state.copyWith(
+        status: VoiceSessionStatus.connected,
+        isCameraEnabled: current.isCameraEnabled,
+        errorMessage: 'Não foi possível alternar a câmera.',
+      );
+      return;
+    }
+    if (_disposed) return;
+    state = state.copyWith(
+      isCameraEnabled: !current.isCameraEnabled,
+      errorMessage: null,
+    );
+  }
+
+  /// Alterna o destaque (spotlight) de um participante: toque repetido no
+  /// mesmo tile volta ao grid. O snapshot de participantes revalida —
+  /// destaque de quem saiu ou desligou a câmera é limpo em [_applyParticipants].
+  void toggleSpotlight(String participantId) {
+    if (state.spotlightParticipantId == participantId) {
+      state = state.copyWith(spotlightParticipantId: null);
+    } else {
+      state = state.copyWith(spotlightParticipantId: participantId);
+    }
+  }
+
+  /// Atualiza o cache de câmeras do sheet de settings. Falha de enumeração
+  /// é silenciosa: mantém a lista atual, sem derrubar nada.
+  Future<void> refreshCameraDevices() async {
+    final current = state;
+    if (current.status != VoiceSessionStatus.connected) return;
+    final rtc = ref.read(rtcServiceProvider);
+    final List<RtcVideoDevice> devices;
+    try {
+      devices = await rtc.listCameraDevices();
+    } catch (_) {
+      // Hardware ausente/permissão pendente: mantém o cache anterior.
+      if (_disposed) return;
+      return;
+    }
+    if (_disposed) return;
+    // Seleção que saiu da lista nova é limpa (device não existe mais).
+    final selectedId = current.selectedCameraId;
+    final selectedStillValid =
+        selectedId != null && devices.any((d) => d.id == selectedId);
+    state = state.copyWith(
+      cameraDevices: devices,
+      selectedCameraId: selectedStillValid ? selectedId : null,
+    );
+  }
+
+  /// Seleciona uma câmera no sheet. Com a câmera LIGADA aplica ao vivo via
+  /// [RtcService.switchCamera]; com a câmera DESLIGADA apenas registra a
+  /// seleção — o serviço não persiste deviceId pendente (o próximo
+  /// [RtcService.enableCamera] usa o device default; fato do contrato).
+  Future<void> selectCamera(String deviceId) async {
+    final current = state;
+    if (current.status != VoiceSessionStatus.connected) return;
+    state = state.copyWith(selectedCameraId: deviceId);
+    if (!current.isCameraEnabled) return;
+    final rtc = ref.read(rtcServiceProvider);
+    try {
+      await rtc.switchCamera(deviceId);
+    } catch (_) {
+      if (_disposed) return;
+      state = state.copyWith(
+        status: VoiceSessionStatus.connected,
+        errorMessage: 'Não foi possível trocar a câmera.',
+      );
+    }
+  }
+
+  /// Aplica a qualidade de recepção de um tile REMOTO conforme o papel
+  /// (spotlight→high, grid→medium, miniatura→low). Ignora o participante
+  /// local (qualidade local é da publicação) e dedupe chamadas repetidas
+  /// para o mesmo par (id, qualidade). Qualidade é best-effort: falha de
+  /// [RtcService.setQuality] é silenciosa e nunca vira [VoiceState.errorMessage].
+  Future<void> applyTileQuality(
+    String participantId,
+    RtcVideoQuality quality,
+  ) async {
+    if (participantId == ref.read(rtcServiceProvider).localParticipantId) {
+      return;
+    }
+    if (_lastQuality[participantId] == quality) return;
+    _lastQuality[participantId] = quality;
+    try {
+      await ref.read(rtcServiceProvider).setQuality(participantId, quality);
+    } catch (_) {
+      // Best-effort: sem efeito na sessão.
+    }
   }
 
   /// `POST /join` → informações para conectar (token de 10m do backend).
@@ -197,7 +356,8 @@ class VoiceController
       }
     }
     if (_disposed) return;
-    // O mic entra publicado MUTADO por padrão (decisão da Fase 4).
+    // O mic entra publicado MUTADO por padrão (decisão da Fase 4) e a
+    // câmera NUNCA é publicada no connect — começa OFF (só via botão).
     state = state.copyWith(
       status: VoiceSessionStatus.connected,
       isMicrophoneEnabled: false,
@@ -211,7 +371,20 @@ class VoiceController
   void _applyParticipants(List<RtcParticipant> list) {
     if (_disposed) return;
     final localId = ref.read(rtcServiceProvider).localParticipantId;
-    state = state.copyWith(participants: _sort(list, localId));
+    final sorted = _sort(list, localId);
+
+    // Revalida o destaque: tile sem vídeo não merece spotlight — quem saiu
+    // da sala ou desligou a câmera volta o painel para o grid. Também limpa
+    // do dedupe de qualidade os ids que saíram (tile desmontado = OFF).
+    var next = state.copyWith(participants: sorted);
+    final spotlightId = state.spotlightParticipantId;
+    if (spotlightId != null &&
+        !sorted.any((p) => p.id == spotlightId && p.isCameraEnabled)) {
+      next = next.copyWith(spotlightParticipantId: null);
+    }
+    final ids = {for (final p in sorted) p.id};
+    _lastQuality.removeWhere((id, _) => !ids.contains(id));
+    state = next;
   }
 
   void _applyEvent(RtcEvent event) {
@@ -219,11 +392,15 @@ class VoiceController
     switch (event) {
       case DisconnectedEvent():
         // Sala caiu sozinha (servidor/rede): o serviço já limpou o estado;
-        // volta para idle para permitir nova entrada.
+        // volta para idle para permitir nova entrada. Câmera local parou
+        // junto e o destaque não faz mais sentido.
+        _lastQuality.clear();
         state = state.copyWith(
           status: VoiceSessionStatus.idle,
           participants: const [],
           isMicrophoneEnabled: false,
+          isCameraEnabled: false,
+          spotlightParticipantId: null,
           errorMessage: null,
         );
       case MicEnabledChangedEvent(
@@ -235,10 +412,20 @@ class VoiceController
             state.isMicrophoneEnabled != isMicrophoneEnabled) {
           state = state.copyWith(isMicrophoneEnabled: isMicrophoneEnabled);
         }
+      case CameraEnabledChangedEvent(
+          :final participantId,
+          :final isCameraEnabled,
+        ):
+        // Espelho exato do mic: só o evento do participante LOCAL toca o
+        // botão; remotos aparecem via snapshot de participants.
+        final localId = ref.read(rtcServiceProvider).localParticipantId;
+        if (participantId == localId &&
+            state.isCameraEnabled != isCameraEnabled) {
+          state = state.copyWith(isCameraEnabled: isCameraEnabled);
+        }
       case ParticipantJoinedEvent() ||
           ParticipantLeftEvent() ||
-          SpeakingChangedEvent() ||
-          CameraEnabledChangedEvent():
+          SpeakingChangedEvent():
         break; // o snapshot de participants já reflete tudo
     }
   }
