@@ -56,6 +56,10 @@ class FakeRtcService implements RtcService {
   int failStartScreenShareTimes = 0;
   Object startScreenShareError = Exception('share indisponível');
 
+  /// Falha de [stopScreenShare] (Prompt 2) — mesmo padrão do failSwitchCamera:
+  /// flag simples; com true a chamada lança e não conta como efetiva.
+  bool failStopScreenShare = false;
+
   // Flags de falha de câmera (Prompt 2) — mesmo padrão do failConnectTimes:
   // uma falha consumida não conta como chamada efetiva.
   int failEnableCameraTimes = 0;
@@ -141,7 +145,10 @@ class FakeRtcService implements RtcService {
   }
 
   @override
-  Future<void> stopScreenShare() async => stopScreenShareCalls++;
+  Future<void> stopScreenShare() async {
+    if (failStopScreenShare) throw Exception('encerrar share falhou');
+    stopScreenShareCalls++;
+  }
 
   @override
   RtcVideoTrackRef? screenTrackOf(String participantId) => screenTrackRef;
@@ -675,6 +682,370 @@ void main() {
       expect(state().status, VoiceSessionStatus.idle);
       expect(state().isCameraEnabled, isFalse);
       expect(state().spotlightParticipantId, isNull);
+    });
+
+    // ── Fase 6 (Prompt 2): screen share, spotlight automático e reconexão ──
+
+    test('start/stopScreenShare conectado chamam o serviço e flipam o estado',
+        () async {
+      repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
+      rtc.localId = 'user_u1';
+      final notifier = buildVoice();
+      await notifier.join();
+      await settle();
+      expect(state().isScreenSharing, isFalse,
+          reason: 'share começa OFF (nunca publicado no connect)');
+
+      await notifier.startScreenShare('src-1');
+      await settle();
+      expect(rtc.startScreenShareCalls, 1);
+      expect(rtc.startScreenShareSources, ['src-1']);
+      expect(state().isScreenSharing, isTrue,
+          reason: 'flag liga pós-await (sem otimismo)');
+
+      await notifier.stopScreenShare();
+      await settle();
+      expect(rtc.stopScreenShareCalls, 1);
+      expect(state().isScreenSharing, isFalse);
+    });
+
+    test('startScreenShare fora da sessão é ignorado; com share ativo é no-op',
+        () async {
+      final notifier = buildVoice();
+
+      // Fora da sessão (idle): ignorado, 0 chamadas.
+      await notifier.startScreenShare('src-1');
+      await settle();
+      expect(rtc.startScreenShareCalls, 0);
+      expect(state().isScreenSharing, isFalse);
+
+      // Conectado com share ativo: no-op — contador não cresce.
+      repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
+      rtc.localId = 'user_u1';
+      await notifier.join();
+      await settle();
+      await notifier.startScreenShare('src-2');
+      await settle();
+      expect(rtc.startScreenShareCalls, 1);
+
+      await notifier.startScreenShare('src-3');
+      await settle();
+      expect(rtc.startScreenShareCalls, 1, reason: 'já compartilhando → no-op');
+      expect(rtc.startScreenShareSources, ['src-2']);
+    });
+
+    test('falha de startScreenShare não derruba a sessão', () async {
+      repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
+      rtc.localId = 'user_u1';
+      final notifier = buildVoice();
+      await notifier.join();
+      await settle();
+
+      rtc.failStartScreenShareTimes = 1;
+      await notifier.startScreenShare('src-1');
+      await settle();
+
+      expect(state().status, VoiceSessionStatus.connected);
+      expect(state().isScreenSharing, isFalse,
+          reason: 'sem otimismo: flag não liga quando o serviço falha');
+      expect(state().errorMessage, 'Não foi possível iniciar o compartilhamento.');
+      expect(rtc.disconnectCalls, 0,
+          reason: 'erro de share nunca desconecta a sala');
+    });
+
+    test('falha de stopScreenShare mantém a sessão e avisa', () async {
+      repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
+      rtc.localId = 'user_u1';
+      final notifier = buildVoice();
+      await notifier.join();
+      await settle();
+
+      await notifier.startScreenShare('src-1');
+      await settle();
+      expect(state().isScreenSharing, isTrue);
+
+      rtc.failStopScreenShare = true;
+      await notifier.stopScreenShare();
+      await settle();
+
+      expect(state().status, VoiceSessionStatus.connected);
+      expect(state().isScreenSharing, isTrue,
+          reason: 'sem otimismo: flag não desliga quando o serviço falha');
+      expect(state().errorMessage, 'Não foi possível encerrar o compartilhamento.');
+      expect(rtc.disconnectCalls, 0);
+    });
+
+    test('ScreenShareEnabledChangedEvent do local reconcilia; de remoto não toca',
+        () async {
+      repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
+      rtc.localId = 'user_u1';
+      final notifier = buildVoice();
+      await notifier.join();
+      await settle();
+      expect(state().isScreenSharing, isFalse);
+
+      // O RtcService real emite isso quando o share local é confirmado.
+      rtc.pushEvent(const ScreenShareEnabledChangedEvent(
+        participantId: 'user_u1',
+        isScreenSharing: true,
+      ));
+      await settle();
+      expect(state().isScreenSharing, isTrue);
+
+      rtc.pushEvent(const ScreenShareEnabledChangedEvent(
+        participantId: 'user_u2',
+        isScreenSharing: false,
+      ));
+      await settle();
+      expect(state().isScreenSharing, isTrue,
+          reason: 'evento de remoto não toca o botão local');
+    });
+
+    test('1º sharer no snapshot ganha destaque automático salvando o anterior',
+        () async {
+      rtc.localId = 'user_u1';
+      final notifier = buildVoice();
+
+      // Spotlight manual pré-existente (Fase 5).
+      notifier.toggleSpotlight('user_u2');
+      expect(state().spotlightParticipantId, 'user_u2');
+
+      // 1º snapshot com sharer: destaque vai para o sharer, anterior salvo.
+      rtc.pushParticipants([
+        _participant('user_u1', 'Ana'),
+        _participant('user_u2', 'Bia', camera: true),
+        _participant('user_u3', 'Caio', camera: true, screenShare: true),
+      ]);
+      await settle();
+
+      expect(state().spotlightParticipantId, 'user_u3');
+      expect(state().autoSpotlightActive, isTrue);
+      expect(state().savedSpotlightParticipantId, 'user_u2',
+          reason: 'spotlight manual anterior salvo para restaurar');
+    });
+
+    test('share termina: spotlight restaurado para o id salvo', () async {
+      rtc.localId = 'user_u1';
+      final notifier = buildVoice();
+
+      notifier.toggleSpotlight('user_u2');
+      rtc.pushParticipants([
+        _participant('user_u1', 'Ana'),
+        _participant('user_u2', 'Bia', camera: true),
+        _participant('user_u3', 'Caio', camera: true, screenShare: true),
+      ]);
+      await settle();
+      expect(state().spotlightParticipantId, 'user_u3');
+      expect(state().savedSpotlightParticipantId, 'user_u2');
+
+      // Share termina: sem sharers no snapshot → restaura o manual anterior.
+      rtc.pushParticipants([
+        _participant('user_u1', 'Ana'),
+        _participant('user_u2', 'Bia', camera: true),
+        _participant('user_u3', 'Caio', camera: true),
+      ]);
+      await settle();
+
+      expect(state().spotlightParticipantId, 'user_u2');
+      expect(state().autoSpotlightActive, isFalse);
+      expect(state().savedSpotlightParticipantId, isNull);
+    });
+
+    test('share termina com spotlight anterior em grid: restaura para grid',
+        () async {
+      rtc.localId = 'user_u1';
+      buildVoice();
+
+      rtc.pushParticipants([
+        _participant('user_u1', 'Ana'),
+        _participant('user_u2', 'Bia', screenShare: true),
+      ]);
+      await settle();
+      expect(state().spotlightParticipantId, 'user_u2');
+      expect(state().savedSpotlightParticipantId, isNull,
+          reason: 'era grid — nada para restaurar');
+
+      rtc.pushParticipants([
+        _participant('user_u1', 'Ana'),
+        _participant('user_u2', 'Bia'),
+      ]);
+      await settle();
+
+      expect(state().spotlightParticipantId, isNull, reason: 'volta ao grid');
+      expect(state().autoSpotlightActive, isFalse);
+      expect(state().savedSpotlightParticipantId, isNull);
+    });
+
+    test('2º sharer assume o destaque com auto-spotlight ativo', () async {
+      rtc.localId = 'user_u1';
+      buildVoice();
+
+      rtc.pushParticipants([
+        _participant('user_u1', 'Ana'),
+        _participant('user_u2', 'Bia', screenShare: true),
+      ]);
+      await settle();
+      expect(state().spotlightParticipantId, 'user_u2');
+
+      // Bia para de compartilhar e Caio assume: destaque move para Caio.
+      rtc.pushParticipants([
+        _participant('user_u1', 'Ana'),
+        _participant('user_u2', 'Bia'),
+        _participant('user_u3', 'Caio', screenShare: true),
+      ]);
+      await settle();
+
+      expect(state().spotlightParticipantId, 'user_u3',
+          reason: 'troca de sharer: destaque segue o share');
+      expect(state().autoSpotlightActive, isTrue);
+    });
+
+    test('dispensa manual do auto-spotlight não é re-forçada pelo snapshot',
+        () async {
+      rtc.localId = 'user_u1';
+      final notifier = buildVoice();
+
+      rtc.pushParticipants([
+        _participant('user_u1', 'Ana'),
+        _participant('user_u2', 'Bia', screenShare: true),
+      ]);
+      await settle();
+      expect(state().spotlightParticipantId, 'user_u2');
+      expect(state().autoSpotlightActive, isTrue);
+
+      // Toque no sharer em destaque: dispensa explícita → grid.
+      notifier.toggleSpotlight('user_u2');
+      expect(state().spotlightParticipantId, isNull);
+      expect(state().autoSpotlightActive, isFalse);
+
+      // Snapshot seguinte com o sharer AINDA compartilhando: não re-força.
+      rtc.pushParticipants([
+        _participant('user_u1', 'Ana'),
+        _participant('user_u2', 'Bia', screenShare: true),
+      ]);
+      await settle();
+
+      expect(state().spotlightParticipantId, isNull);
+      expect(state().autoSpotlightActive, isFalse,
+          reason: 'dispensa manual desativa o auto — sem loop visual');
+    });
+
+    test('reconexão: Reconnecting mantém connected; Reconnected reseta mídia',
+        () async {
+      repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
+      rtc.localId = 'user_u1';
+      final notifier = buildVoice();
+      await notifier.join();
+      await settle();
+
+      // Estado "sujo" antes da queda: mic/câmera/share ligados + spotlight.
+      await notifier.toggleMicrophone();
+      await settle();
+      await notifier.toggleCamera();
+      await settle();
+      await notifier.startScreenShare('src-1');
+      await settle();
+      notifier.toggleSpotlight('user_u2');
+
+      rtc.pushEvent(const ReconnectingEvent());
+      await settle();
+      expect(state().isReconnecting, isTrue);
+      expect(state().status, VoiceSessionStatus.connected,
+          reason: 'reconexão em andamento NÃO derruba para idle/error');
+
+      rtc.pushEvent(const ReconnectedEvent());
+      await settle();
+      expect(state().isReconnecting, isFalse);
+      expect(state().isMicrophoneEnabled, isFalse,
+          reason: 'sala nova: mic republicado mutado');
+      expect(state().isCameraEnabled, isFalse,
+          reason: 'sala nova: câmera local recomeça off');
+      expect(state().isScreenSharing, isFalse,
+          reason: 'sala nova: share local recomeça off');
+      expect(state().autoSpotlightActive, isFalse);
+      expect(state().savedSpotlightParticipantId, isNull);
+      expect(state().spotlightParticipantId, isNull);
+    });
+
+    test('DisconnectedEvent e leave resetam share/reconexão/auto-spotlight',
+        () async {
+      repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
+      rtc.localId = 'user_u1';
+      final notifier = buildVoice();
+      await notifier.join();
+      await settle();
+
+      await notifier.startScreenShare('src-1');
+      await settle();
+      notifier.toggleSpotlight('user_u2');
+      rtc.pushEvent(const ReconnectingEvent());
+      await settle();
+      expect(state().isReconnecting, isTrue);
+
+      // Queda final (não reconectou): idle com banner limpo e share resetado.
+      rtc.pushEvent(const DisconnectedEvent());
+      await settle();
+      expect(state().status, VoiceSessionStatus.idle);
+      expect(state().isReconnecting, isFalse);
+      expect(state().isScreenSharing, isFalse);
+      expect(state().autoSpotlightActive, isFalse);
+      expect(state().savedSpotlightParticipantId, isNull);
+
+      // Reconecta e sai: leave reseta igual.
+      await notifier.join();
+      await settle();
+      await notifier.startScreenShare('src-2');
+      await settle();
+      notifier.toggleSpotlight('user_u2');
+      await notifier.leave();
+      await settle();
+      expect(state().status, VoiceSessionStatus.idle);
+      expect(state().isScreenSharing, isFalse);
+      expect(state().isReconnecting, isFalse);
+      expect(state().autoSpotlightActive, isFalse);
+      expect(state().savedSpotlightParticipantId, isNull);
+    });
+
+    test('revalidação: sharer sem câmera mantém destaque; sem vídeo limpa',
+        () async {
+      rtc.localId = 'user_u1';
+      final notifier = buildVoice();
+
+      // Sharer entra compartilhando COM câmera (auto-spotlight ativo).
+      rtc.pushParticipants([
+        _participant('user_u1', 'Ana'),
+        _participant('user_u2', 'Bia', camera: true, screenShare: true),
+      ]);
+      await settle();
+      expect(state().spotlightParticipantId, 'user_u2');
+
+      // Desliga a câmera, segue compartilhando: destaque SE MANTÉM (a tela
+      // é o vídeo do sharer — critério ampliado da revalidação).
+      rtc.pushParticipants([
+        _participant('user_u1', 'Ana'),
+        _participant('user_u2', 'Bia', screenShare: true),
+      ]);
+      await settle();
+      expect(state().spotlightParticipantId, 'user_u2',
+          reason: 'sharer sem câmera ainda merece destaque (destaque de tela vale)');
+
+      // Share termina → restaura; um manual em quem NÃO tem câmera nem
+      // share continua sendo limpo (comportamento Fase 5 intacto).
+      rtc.pushParticipants([
+        _participant('user_u1', 'Ana'),
+        _participant('user_u2', 'Bia'),
+      ]);
+      await settle();
+      notifier.toggleSpotlight('user_u3');
+      expect(state().spotlightParticipantId, 'user_u3');
+      rtc.pushParticipants([
+        _participant('user_u1', 'Ana'),
+        _participant('user_u2', 'Bia'),
+        _participant('user_u3', 'Caio'),
+      ]);
+      await settle();
+      expect(state().spotlightParticipantId, isNull,
+          reason: 'sem câmera E sem share: destaque limpo (Fase 5 intacto)');
     });
   });
 }
