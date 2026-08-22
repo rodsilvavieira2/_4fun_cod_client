@@ -45,6 +45,17 @@ class FakeRtcService implements RtcService {
   List<RtcVideoDevice> cameraDevices = const [];
   RtcVideoTrackRef? cameraTrackRef;
 
+  // Contadores do contrato de screen share (Fase 6) — mesmo padrão do mic.
+  int startScreenShareCalls = 0;
+  int stopScreenShareCalls = 0;
+  final List<String> startScreenShareSources = [];
+  RtcVideoTrackRef? screenTrackRef;
+
+  // Flag de falha de share (Prompt 2) — mesmo padrão do failEnableCameraTimes:
+  // uma falha consumida não conta como chamada efetiva.
+  int failStartScreenShareTimes = 0;
+  Object startScreenShareError = Exception('share indisponível');
+
   // Flags de falha de câmera (Prompt 2) — mesmo padrão do failConnectTimes:
   // uma falha consumida não conta como chamada efetiva.
   int failEnableCameraTimes = 0;
@@ -119,6 +130,22 @@ class FakeRtcService implements RtcService {
   @override
   RtcVideoTrackRef? videoTrackOf(String participantId) => cameraTrackRef;
 
+  @override
+  Future<void> startScreenShare(String sourceId) async {
+    if (failStartScreenShareTimes > 0) {
+      failStartScreenShareTimes--;
+      throw startScreenShareError;
+    }
+    startScreenShareCalls++;
+    startScreenShareSources.add(sourceId);
+  }
+
+  @override
+  Future<void> stopScreenShare() async => stopScreenShareCalls++;
+
+  @override
+  RtcVideoTrackRef? screenTrackOf(String participantId) => screenTrackRef;
+
   void pushParticipants(List<RtcParticipant> list) =>
       participantsController.add(list);
 
@@ -161,6 +188,7 @@ RtcParticipant _participant(
   String name, {
   bool mic = true,
   bool camera = false,
+  bool screenShare = false,
   bool speaking = false,
 }) =>
     RtcParticipant(
@@ -168,6 +196,7 @@ RtcParticipant _participant(
       name: name,
       isMicrophoneEnabled: mic,
       isCameraEnabled: camera,
+      isScreenSharing: screenShare,
       isSpeaking: speaking,
     );
 
