@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/rtc/rtc_providers.dart';
 import '../../core/rtc/rtc_service.dart';
+import '../../core/rtc/screen_share_picker.dart';
 import 'voice_providers.dart';
 import 'voice_video_tile.dart';
 
@@ -48,6 +49,12 @@ class VoiceScreen extends ConsumerWidget {
       children: [
         _Header(channelName: channelName, status: state.status),
         const Divider(height: 1),
+        // Banner de reconexão automática: a sessão continua `connected` — o
+        // serviço está restabelecendo; o painel abaixo segue o ramo normal
+        // (participantes esvaziam e a lista mostra o estado transitório).
+        if (state.isReconnecting &&
+            state.status == VoiceSessionStatus.connected)
+          const _ReconnectingBanner(),
         Expanded(
           child: _ParticipantsPanel(
             state: state,
@@ -62,12 +69,32 @@ class VoiceScreen extends ConsumerWidget {
           onLeave: notifier.leave,
           onToggleMicrophone: notifier.toggleMicrophone,
           onToggleCamera: notifier.toggleCamera,
+          onToggleScreenShare: () => _toggleScreenShare(context, ref),
           onOpenSettings: () => _openCameraSettings(context, ref, arg),
         ),
         // Corrige o tom da barra inferior sobre o surface do tema.
         const SizedBox(height: 4),
       ],
     );
+  }
+
+  /// Fluxo do botão de compartilhar tela: ativo → encerra; inativo → abre o
+  /// [RtcScreenSharePicker] e só publica com fonte escolhida (cancelar não
+  /// faz NADA — nem stop nem start).
+  Future<void> _toggleScreenShare(
+    BuildContext context,
+    WidgetRef ref,
+  ) async {
+    final arg = (serverId: serverId, channelId: channelId);
+    final notifier = ref.read(voiceControllerProvider(arg).notifier);
+    final current = ref.read(voiceControllerProvider(arg));
+    if (current.isScreenSharing) {
+      await notifier.stopScreenShare();
+      return;
+    }
+    final sourceId = await RtcScreenSharePicker.show(context);
+    if (sourceId == null) return; // usuário cancelou o picker
+    await notifier.startScreenShare(sourceId);
   }
 
   /// Abre o sheet de settings de câmera; ao abrir, atualiza a lista de
@@ -123,6 +150,41 @@ class _Header extends StatelessWidget {
           Text(
             statusLabel,
             style: theme.textTheme.bodySmall?.copyWith(color: statusColor),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Banner de reconexão automática do serviço: aparece com o
+/// [ReconnectingEvent] e some no [ReconnectedEvent]. A sessão continua
+/// `connected` — nenhum ramo de erro/idle é acionado; o banner é o ÚNICO
+/// efeito visível durante a reconexão.
+class _ReconnectingBanner extends StatelessWidget {
+  const _ReconnectingBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      width: double.infinity,
+      color: theme.colorScheme.tertiaryContainer,
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            'Reconectando…',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onTertiaryContainer,
+            ),
           ),
         ],
       ),
@@ -187,11 +249,11 @@ class _ParticipantsPanel extends StatelessWidget {
           ),
         );
       case VoiceSessionStatus.connected:
-        // Com ≥1 câmera ativa o painel vira canal de MÍDIA (grid/spotlight);
-        // sem câmeras mantém a lista da Fase 4 intacta.
-        final hasActiveCamera =
-            state.participants.any((p) => p.isCameraEnabled);
-        if (!hasActiveCamera) {
+        // Com ≥1 câmera OU tela ativa o painel vira canal de MÍDIA
+        // (grid/spotlight); sem nenhuma mantém a lista da Fase 4 intacta.
+        final hasMedia =
+            state.participants.any((p) => p.isCameraEnabled || p.isScreenSharing);
+        if (!hasMedia) {
           return _ParticipantList(participants: state.participants);
         }
         if (state.spotlightParticipantId == null) {
@@ -232,12 +294,14 @@ class _VideoGrid extends StatelessWidget {
           itemCount: state.participants.length,
           itemBuilder: (context, index) {
             final participant = state.participants[index];
-            // Só tile COM câmera ativa vira spotlight (toque ignorado sem).
+            // Só tile COM vídeo (câmera ou tela) vira spotlight (toque
+            // ignorado sem).
             return VoiceVideoTile(
               arg: arg,
               participant: participant,
               role: VoiceVideoTileRole.grid,
-              onTap: participant.isCameraEnabled
+              onTap: participant.isCameraEnabled ||
+                      participant.isScreenSharing
                   ? () => notifier.toggleSpotlight(participant.id)
                   : null,
             );
@@ -268,7 +332,8 @@ class _SpotlightLayout extends StatelessWidget {
     // assim, se não houver destaque válido, cai no grid.
     RtcParticipant? spotlight;
     for (final p in state.participants) {
-      if (p.id == spotlightId && p.isCameraEnabled) {
+      if (p.id == spotlightId &&
+          (p.isCameraEnabled || p.isScreenSharing)) {
         spotlight = p;
         break;
       }
@@ -318,7 +383,7 @@ class _SpotlightLayout extends StatelessWidget {
                           arg: arg,
                           participant: p,
                           role: VoiceVideoTileRole.miniature,
-                          onTap: p.isCameraEnabled
+                          onTap: p.isCameraEnabled || p.isScreenSharing
                               ? () => notifier.toggleSpotlight(p.id)
                               : null,
                         ),
@@ -461,6 +526,7 @@ class _Controls extends StatelessWidget {
     required this.onLeave,
     required this.onToggleMicrophone,
     required this.onToggleCamera,
+    required this.onToggleScreenShare,
     required this.onOpenSettings,
   });
 
@@ -469,6 +535,7 @@ class _Controls extends StatelessWidget {
   final VoidCallback onLeave;
   final VoidCallback onToggleMicrophone;
   final VoidCallback onToggleCamera;
+  final VoidCallback onToggleScreenShare;
   final VoidCallback onOpenSettings;
 
   @override
@@ -525,6 +592,24 @@ class _Controls extends StatelessWidget {
               icon: Icon(
                 state.isCameraEnabled ? Icons.videocam : Icons.videocam_off,
                 color: state.isCameraEnabled
+                    ? theme.colorScheme.error
+                    : theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(width: 8),
+            // Compartilhar tela: vermelho (error) quando ativo — mesmo
+            // padrão visual da câmera; desabilitado durante a reconexão
+            // automática (o serviço está restabelecendo).
+            IconButton.filledTonal(
+              onPressed: !connected || state.isReconnecting
+                  ? null
+                  : onToggleScreenShare,
+              tooltip: state.isScreenSharing
+                  ? 'Parar compartilhamento'
+                  : 'Compartilhar tela',
+              icon: Icon(
+                Icons.present_to_all,
+                color: state.isScreenSharing
                     ? theme.colorScheme.error
                     : theme.colorScheme.onSurfaceVariant,
               ),

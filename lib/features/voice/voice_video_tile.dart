@@ -11,17 +11,21 @@ import 'voice_providers.dart';
 /// grid → medium, miniatura → low.
 enum VoiceVideoTileRole { spotlight, grid, miniature }
 
-/// Tile de vídeo de um participante (Fase 5).
+/// Tile de vídeo de um participante (Fase 5 + Fase 6).
 ///
-/// - Câmera ativa com [RtcService.videoTrackOf] não-nulo → [RtcVideoView]
-///   (único widget de renderização do projeto).
-/// - Sem câmera → placeholder PRÓPRIO da feature (avatar + nome) — nunca o
-///   placeholder interno do [RtcVideoView] ([SizedBox.shrink]).
+/// - Fonte do vídeo (Fase 6): no papel [VoiceVideoTileRole.spotlight], a
+///   TELA tem prioridade sobre a câmera ([RtcService.screenTrackOf]); em
+///   grid/miniatura a câmera vem primeiro ([RtcService.videoTrackOf]) e a
+///   tela cobre só quem não tem câmera. Sem nenhuma → placeholder PRÓPRIO
+///   da feature (avatar + nome) — nunca o placeholder interno do
+///   [RtcVideoView] ([SizedBox.shrink]).
 /// - Qualidade: ao assumir ([initState]) ou mudar de papel
 ///   ([didUpdateWidget]), agenda [VoiceController.applyTileQuality] com a
 ///   qualidade do papel — o controller dedupe e ignora o participante local.
 ///   Tile desmontado (invisível) não chama nada: OFF por omissão (não existe
 ///   [RtcVideoQuality.off] no contrato — o adaptive stream corta a recepção).
+///   Para o sharer SEM câmera o `setQuality` do serviço é no-op silencioso
+///   (qualidade só existe para a publicação de câmera — fato do contrato).
 class VoiceVideoTile extends ConsumerStatefulWidget {
   const VoiceVideoTile({
     super.key,
@@ -87,11 +91,21 @@ class _VoiceVideoTileState extends ConsumerState<VoiceVideoTile> {
     final rtc = ref.read(rtcServiceProvider);
     final participant = widget.participant;
     final isLocal = participant.id == rtc.localParticipantId;
-    // Padrão do contrato (fato #8): snapshot decide o flag, o getter síncrono
-    // devolve a referência renderizável (null com câmera mutada/ausente).
-    final trackRef = participant.isCameraEnabled
-        ? rtc.videoTrackOf(participant.id)
-        : null;
+    // Fonte do vídeo (PRD §25): no destaque a TELA tem prioridade sobre a
+    // câmera; grid/miniatura preferem a câmera e caem para a tela só sem
+    // ela. Getter síncrono (null com publicação mutada/ausente) — reavaliado
+    // no build, como a câmera.
+    final RtcVideoTrackRef? trackRef;
+    if (widget.role == VoiceVideoTileRole.spotlight &&
+        participant.isScreenSharing) {
+      trackRef = rtc.screenTrackOf(participant.id);
+    } else if (participant.isCameraEnabled) {
+      trackRef = rtc.videoTrackOf(participant.id);
+    } else if (participant.isScreenSharing) {
+      trackRef = rtc.screenTrackOf(participant.id);
+    } else {
+      trackRef = null;
+    }
     final hasVideo = trackRef != null;
     final isMiniature = widget.role == VoiceVideoTileRole.miniature;
 
@@ -183,6 +197,11 @@ class _TileOverlay extends StatelessWidget {
                 ),
               ),
             ],
+            // Badge de share: ao lado do ícone de mic (antes dele).
+            if (participant.isScreenSharing) ...[
+              const SizedBox(width: 6),
+              const Icon(Icons.present_to_all, size: 14, color: Colors.white),
+            ],
             const SizedBox(width: 6),
             Icon(
               participant.isMicrophoneEnabled ? Icons.mic : Icons.mic_off,
@@ -218,10 +237,23 @@ class _MiniatureOverlay extends StatelessWidget {
             colors: [Colors.transparent, Colors.black45],
           ),
         ),
-        child: Text(
-          participant.name,
-          overflow: TextOverflow.ellipsis,
-          style: theme.textTheme.labelSmall?.copyWith(color: Colors.white),
+        child: Row(
+          children: [
+            Flexible(
+              child: Text(
+                participant.name,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: Colors.white,
+                ),
+              ),
+            ),
+            // Badge de share: ao lado do nome na miniatura.
+            if (participant.isScreenSharing) ...[
+              const SizedBox(width: 6),
+              const Icon(Icons.present_to_all, size: 14, color: Colors.white),
+            ],
+          ],
         ),
       ),
     );
