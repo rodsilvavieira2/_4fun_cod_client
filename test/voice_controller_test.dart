@@ -962,6 +962,20 @@ void main() {
       expect(state().spotlightParticipantId, 'user_u3',
           reason: 'seleção manual sobrevive ao snapshot');
       expect(state().autoSpotlightActive, isFalse);
+
+      // Share TERMINA depois da dispensa manual: a seleção manual DELE
+      // permanece — o shareEnded não pode restaurar um saved já limpo
+      // (converteria o spotlight manual em grid).
+      rtc.pushParticipants([
+        _participant('user_u1', 'Ana'),
+        _participant('user_u2', 'Bia'),
+        _participant('user_u3', 'Caio', camera: true),
+      ]);
+      await settle();
+      expect(state().spotlightParticipantId, 'user_u3',
+          reason: 'fim do share após dispensa manual preserva a seleção');
+      expect(state().autoSpotlightActive, isFalse);
+      expect(state().savedSpotlightParticipantId, isNull);
     });
 
     test('reconexão: Reconnecting mantém connected; Reconnected reseta mídia',

@@ -522,8 +522,11 @@ class VoiceController
         autoSpotlightActive: true,
         spotlightParticipantId: sharerIds.first,
       );
-    } else if (shareEnded) {
-      // Ninguém mais compartilha: restaura o estado anterior.
+    } else if (shareEnded && next.autoSpotlightActive) {
+      // Ninguém mais compartilha E o auto ainda estava no controle: restaura
+      // o estado anterior. Se o usuário dispensou o auto manualmente
+      // (autoSpotlightActive false, saved limpo), a seleção manual DELE
+      // permanece — restaurar aqui converteria o spotlight manual em grid.
       next = next.copyWith(
         spotlightParticipantId: next.savedSpotlightParticipantId,
         autoSpotlightActive: false,
