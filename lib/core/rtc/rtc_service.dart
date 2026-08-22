@@ -15,13 +15,15 @@ typedef RtcTokenGenerator = Future<String> Function();
 ///
 /// Igualdade por [id] (identity do LiveKit, `user_<userId>`): duas
 /// instâncias com a mesma identity representam a mesma pessoa, mesmo que
-/// `name`/`isMicrophoneEnabled`/`isCameraEnabled`/`isSpeaking` tenham mudado.
+/// `name`/`isMicrophoneEnabled`/`isCameraEnabled`/`isScreenSharing`/
+/// `isSpeaking` tenham mudado.
 class RtcParticipant {
   const RtcParticipant({
     required this.id,
     required this.name,
     required this.isMicrophoneEnabled,
     required this.isCameraEnabled,
+    required this.isScreenSharing,
     required this.isSpeaking,
   });
 
@@ -40,6 +42,11 @@ class RtcParticipant {
   /// [RtcService.videoTrackOf] e a passa ao `RtcVideoView`.
   final bool isCameraEnabled;
 
+  /// Se está publicando a tela — track de screenShareVideo publicada e
+  /// não-mutada (Fase 6). Espelho de [isCameraEnabled]; a imagem em si é
+  /// obtida via [RtcService.screenTrackOf].
+  final bool isScreenSharing;
+
   /// Se o participante está falando agora (ActiveSpeakersChangedEvent).
   final bool isSpeaking;
 
@@ -47,6 +54,7 @@ class RtcParticipant {
     String? name,
     bool? isMicrophoneEnabled,
     bool? isCameraEnabled,
+    bool? isScreenSharing,
     bool? isSpeaking,
   }) {
     return RtcParticipant(
@@ -54,6 +62,7 @@ class RtcParticipant {
       name: name ?? this.name,
       isMicrophoneEnabled: isMicrophoneEnabled ?? this.isMicrophoneEnabled,
       isCameraEnabled: isCameraEnabled ?? this.isCameraEnabled,
+      isScreenSharing: isScreenSharing ?? this.isScreenSharing,
       isSpeaking: isSpeaking ?? this.isSpeaking,
     );
   }
@@ -109,6 +118,20 @@ class CameraEnabledChangedEvent extends RtcEvent {
   final bool isCameraEnabled;
 }
 
+/// A tela de um participante começou/parou de ser compartilhada
+/// (publicação/despublicação da track de screenShareVideo — Fase 6).
+/// Espelho do [CameraEnabledChangedEvent]; a imagem em si é obtida via
+/// [RtcService.screenTrackOf].
+class ScreenShareEnabledChangedEvent extends RtcEvent {
+  const ScreenShareEnabledChangedEvent({
+    required this.participantId,
+    required this.isScreenSharing,
+  });
+
+  final String participantId;
+  final bool isScreenSharing;
+}
+
 /// Um participante começou/parou de falar.
 class SpeakingChangedEvent extends RtcEvent {
   const SpeakingChangedEvent({
@@ -127,6 +150,20 @@ class SpeakingChangedEvent extends RtcEvent {
 /// (voltar para `idle`) e permitir uma nova entrada.
 class DisconnectedEvent extends RtcEvent {
   const DisconnectedEvent();
+}
+
+/// A RECONEXÃO AUTOMÁTICA do serviço começou (a sala caiu por motivo não
+/// iniciado pelo app; o serviço vai tentar restabelecer com token fresco).
+/// A UI mostra "Reconectando…" e o controller NÃO deve cair para idle.
+class ReconnectingEvent extends RtcEvent {
+  const ReconnectingEvent();
+}
+
+/// A RECONEXÃO AUTOMÁTICA concluiu (nova sala criada e conectada). O
+/// serviço republicou o mic MUTADO (padrão do connect); câmera e share
+/// locais recomeçam DESLIGADOS (risco V1 documentado).
+class ReconnectedEvent extends RtcEvent {
+  const ReconnectedEvent();
 }
 
 /// Qualidade de recepção de vídeo remoto (Fase 5).
@@ -158,9 +195,9 @@ abstract class RtcVideoTrackRef {
 
 /// Abstração de voz em tempo real (Fase 4 — LiveKit por baixo).
 ///
-/// Escopo voz apenas: câmera (Fase 5) e screen share (Fase 6) entram como
-/// métodos novos aqui quando forem implementados. A UI conversa só com esta
-/// interface; a implementação concreta fica em `livekit_rtc_service.dart`.
+/// Escopo voz: mic (Fase 4), câmera (Fase 5) e screen share (Fase 6). A UI
+/// conversa só com esta interface; a implementação concreta fica em
+/// `livekit_rtc_service.dart`.
 abstract class RtcService {
   /// Conecta a uma sala de voz.
   ///
@@ -194,6 +231,25 @@ abstract class RtcService {
   /// Desabilita a câmera local (muta a publicação — ela PERMANECE
   /// publicada, como o mic).
   Future<void> disableCamera();
+
+  /// Publica a tela local (track de screenShareVideo) capturando a fonte
+  /// [sourceId] (id do DesktopCapturerSource obtido via
+  /// `RtcScreenSharePicker`). No-op quando o share já está ativo. A câmera
+  /// NÃO é afetada — share e câmera coexistem.
+  ///
+  /// Erros de captura propagam para o controller decidir a mensagem — falha
+  /// de share NUNCA derruba a sessão.
+  Future<void> startScreenShare(String sourceId);
+
+  /// Encerra o compartilhamento de tela local. DIFERENTE da câmera, DESPUBLICA
+  /// a track (o SDK remove a publicação em setScreenShareEnabled(false)).
+  Future<void> stopScreenShare();
+
+  /// Referência renderizável da TELA de [participantId], ou null quando não
+  /// está compartilhando (track inexistente ou publicação mutada). Nulo
+  /// também quando desconectado/participante desconhecido. Reusa
+  /// [RtcVideoTrackRef]/`RtcVideoView` — sem tipo novo de track.
+  RtcVideoTrackRef? screenTrackOf(String participantId);
 
   /// Define a qualidade de recepção do vídeo da câmera remota de
   /// [participantId] (low/medium/high). Sem efeito quando o participante é
