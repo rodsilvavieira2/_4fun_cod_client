@@ -20,8 +20,9 @@ const Object _unset = Object();
 
 /// Estado derivado do [RtcService] para o canal selecionado: status da
 /// sessão, participantes ordenados (local primeiro, depois por nome), estado
-/// do microfone e da câmera LOCAIS (para a barra de controles), o tile em
-/// destaque (spotlight) e o cache de câmeras do sheet de settings.
+/// do microfone, câmera e compartilhamento de tela LOCAIS (para a barra de
+/// controles), o tile em destaque (spotlight), o spotlight automático do
+/// share, o banner de reconexão e o cache de câmeras do sheet de settings.
 class VoiceState {
   const VoiceState({
     this.status = VoiceSessionStatus.idle,
@@ -29,6 +30,10 @@ class VoiceState {
     this.participants = const [],
     this.isMicrophoneEnabled = false,
     this.isCameraEnabled = false,
+    this.isScreenSharing = false,
+    this.isReconnecting = false,
+    this.autoSpotlightActive = false,
+    this.savedSpotlightParticipantId,
     this.spotlightParticipantId,
     this.cameraDevices = const [],
     this.selectedCameraId,
@@ -51,8 +56,28 @@ class VoiceState {
   /// [CameraEnabledChangedEvent] do participante local reconcilia).
   final bool isCameraEnabled;
 
+  /// Se a tela LOCAL está sendo compartilhada (espelho do botão de share; o
+  /// [ScreenShareEnabledChangedEvent] do participante local reconcilia).
+  final bool isScreenSharing;
+
+  /// Banner \"Reconectando…\": reconexão automática do serviço em andamento
+  /// ([ReconnectingEvent] → [ReconnectedEvent]). A sessão continua
+  /// `connected` — o banner é o ÚNICO efeito visível durante a reconexão.
+  final bool isReconnecting;
+
+  /// Destaque automático do share em vigor (PRD §25): o 1º sharer vira
+  /// spotlight e o estado anterior fica salvo em
+  /// [savedSpotlightParticipantId]. Desligado ao terminar o share ou por
+  /// dispensa manual do usuário (toque no sharer em destaque).
+  final bool autoSpotlightActive;
+
+  /// Spotlight ANTES do share automático começar (id manual ou null = grid)
+  /// — restaurado quando ninguém mais compartilha. Limpável (sentinel).
+  final String? savedSpotlightParticipantId;
+
   /// Id do participante em destaque (spotlight); null = grid. O snapshot de
-  /// participantes revalida: destaque de tile sem câmera/saído é limpo.
+  /// participantes revalida: destaque de tile sem câmera nem tela/saído é
+  /// limpo.
   final String? spotlightParticipantId;
 
   /// Cache da lista de câmeras do dispositivo (sheet de settings).
@@ -68,6 +93,10 @@ class VoiceState {
     List<RtcParticipant>? participants,
     bool? isMicrophoneEnabled,
     bool? isCameraEnabled,
+    bool? isScreenSharing,
+    bool? isReconnecting,
+    bool? autoSpotlightActive,
+    Object? savedSpotlightParticipantId = _unset,
     Object? spotlightParticipantId = _unset,
     List<RtcVideoDevice>? cameraDevices,
     Object? selectedCameraId = _unset,
@@ -83,6 +112,15 @@ class VoiceState {
       participants: participants ?? this.participants,
       isMicrophoneEnabled: isMicrophoneEnabled ?? this.isMicrophoneEnabled,
       isCameraEnabled: isCameraEnabled ?? this.isCameraEnabled,
+      isScreenSharing: isScreenSharing ?? this.isScreenSharing,
+      isReconnecting: isReconnecting ?? this.isReconnecting,
+      autoSpotlightActive: autoSpotlightActive ?? this.autoSpotlightActive,
+      // Sentinel: savedSpotlightParticipantId é LIMPÁVEL — restaurar para
+      // grid (null) deve funcionar; o padrão `??` manteria o id salvo.
+      savedSpotlightParticipantId:
+          identical(savedSpotlightParticipantId, _unset)
+              ? this.savedSpotlightParticipantId
+              : savedSpotlightParticipantId as String?,
       spotlightParticipantId: identical(spotlightParticipantId, _unset)
           ? this.spotlightParticipantId
           : spotlightParticipantId as String?,
@@ -120,6 +158,11 @@ class VoiceController
   /// qualidade ao assumir/mudar de papel; o mapa evita chamadas repetidas
   /// de [RtcService.setQuality] para o mesmo par (id, qualidade).
   final Map<String, RtcVideoQuality> _lastQuality = {};
+
+  /// Ids que compartilhavam tela no snapshot ANTERIOR — rastreio do
+  /// spotlight automático (PRD §25), por SNAPSHOT (robusto a ordem de
+  /// eventos: evento e snapshot chegam separados). Não vai pro estado.
+  final Set<String> _lastSharers = {};
 
   @override
   VoiceState build(({String serverId, String channelId}) arg) {
@@ -170,14 +213,20 @@ class VoiceController
   Future<void> leave() async {
     await ref.read(rtcServiceProvider).disconnect();
     if (_disposed) return;
-    // A sala morreu: a câmera local parou junto e o destaque não faz mais
-    // sentido. `_lastQuality` também é resetado (a sala acabou).
+    // A sala morreu: câmera/share pararam junto e o destaque não faz mais
+    // sentido. `_lastQuality` e o rastreio de sharers também são resetados
+    // (a sala acabou).
     _lastQuality.clear();
+    _lastSharers.clear();
     state = state.copyWith(
       status: VoiceSessionStatus.idle,
       participants: const [],
       isMicrophoneEnabled: false,
       isCameraEnabled: false,
+      isScreenSharing: false,
+      isReconnecting: false,
+      autoSpotlightActive: false,
+      savedSpotlightParticipantId: null,
       spotlightParticipantId: null,
       errorMessage: null,
     );
@@ -245,10 +294,77 @@ class VoiceController
     );
   }
 
+  /// Publica a tela local (botão de compartilhar; [sourceId] vem do
+  /// RtcScreenSharePicker de core/rtc). Espelho do [toggleCamera]: sem
+  /// otimismo antes do await, erro de captura NUNCA derruba a sessão e o
+  /// [ScreenShareEnabledChangedEvent] local reconcilia.
+  Future<void> startScreenShare(String sourceId) async {
+    final current = state;
+    if (current.status != VoiceSessionStatus.connected) return;
+    if (current.isScreenSharing) return; // já compartilhando (o serviço também no-op)
+    final rtc = ref.read(rtcServiceProvider);
+    try {
+      await rtc.startScreenShare(sourceId);
+    } catch (_) {
+      // Falha de captura (TrackCreateException/DesktopCapturerSource):
+      // volta ao estado anterior (sem otimismo) e avisa — a sessão fica
+      // intacta (nenhum disconnect).
+      if (_disposed) return;
+      state = state.copyWith(
+        status: VoiceSessionStatus.connected,
+        isScreenSharing: current.isScreenSharing,
+        errorMessage: 'Não foi possível iniciar o compartilhamento.',
+      );
+      return;
+    }
+    if (_disposed) return;
+    state = state.copyWith(
+      isScreenSharing: true,
+      errorMessage: null,
+    );
+  }
+
+  /// Encerra o compartilhamento de tela local (botão ativo → parar).
+  /// Espelho do [startScreenShare]: sem otimismo, falha não derruba a
+  /// sessão; o [ScreenShareEnabledChangedEvent] local reconcilia.
+  Future<void> stopScreenShare() async {
+    final current = state;
+    if (current.status != VoiceSessionStatus.connected) return;
+    if (!current.isScreenSharing) return;
+    final rtc = ref.read(rtcServiceProvider);
+    try {
+      await rtc.stopScreenShare();
+    } catch (_) {
+      if (_disposed) return;
+      state = state.copyWith(
+        status: VoiceSessionStatus.connected,
+        isScreenSharing: current.isScreenSharing,
+        errorMessage: 'Não foi possível encerrar o compartilhamento.',
+      );
+      return;
+    }
+    if (_disposed) return;
+    state = state.copyWith(
+      isScreenSharing: false,
+      errorMessage: null,
+    );
+  }
+
   /// Alterna o destaque (spotlight) de um participante: toque repetido no
   /// mesmo tile volta ao grid. O snapshot de participantes revalida —
   /// destaque de quem saiu ou desligou a câmera é limpo em [_applyParticipants].
   void toggleSpotlight(String participantId) {
+    if (state.autoSpotlightActive &&
+        state.spotlightParticipantId == participantId) {
+      // Dispensa explícita do destaque automático do share: volta ao grid e
+      // DESATIVA o auto — senão o snapshot seguinte re-forçaria o sharer.
+      state = state.copyWith(
+        spotlightParticipantId: null,
+        autoSpotlightActive: false,
+        savedSpotlightParticipantId: null,
+      );
+      return;
+    }
     if (state.spotlightParticipantId == participantId) {
       state = state.copyWith(spotlightParticipantId: null);
     } else {
@@ -380,13 +496,53 @@ class VoiceController
     final localId = ref.read(rtcServiceProvider).localParticipantId;
     final sorted = _sort(list, localId);
 
-    // Revalida o destaque: tile sem vídeo não merece spotlight — quem saiu
-    // da sala ou desligou a câmera volta o painel para o grid. Também limpa
-    // do dedupe de qualidade os ids que saíram (tile desmontado = OFF).
+    // ── Spotlight automático do screen share (PRD §25) ────────────────────
+    // Lógica por SNAPSHOT (robusto a ordem de eventos — evento e snapshot
+    // chegam separados): o 1º sharer vira destaque com o estado anterior
+    // salvo; o fim do share restaura; um 2º sharer assume o destaque.
+    final sharerIds = {
+      for (final p in sorted)
+        if (p.isScreenSharing) p.id,
+    };
+    final firstShare = _lastSharers.isEmpty && sharerIds.isNotEmpty; // 0 → ≥1
+    final shareEnded = _lastSharers.isNotEmpty && sharerIds.isEmpty; // ≥1 → 0
+    _lastSharers
+      ..clear()
+      ..addAll(sharerIds);
+
     var next = state.copyWith(participants: sorted);
-    final spotlightId = state.spotlightParticipantId;
+
+    if (firstShare) {
+      // Salva o spotlight atual (id manual ou null = grid) para restaurar.
+      next = next.copyWith(
+        savedSpotlightParticipantId: next.spotlightParticipantId,
+        autoSpotlightActive: true,
+        spotlightParticipantId: sharerIds.first,
+      );
+    } else if (shareEnded) {
+      // Ninguém mais compartilha: restaura o estado anterior.
+      next = next.copyWith(
+        spotlightParticipantId: next.savedSpotlightParticipantId,
+        autoSpotlightActive: false,
+        savedSpotlightParticipantId: null,
+      );
+    } else if (next.autoSpotlightActive &&
+        sharerIds.isNotEmpty &&
+        !sharerIds.contains(next.spotlightParticipantId)) {
+      // Outro sharer assumiu (2º share, troca de sharer): o destaque segue.
+      next = next.copyWith(spotlightParticipantId: sharerIds.first);
+    }
+
+    // Revalida o destaque: tile sem vídeo não merece spotlight — quem saiu
+    // da sala ou desligou a câmera (E não está compartilhando tela) volta o
+    // painel para o grid. Sharer SEM câmera continua merecendo destaque (a
+    // tela dele é o vídeo — critério ampliado). Também limpa do dedupe de
+    // qualidade os ids que saíram (tile desmontado = OFF).
+    final spotlightId = next.spotlightParticipantId;
     if (spotlightId != null &&
-        !sorted.any((p) => p.id == spotlightId && p.isCameraEnabled)) {
+        !sorted.any((p) =>
+            p.id == spotlightId &&
+            (p.isCameraEnabled || p.isScreenSharing))) {
       next = next.copyWith(spotlightParticipantId: null);
     }
     final ids = {for (final p in sorted) p.id};
@@ -399,14 +555,19 @@ class VoiceController
     switch (event) {
       case DisconnectedEvent():
         // Sala caiu sozinha (servidor/rede): o serviço já limpou o estado;
-        // volta para idle para permitir nova entrada. Câmera local parou
-        // junto e o destaque não faz mais sentido.
+        // volta para idle para permitir nova entrada. Câmera/share locais
+        // pararam junto e o destaque não faz mais sentido.
         _lastQuality.clear();
+        _lastSharers.clear();
         state = state.copyWith(
           status: VoiceSessionStatus.idle,
           participants: const [],
           isMicrophoneEnabled: false,
           isCameraEnabled: false,
+          isScreenSharing: false,
+          isReconnecting: false,
+          autoSpotlightActive: false,
+          savedSpotlightParticipantId: null,
           spotlightParticipantId: null,
           errorMessage: null,
         );
@@ -430,13 +591,39 @@ class VoiceController
             state.isCameraEnabled != isCameraEnabled) {
           state = state.copyWith(isCameraEnabled: isCameraEnabled);
         }
+      case ScreenShareEnabledChangedEvent(
+          :final participantId,
+          :final isScreenSharing,
+        ):
+        // Espelho exato do mic/câmera: só o evento do participante LOCAL
+        // toca o botão de share; remotos aparecem via snapshot.
+        final localId = ref.read(rtcServiceProvider).localParticipantId;
+        if (participantId == localId &&
+            state.isScreenSharing != isScreenSharing) {
+          state = state.copyWith(isScreenSharing: isScreenSharing);
+        }
+      case ReconnectingEvent():
+        // Só o banner: a sessão continua connected — o serviço está tentando
+        // restabelecer; NADA aqui pode derrubar para idle/error.
+        state = state.copyWith(isReconnecting: true);
+      case ReconnectedEvent():
+        // Sala NOVA: o serviço republicou o mic MUTADO (padrão do connect);
+        // câmera/share locais recomeçam off (risco V1 documentado). Reset
+        // também o rastreio de sharers do auto-spotlight.
+        _lastSharers.clear();
+        state = state.copyWith(
+          isReconnecting: false,
+          isMicrophoneEnabled: false,
+          isCameraEnabled: false,
+          isScreenSharing: false,
+          autoSpotlightActive: false,
+          savedSpotlightParticipantId: null,
+          spotlightParticipantId: null,
+        );
       case ParticipantJoinedEvent() ||
           ParticipantLeftEvent() ||
-          SpeakingChangedEvent() ||
-          ScreenShareEnabledChangedEvent() ||
-          ReconnectingEvent() ||
-          ReconnectedEvent():
-        break; // Fase 6 (Prompt 2) trata share/reconexão; aqui só mantém o switch exaustivo.
+          SpeakingChangedEvent():
+        break; // Sem estado derivado: o snapshot de participants cobre.
     }
   }
 
