@@ -45,6 +45,13 @@ class FakeRtcService implements RtcService {
   List<RtcVideoDevice> cameraDevices = const [];
   RtcVideoTrackRef? cameraTrackRef;
 
+  // Flags de falha de câmera (Prompt 2) — mesmo padrão do failConnectTimes:
+  // uma falha consumida não conta como chamada efetiva.
+  int failEnableCameraTimes = 0;
+  Object enableCameraError = Exception('câmera indisponível');
+  bool failListCameraDevices = false;
+  bool failSwitchCamera = false;
+
   RtcTokenGenerator? lastTokenGenerator;
 
   @override
@@ -77,7 +84,13 @@ class FakeRtcService implements RtcService {
   Future<void> disableMicrophone() async => disableMicCalls++;
 
   @override
-  Future<void> enableCamera() async => enableCameraCalls++;
+  Future<void> enableCamera() async {
+    if (failEnableCameraTimes > 0) {
+      failEnableCameraTimes--;
+      throw enableCameraError;
+    }
+    enableCameraCalls++;
+  }
 
   @override
   Future<void> disableCamera() async => disableCameraCalls++;
@@ -93,12 +106,15 @@ class FakeRtcService implements RtcService {
   @override
   Future<List<RtcVideoDevice>> listCameraDevices() async {
     listCameraDevicesCalls++;
+    if (failListCameraDevices) throw Exception('enumeração falhou');
     return cameraDevices;
   }
 
   @override
-  Future<void> switchCamera(String deviceId) async =>
-      switchCameraCalls.add(deviceId);
+  Future<void> switchCamera(String deviceId) async {
+    if (failSwitchCamera) throw Exception('troca de câmera falhou');
+    switchCameraCalls.add(deviceId);
+  }
 
   @override
   RtcVideoTrackRef? videoTrackOf(String participantId) => cameraTrackRef;
@@ -399,6 +415,228 @@ void main() {
       await settle();
 
       expect(state().isMicrophoneEnabled, isFalse);
+    });
+
+    // ── Fase 5 (Prompt 2): câmera, spotlight, devices e qualidade ──────────
+
+    test('toggleCamera conectado chama enable/disable e flipa o estado',
+        () async {
+      repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
+      final notifier = buildVoice();
+      await notifier.join();
+      await settle();
+      expect(state().isCameraEnabled, isFalse,
+          reason: 'câmera começa OFF e nunca é publicada no connect');
+
+      await notifier.toggleCamera();
+      await settle();
+      expect(rtc.enableCameraCalls, 1);
+      expect(state().isCameraEnabled, isTrue);
+
+      await notifier.toggleCamera();
+      await settle();
+      expect(rtc.disableCameraCalls, 1);
+      expect(state().isCameraEnabled, isFalse);
+    });
+
+    test('toggleCamera fora da sessão é ignorado', () async {
+      final notifier = buildVoice();
+
+      await notifier.toggleCamera();
+      await settle();
+
+      expect(rtc.enableCameraCalls, 0);
+      expect(rtc.disableCameraCalls, 0);
+      expect(state().isCameraEnabled, isFalse);
+    });
+
+    test('falha de enableCamera (permissão) não derruba a sessão', () async {
+      repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
+      final notifier = buildVoice();
+      await notifier.join();
+      await settle();
+
+      rtc.failEnableCameraTimes = 1;
+      await notifier.toggleCamera();
+      await settle();
+
+      expect(state().status, VoiceSessionStatus.connected);
+      expect(state().isCameraEnabled, isFalse,
+          reason: 'sem otimismo: volta ao estado anterior');
+      expect(state().errorMessage, 'Não foi possível alternar a câmera.');
+      expect(rtc.disconnectCalls, 0,
+          reason: 'erro de câmera nunca desconecta a sala');
+    });
+
+    test('CameraEnabledChangedEvent do local reconcilia; de remoto não toca',
+        () async {
+      repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
+      rtc.localId = 'user_u1';
+      final notifier = buildVoice();
+      await notifier.join();
+      await settle();
+      expect(state().isCameraEnabled, isFalse);
+
+      rtc.pushEvent(const CameraEnabledChangedEvent(
+        participantId: 'user_u1',
+        isCameraEnabled: true,
+      ));
+      await settle();
+      expect(state().isCameraEnabled, isTrue);
+
+      rtc.pushEvent(const CameraEnabledChangedEvent(
+        participantId: 'user_u2',
+        isCameraEnabled: false,
+      ));
+      await settle();
+      expect(state().isCameraEnabled, isTrue,
+          reason: 'evento de remoto não toca o botão local');
+    });
+
+    test('refreshCameraDevices preenche a lista; falha mantém a atual',
+        () async {
+      repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
+      final notifier = buildVoice();
+      await notifier.join();
+      await settle();
+
+      rtc.cameraDevices = const [
+        RtcVideoDevice(id: 'dev-1', label: 'Webcam integrada'),
+        RtcVideoDevice(id: 'dev-2', label: ''),
+      ];
+      await notifier.refreshCameraDevices();
+      await settle();
+      expect(rtc.listCameraDevicesCalls, 1);
+      expect(state().cameraDevices.length, 2);
+
+      rtc.failListCameraDevices = true;
+      await notifier.refreshCameraDevices();
+      await settle();
+      expect(rtc.listCameraDevicesCalls, 2);
+      expect(state().cameraDevices.length, 2,
+          reason: 'falha de enumeração mantém a lista anterior');
+
+      // Seleção que saiu da lista nova é limpa no próximo refresh.
+      await notifier.selectCamera('dev-1');
+      await settle();
+      expect(state().selectedCameraId, 'dev-1');
+      rtc.failListCameraDevices = false;
+      rtc.cameraDevices = const [RtcVideoDevice(id: 'dev-3', label: 'Outra')];
+      await notifier.refreshCameraDevices();
+      await settle();
+      expect(state().selectedCameraId, isNull,
+          reason: 'deviceId que saiu da lista é limpo');
+    });
+
+    test('selectCamera troca ao vivo só com a câmera ligada', () async {
+      repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
+      final notifier = buildVoice();
+      await notifier.join();
+      await settle();
+
+      // Câmera desligada: apenas registra a seleção (o serviço não persiste
+      // deviceId pendente — o próximo enableCamera usa o device default).
+      await notifier.selectCamera('dev-1');
+      await settle();
+      expect(state().selectedCameraId, 'dev-1');
+      expect(rtc.switchCameraCalls, isEmpty);
+
+      // Câmera ligada: aplica ao vivo via switchCamera.
+      await notifier.toggleCamera();
+      await settle();
+      await notifier.selectCamera('dev-2');
+      await settle();
+      expect(state().selectedCameraId, 'dev-2');
+      expect(rtc.switchCameraCalls, ['dev-2']);
+
+      // Falha de troca: mensagem de erro, sessão intacta.
+      rtc.failSwitchCamera = true;
+      await notifier.selectCamera('dev-3');
+      await settle();
+      expect(state().status, VoiceSessionStatus.connected);
+      expect(state().errorMessage, 'Não foi possível trocar a câmera.');
+      expect(rtc.disconnectCalls, 0);
+    });
+
+    test('applyTileQuality: remoto com setQuality, local ignorado, dedupe',
+        () async {
+      rtc.localId = 'user_u1';
+      final notifier = buildVoice();
+
+      await notifier.applyTileQuality('user_u2', RtcVideoQuality.medium);
+      await settle();
+      await notifier.applyTileQuality('user_u2', RtcVideoQuality.medium);
+      await settle();
+      expect(rtc.setQualityCalls, [
+        (participantId: 'user_u2', quality: RtcVideoQuality.medium),
+      ], reason: 'mesma qualidade 2x → 1 chamada (dedupe)');
+
+      await notifier.applyTileQuality('user_u2', RtcVideoQuality.high);
+      await settle();
+      expect(rtc.setQualityCalls.length, 2);
+
+      await notifier.applyTileQuality('user_u1', RtcVideoQuality.high);
+      await settle();
+      expect(rtc.setQualityCalls.length, 2,
+          reason: 'qualidade local é da publicação — nunca setQuality');
+    });
+
+    test('toggleSpotlight seta, repete limpa; snapshot órfão limpa sozinho',
+        () async {
+      final notifier = buildVoice();
+
+      notifier.toggleSpotlight('user_u2');
+      expect(state().spotlightParticipantId, 'user_u2');
+
+      notifier.toggleSpotlight('user_u2');
+      expect(state().spotlightParticipantId, isNull,
+          reason: 'toque repetido no destaque volta ao grid');
+
+      notifier.toggleSpotlight('user_u2');
+      expect(state().spotlightParticipantId, 'user_u2');
+
+      // Câmera desligou → destaque de tile sem vídeo não faz sentido.
+      rtc.pushParticipants([_participant('user_u2', 'Bia', camera: false)]);
+      await settle();
+      expect(state().spotlightParticipantId, isNull);
+
+      // Saiu da sala → limpo também.
+      notifier.toggleSpotlight('user_u2');
+      expect(state().spotlightParticipantId, 'user_u2');
+      rtc.pushParticipants([_participant('user_u3', 'Caio', camera: true)]);
+      await settle();
+      expect(state().spotlightParticipantId, isNull);
+    });
+
+    test('leave e DisconnectedEvent resetam câmera e spotlight', () async {
+      repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
+      final notifier = buildVoice();
+      await notifier.join();
+      await settle();
+
+      await notifier.toggleCamera();
+      await settle();
+      notifier.toggleSpotlight('user_u2');
+      expect(state().isCameraEnabled, isTrue);
+      expect(state().spotlightParticipantId, 'user_u2');
+
+      await notifier.leave();
+      await settle();
+      expect(state().status, VoiceSessionStatus.idle);
+      expect(state().isCameraEnabled, isFalse);
+      expect(state().spotlightParticipantId, isNull);
+
+      // Reconecta e a sala cai sozinha: DisconnectedEvent reseta igual.
+      await notifier.join();
+      await settle();
+      await notifier.toggleCamera();
+      await settle();
+      notifier.toggleSpotlight('user_u2');
+      rtc.pushEvent(const DisconnectedEvent());
+      await settle();
+      expect(state().status, VoiceSessionStatus.idle);
+      expect(state().isCameraEnabled, isFalse);
+      expect(state().spotlightParticipantId, isNull);
     });
   });
 }
