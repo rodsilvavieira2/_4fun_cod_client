@@ -5,11 +5,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/api/api_exception.dart';
 import '../../core/auth/auth_controller.dart';
 import '../../core/auth/auth_state.dart';
-import '../../core/storage/firebase_storage_service.dart';
+import '../../core/storage/api_storage_service.dart';
 import '../../shared/models/user.dart';
 
-/// Perfil do usuário (Fase 1): dados editáveis, avatar via Firebase Storage
-/// (upload direto do client — §3.9) e troca de senha com revoke-sessions.
+/// Perfil do usuário (Fase 1): dados editáveis, avatar via multipart para o
+/// backend (`PATCH/DELETE /users/me/avatar` — §5.2) e troca de senha com
+/// revogação de todas as sessões no servidor.
 class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
 
@@ -108,26 +109,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       _profileError = null;
     });
     try {
-      // Upload direto para o Firebase Storage (avatars/{uid}/...) → URL.
+      // Upload multipart para o backend (`PATCH /users/me/avatar`): o
+      // servidor valida, gera a chave no R2 e já persiste o avatarUrl.
       final storage = ref.read(storageServiceProvider);
-      final url = await storage.uploadAvatar(
-        uid: user.id,
+      await storage.uploadAvatar(
         filePath: file.path,
         contentType: contentType,
       );
-      // Backend só persiste a URL (`PATCH /users/me { avatarUrl }`).
-      await ref.read(authControllerProvider.notifier).updateProfile(avatarUrl: url);
-      // Best-effort: apaga o avatar ANTIGO no Storage (evita arquivos
-      // órfãos acumulando custo a cada troca de avatar).
-      final oldUrl = user.avatarUrl;
-      final oldFileName = oldUrl == null ? null : _fileNameFromAvatarUrl(oldUrl);
-      if (oldFileName != null) {
-        try {
-          await storage.deleteAvatar(uid: user.id, fileName: oldFileName);
-        } catch (_) {
-          // Arquivo órfão no Storage é aceitável; a URL nova já foi salva.
-        }
-      }
+      // Sincroniza o estado local com o user atualizado (avatarUrl retornado
+      // pelo backend no upload).
+      await ref.read(authControllerProvider.notifier).updateProfile();
     } on ApiException catch (e) {
       if (mounted) setState(() => _profileError = e.message);
     } catch (_) {
@@ -147,17 +138,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       _profileError = null;
     });
     try {
-      // Backend é a fonte de verdade: remove a URL primeiro.
-      await ref.read(authControllerProvider.notifier).updateProfile(clearAvatar: true);
-      // Best-effort: apaga o arquivo no Firebase Storage.
-      final fileName = _fileNameFromAvatarUrl(url);
-      if (fileName != null) {
-        try {
-          await ref.read(storageServiceProvider).deleteAvatar(uid: user.id, fileName: fileName);
-        } catch (_) {
-          // Arquivo órfão no Storage é aceitável; a URL já foi removida.
-        }
-      }
+      // Remoção via `DELETE /users/me/avatar` — o backend deriva a chave do
+      // objeto a partir do token e zera o avatarUrl.
+      await ref.read(storageServiceProvider).deleteAvatar();
+      // Sincroniza o estado local com o user atualizado (avatarUrl = null).
+      await ref.read(authControllerProvider.notifier).updateProfile();
     } on ApiException catch (e) {
       if (mounted) setState(() => _profileError = e.message);
     } catch (_) {
@@ -427,8 +412,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     );
   }
 
-  /// Mapeia a extensão do arquivo para o content-type aceito pelas
-  /// Storage Security Rules (§3.9: image/jpeg|png|webp|gif).
+  /// Mapeia a extensão do arquivo para o content-type aceito pelo backend
+  /// (§5.2: image/jpeg|png|webp|gif — magic bytes validados no servidor).
   String? _contentTypeFor(String path) {
     return switch (path.split('.').last.toLowerCase()) {
       'jpg' || 'jpeg' => 'image/jpeg',
@@ -437,18 +422,5 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       'gif' => 'image/gif',
       _ => null,
     };
-  }
-
-  /// Extrai o nome do arquivo da download URL do Firebase Storage
-  /// (`.../o/avatars%2F<uid>%2F<file>?alt=media`).
-  String? _fileNameFromAvatarUrl(String url) {
-    try {
-      final segments = Uri.parse(url).pathSegments;
-      if (segments.isEmpty) return null;
-      final decoded = Uri.decodeComponent(segments.last);
-      return decoded.split('/').last;
-    } catch (_) {
-      return null;
-    }
   }
 }
