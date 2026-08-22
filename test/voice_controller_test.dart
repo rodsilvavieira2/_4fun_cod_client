@@ -34,6 +34,17 @@ class FakeRtcService implements RtcService {
   int disconnectCalls = 0;
   int enableMicCalls = 0;
   int disableMicCalls = 0;
+
+  // Contadores/listas do contrato de câmera (Fase 5) — mesmo padrão do mic.
+  int enableCameraCalls = 0;
+  int disableCameraCalls = 0;
+  final List<String> switchCameraCalls = [];
+  final List<({String participantId, RtcVideoQuality quality})>
+      setQualityCalls = [];
+  int listCameraDevicesCalls = 0;
+  List<RtcVideoDevice> cameraDevices = const [];
+  RtcVideoTrackRef? cameraTrackRef;
+
   RtcTokenGenerator? lastTokenGenerator;
 
   @override
@@ -64,6 +75,33 @@ class FakeRtcService implements RtcService {
 
   @override
   Future<void> disableMicrophone() async => disableMicCalls++;
+
+  @override
+  Future<void> enableCamera() async => enableCameraCalls++;
+
+  @override
+  Future<void> disableCamera() async => disableCameraCalls++;
+
+  @override
+  Future<void> setQuality(
+    String participantId,
+    RtcVideoQuality quality,
+  ) async {
+    setQualityCalls.add((participantId: participantId, quality: quality));
+  }
+
+  @override
+  Future<List<RtcVideoDevice>> listCameraDevices() async {
+    listCameraDevicesCalls++;
+    return cameraDevices;
+  }
+
+  @override
+  Future<void> switchCamera(String deviceId) async =>
+      switchCameraCalls.add(deviceId);
+
+  @override
+  RtcVideoTrackRef? videoTrackOf(String participantId) => cameraTrackRef;
 
   void pushParticipants(List<RtcParticipant> list) =>
       participantsController.add(list);
@@ -106,12 +144,14 @@ RtcParticipant _participant(
   String id,
   String name, {
   bool mic = true,
+  bool camera = false,
   bool speaking = false,
 }) =>
     RtcParticipant(
       id: id,
       name: name,
       isMicrophoneEnabled: mic,
+      isCameraEnabled: camera,
       isSpeaking: speaking,
     );
 
