@@ -15,12 +15,13 @@ typedef RtcTokenGenerator = Future<String> Function();
 ///
 /// Igualdade por [id] (identity do LiveKit, `user_<userId>`): duas
 /// instâncias com a mesma identity representam a mesma pessoa, mesmo que
-/// `name`/`isMicrophoneEnabled`/`isSpeaking` tenham mudado.
+/// `name`/`isMicrophoneEnabled`/`isCameraEnabled`/`isSpeaking` tenham mudado.
 class RtcParticipant {
   const RtcParticipant({
     required this.id,
     required this.name,
     required this.isMicrophoneEnabled,
+    required this.isCameraEnabled,
     required this.isSpeaking,
   });
 
@@ -31,8 +32,13 @@ class RtcParticipant {
   final String name;
 
   /// Se o microfone está publicado e não-mutado (fala o quê o outro lado
-  /// ouve; escopo voz da Fase 4 — câmera/screen são Fase 5/6).
+  /// ouve; escopo voz da Fase 4 — screen share é Fase 6).
   final bool isMicrophoneEnabled;
+
+  /// Se a câmera está publicada e não-mutada (Fase 5). O vídeo em si não
+  /// trafega por aqui: a UI busca a referência renderizável via
+  /// [RtcService.videoTrackOf] e a passa ao `RtcVideoView`.
+  final bool isCameraEnabled;
 
   /// Se o participante está falando agora (ActiveSpeakersChangedEvent).
   final bool isSpeaking;
@@ -40,12 +46,14 @@ class RtcParticipant {
   RtcParticipant copyWith({
     String? name,
     bool? isMicrophoneEnabled,
+    bool? isCameraEnabled,
     bool? isSpeaking,
   }) {
     return RtcParticipant(
       id: id,
       name: name ?? this.name,
       isMicrophoneEnabled: isMicrophoneEnabled ?? this.isMicrophoneEnabled,
+      isCameraEnabled: isCameraEnabled ?? this.isCameraEnabled,
       isSpeaking: isSpeaking ?? this.isSpeaking,
     );
   }
@@ -88,6 +96,19 @@ class MicEnabledChangedEvent extends RtcEvent {
   final bool isMicrophoneEnabled;
 }
 
+/// A câmera de um participante foi habilitada/desabilitada (mute/unmute ou
+/// publicação/despublicação da track de câmera — Fase 5). Espelho exato do
+/// [MicEnabledChangedEvent]; o vídeo em si é obtido via [RtcService.videoTrackOf].
+class CameraEnabledChangedEvent extends RtcEvent {
+  const CameraEnabledChangedEvent({
+    required this.participantId,
+    required this.isCameraEnabled,
+  });
+
+  final String participantId;
+  final bool isCameraEnabled;
+}
+
 /// Um participante começou/parou de falar.
 class SpeakingChangedEvent extends RtcEvent {
   const SpeakingChangedEvent({
@@ -106,6 +127,33 @@ class SpeakingChangedEvent extends RtcEvent {
 /// (voltar para `idle`) e permitir uma nova entrada.
 class DisconnectedEvent extends RtcEvent {
   const DisconnectedEvent();
+}
+
+/// Qualidade de recepção de vídeo remoto (Fase 5).
+///
+/// SEM `off`: "desligar" um tile é decisão da UI (não montar o RtcVideoView).
+/// O enum do LiveKit tem apenas LOW/MEDIUM/HIGH — o serviço traduz
+/// low/medium/high; OFF não existe no protocolo.
+enum RtcVideoQuality { low, medium, high }
+
+/// Dispositivo de captura de vídeo (câmera).
+class RtcVideoDevice {
+  const RtcVideoDevice({required this.id, required this.label});
+
+  /// deviceId do MediaDevice (usado em [RtcService.switchCamera]).
+  final String id;
+
+  /// Label amigável (pode vir vazio antes da permissão de câmera).
+  final String label;
+}
+
+/// Referência OPACA a uma track de vídeo.
+///
+/// A UI recebe isto de [RtcService.videoTrackOf] e passa ao `RtcVideoView`
+/// (core/rtc/rtc_video_view.dart) sem conhecer o tipo concreto (que vive no
+/// LiveKit). Só o `LiveKitRtcService` sabe resolvê-lo para o renderer.
+abstract class RtcVideoTrackRef {
+  const RtcVideoTrackRef();
 }
 
 /// Abstração de voz em tempo real (Fase 4 — LiveKit por baixo).
@@ -134,6 +182,38 @@ abstract class RtcService {
 
   /// Desabilita o microfone local (muta a track de mic).
   Future<void> disableMicrophone();
+
+  /// Habilita a câmera local (publica a track de câmera, ou desmuta a
+  /// publicação existente). A câmera NUNCA é publicada no [connect] —
+  /// começa OFF; só esta chamada liga o vídeo.
+  ///
+  /// Erros de permissão/hardware propagam para o controller decidir a
+  /// mensagem — uma falha de câmera NÃO derruba a sessão.
+  Future<void> enableCamera();
+
+  /// Desabilita a câmera local (muta a publicação — ela PERMANECE
+  /// publicada, como o mic).
+  Future<void> disableCamera();
+
+  /// Define a qualidade de recepção do vídeo da câmera remota de
+  /// [participantId] (low/medium/high). Sem efeito quando o participante é
+  /// desconhecido, é o local, ou a câmera dele está OFF/ausente.
+  Future<void> setQuality(String participantId, RtcVideoQuality quality);
+
+  /// Lista as câmeras disponíveis no dispositivo (enumerateDevices
+  /// `type: 'videoinput'`). Labels podem vir vazias antes da permissão.
+  Future<List<RtcVideoDevice>> listCameraDevices();
+
+  /// Troca a câmera local em uso para [deviceId] (id de [RtcVideoDevice]).
+  /// Sem efeito quando a câmera está OFF — a primeira [enableCamera] usa o
+  /// device default.
+  Future<void> switchCamera(String deviceId);
+
+  /// Referência renderizável da câmera de [participantId], ou null quando a
+  /// câmera está OFF/ausente (track inexistente ou publicação mutada).
+  /// Nulo também quando desconectado/participante desconhecido. A UI passa
+  /// o ref ao `RtcVideoView` sem ver o tipo concreto.
+  RtcVideoTrackRef? videoTrackOf(String participantId);
 
   /// Identity do participante LOCAL na sala atual (nulo quando desconectado).
   ///
