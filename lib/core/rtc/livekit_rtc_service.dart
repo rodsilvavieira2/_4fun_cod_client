@@ -2,10 +2,11 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart' show debugPrint;
 
-// `SpeakingChangedEvent` existe TAMBÉM no livekit_client (colisão de nome
-// com o RtcEvent do contrato); o projeto usa o do rtc_service.dart.
+// `SpeakingChangedEvent` e `ReconnectingEvent` (mixin, events.dart:71)
+// existem TAMBÉM no livekit_client (colisão de nome com eventos do contrato);
+// o projeto usa os do rtc_service.dart.
 import 'package:livekit_client/livekit_client.dart'
-    hide SpeakingChangedEvent;
+    hide SpeakingChangedEvent, ReconnectingEvent;
 
 import 'rtc_service.dart';
 
@@ -37,7 +38,16 @@ import 'rtc_service.dart';
 ///   vive no [RemoteTrackPublication] genérico (publication/remote.dart:302);
 /// - `LocalVideoTrack.switchCamera(deviceId)` é a API nativa de troca de
 ///   câmera (track/local/video.dart:299 — restartTrack interno);
-/// - widget de renderização = `VideoTrackRenderer` (não existe `VideoView`).
+/// - widget de renderização = `VideoTrackRenderer` (não existe `VideoView`);
+/// - `isScreenShareEnabled()` é MÉTODO, espelho exato de `isCameraEnabled()`
+///   (participant.dart:319-321);
+/// - `setScreenShareEnabled(false)` DESPUBLICA a track de screenShareVideo
+///   (e a screenShareAudio se existir) — diferente da câmera, que muta e
+///   mantém a publicação (participant/local.dart:805-810);
+/// - `ScreenShareCaptureOptions.sourceId` é o id do DesktopCapturerSource
+///   (mapeado para `deviceId` do super — track/options.dart:156-159);
+/// - o seletor de fonte `ScreenSelectDialog` é `@experimental` (2.11.0) —
+///   isolado no wrapper `RtcScreenSharePicker` (screen_share_picker.dart).
 class LiveKitRtcService implements RtcService {
   LiveKitRtcService({RoomOptions? roomOptions})
       : _roomOptions = roomOptions ?? defaultRoomOptions;
@@ -87,6 +97,9 @@ class LiveKitRtcService implements RtcService {
 
   Room? _room;
   RtcTokenGenerator? _tokenGenerator;
+  /// URL da sala do último [connect] — preservada pelo loop de reconexão
+  /// automática (zerada no [_cleanupRoom], junto com o [_tokenGenerator]).
+  String? _livekitUrl;
   bool _disposed = false;
 
   /// identity → participante atual da sala.
@@ -125,6 +138,7 @@ class LiveKitRtcService implements RtcService {
     // terminaram antes de criar o novo (sem dois Room/PeerConnection vivos).
     await disconnect();
     _tokenGenerator = tokenGenerator;
+    _livekitUrl = url; // preservada para o loop de reconexão automática
 
     final room = Room(roomOptions: _roomOptions);
     _room = room;
@@ -216,6 +230,68 @@ class LiveKitRtcService implements RtcService {
     // (participant/local.dart:797-814): a publicação PERMANECE publicada
     // (como o mic); o estado é reconciliado pelos eventos já ouvidos.
     await localParticipant.setCameraEnabled(false);
+  }
+
+  @override
+  Future<void> startScreenShare(String sourceId) async {
+    final room = _room;
+    if (room == null || _disposed) return;
+    final localParticipant = room.localParticipant;
+    if (localParticipant == null) return;
+    // No-op quando o share já está ativo (isScreenShareEnabled é MÉTODO na
+    // 2.11.0 — participant.dart:319-321).
+    if (localParticipant.isScreenShareEnabled()) return;
+    // Publica a track de screenShareVideo (participant/local.dart:774-779).
+    // A câmera NÃO é afetada — share e câmera coexistem. Erros de captura
+    // (TrackCreateException — ex. permissão negada; mobile nem chega a rodar,
+    // local.dart:789-791) PROPAGAM para o controller: falha de share NUNCA
+    // derruba a sessão (nada de _cleanupRoom aqui).
+    await localParticipant.setScreenShareEnabled(
+      true,
+      screenShareCaptureOptions: ScreenShareCaptureOptions(
+        sourceId: sourceId,
+        // Plano: máx 1080p30 — preset h1080FPS30 EXISTE na 2.11.0
+        // (video_parameters.dart:298-304). captureScreenAudio fica FALSE:
+        // browser-only (options.dart:143); V1 sem áudio de sistema (OUT).
+        params: VideoParametersPresets.screenShareH1080FPS30,
+      ),
+    );
+  }
+
+  @override
+  Future<void> stopScreenShare() async {
+    final room = _room;
+    if (room == null || _disposed) return;
+    final localParticipant = room.localParticipant;
+    if (localParticipant == null) return;
+    // DIFERENTE da câmera: setScreenShareEnabled(false) DESPUBLICA a track
+    // (setSourceEnabled remove a publicação de screenShareVideo e a
+    // screenShareAudio se existir — participant/local.dart:805-810). Não
+    // chamar removePublishedTrack manualmente — o SDK faz. Com o share já
+    // inativo é no-op natural do SDK.
+    await localParticipant.setScreenShareEnabled(false);
+  }
+
+  @override
+  RtcVideoTrackRef? screenTrackOf(String participantId) {
+    // Espelho exato de [videoTrackOf] com TrackSource.screenShareVideo.
+    final room = _room;
+    if (room == null || _disposed) return null;
+    final localParticipant = room.localParticipant;
+    final TrackPublication? publication;
+    if (localParticipant?.identity == participantId) {
+      publication = localParticipant
+          ?.getTrackPublicationBySource(TrackSource.screenShareVideo);
+    } else {
+      publication = room.remoteParticipants[participantId]
+          ?.getTrackPublicationBySource(TrackSource.screenShareVideo);
+    }
+    if (publication == null || publication.muted) return null;
+    final track = publication.track;
+    // Defensivo: publicação de screen share é sempre vídeo, mas o cast
+    // direto quebraria se algum dia mudar de source — `is VideoTrack` cobre.
+    if (track is! VideoTrack) return null;
+    return LiveKitVideoTrackRef(track);
   }
 
   @override
@@ -380,24 +456,37 @@ class LiveKitRtcService implements RtcService {
         _syncParticipant(e.participant);
         _emitSnapshot();
       }),
-      // Sala caiu por conta própria (servidor encerrou/rede): avisa o
-      // controller (que volta para idle) e limpa o estado; os streams
-      // seguem vivos para um novo connect().
-      room.events.on<RoomDisconnectedEvent>((_) {
-        _emitEvent(DisconnectedEvent());
-        unawaited(_cleanupRoom());
+      // Sala caiu: motivo não iniciado pelo app (servidor encerrou/rede) →
+      // reconexão automática reason-gated (até 3 tentativas com token
+      // fresco); clientInitiated/duplicateIdentity mantêm o comportamento
+      // antigo (DisconnectedEvent imediato + cleanup). O clientInitiated do
+      // nosso próprio disconnect() já não chega aqui (_teardownRoom cancela
+      // os listeners ANTES do room.disconnect()) — o gate é a defesa dupla.
+      room.events.on<RoomDisconnectedEvent>((e) {
+        final reason = e.reason;
+        final shouldReconnect =
+            reason != DisconnectReason.clientInitiated &&
+            reason != DisconnectReason.duplicateIdentity &&
+            _tokenGenerator != null &&
+            !_disposed;
+        if (shouldReconnect) {
+          unawaited(_reconnectWithRetries());
+        } else {
+          _emitEvent(DisconnectedEvent());
+          unawaited(_cleanupRoom());
+        }
       }),
     ]);
   }
 
   /// Re-deriva o [RtcParticipant] de um [Participant] do LiveKit e emite
-  /// [MicEnabledChangedEvent]/[CameraEnabledChangedEvent] se o estado de
-  /// mic/câmera mudou. O participante entra no mapa mesmo se ainda não
-  /// tinha evento joined (robustez).
+  /// [MicEnabledChangedEvent]/[CameraEnabledChangedEvent]/
+  /// [ScreenShareEnabledChangedEvent] se o estado mudou. O participante
+  /// entra no mapa mesmo se ainda não tinha evento joined (robustez).
   ///
   /// Os eventos já ouvidos em [_wire] (TrackPublished/Unpublished, local e
-  /// remoto, TrackMuted/Unmuted) cobrem câmera E mic — basta re-derivar
-  /// `isCameraEnabled` aqui; NÃO é preciso listener novo.
+  /// remoto, TrackMuted/Unmuted) cobrem câmera, mic E screen share — basta
+  /// re-derivar os flags aqui; NÃO é preciso listener novo.
   void _syncParticipant(Participant participant) {
     final id = participant.identity;
     final previous = _participantsById[id];
@@ -406,6 +495,7 @@ class LiveKitRtcService implements RtcService {
       name: participant.name.isEmpty ? id : participant.name,
       isMicrophoneEnabled: participant.isMicrophoneEnabled(),
       isCameraEnabled: participant.isCameraEnabled(),
+      isScreenSharing: participant.isScreenShareEnabled(),
       isSpeaking: previous?.isSpeaking ?? false,
     );
     _participantsById[id] = updated;
@@ -425,6 +515,15 @@ class LiveKitRtcService implements RtcService {
         CameraEnabledChangedEvent(
           participantId: id,
           isCameraEnabled: updated.isCameraEnabled,
+        ),
+      );
+    }
+    if (previous != null &&
+        previous.isScreenSharing != updated.isScreenSharing) {
+      _emitEvent(
+        ScreenShareEnabledChangedEvent(
+          participantId: id,
+          isScreenSharing: updated.isScreenSharing,
         ),
       );
     }
@@ -463,13 +562,111 @@ class LiveKitRtcService implements RtcService {
     _eventsController.add(event);
   }
 
-  /// Cancela listeners, limpa o mapa e desconecta/descarta o [Room] atual.
+  /// Reconexão automática pós-queda da sala (motivo não iniciado pelo app):
+  /// até 3 tentativas (1s/2s/4s) com token fresco, preservando a sessão —
+  /// [_tokenGenerator]/[_livekitUrl] ficam intactos (só o [_teardownRoom]
+  /// descarta o [Room] morto). Sucesso → participantes limpos + mic MUTADO
+  /// (padrão do connect) + [ReconnectedEvent]; esgotado → [DisconnectedEvent]
+  /// (o controller volta para idle). NUNCA emite [DisconnectedEvent] durante
+  /// o processo.
+  Future<void> _reconnectWithRetries() async {
+    final tokenGenerator = _tokenGenerator;
+    final url = _livekitUrl;
+    if (tokenGenerator == null || url == null) {
+      // Sem sessão preservada (usuário saiu/desconectou antes do handler
+      // rodar, ou o connect nunca passou token generator): cai direto.
+      _emitEvent(DisconnectedEvent());
+      await _cleanupRoom();
+      return;
+    }
+
+    // ANTES do teardown: a UI liga o banner antes de ver a sala esvaziar.
+    _emitEvent(const ReconnectingEvent());
+    await _teardownRoom();
+
+    const delays = [
+      Duration(seconds: 1),
+      Duration(seconds: 2),
+      Duration(seconds: 4),
+    ];
+    for (final delay in delays) {
+      await Future<void>.delayed(delay);
+      // O usuário saiu/desconectou no meio (o _cleanupRoom já zerou o token
+      // generator): aborta SILENCIOSAMENTE — NÃO emitir nada.
+      if (_disposed || _tokenGenerator == null) return;
+
+      // Token FRESCO: o token do connect inicial tem validade curta (10m).
+      String token;
+      try {
+        token = await tokenGenerator();
+      } catch (error) {
+        debugPrint('[rtc] falha ao obter token de reconexão: $error');
+        break;
+      }
+
+      final room = Room(roomOptions: _roomOptions);
+      _room = room;
+      _wire(room);
+      try {
+        await room.connect(url, token);
+      } catch (error) {
+        debugPrint('[rtc] tentativa de reconexão falhou: $error');
+        await _teardownRoom();
+        continue;
+      }
+
+      final localParticipant = room.localParticipant;
+      if (localParticipant == null) {
+        // Impossível na prática pós-connect (o Room sempre tem o participante
+        // local); sem ele não há mic a republicar.
+        await _teardownRoom();
+        continue;
+      }
+      try {
+        // Mesmo padrão do connect: mic MUTADO por padrão (RISCO ACEITO V1 —
+        // janela de ms entre publicar e mutar; o SDK 2.11.0 não publica já
+        // mutado). Câmera/share locais recomeçam DESLIGADOS (risco V1
+        // documentado no contrato do ReconnectedEvent).
+        final micPublication =
+            await localParticipant.setMicrophoneEnabled(true);
+        if (micPublication != null && !micPublication.muted) {
+          await micPublication.mute();
+        }
+      } catch (error) {
+        debugPrint('[rtc] falha ao republicar o mic na reconexão: $error');
+        await _teardownRoom();
+        continue;
+      }
+
+      // Participantes ANTIGOS saem do snapshot; o local re-entra sozinho.
+      _participantsById.clear();
+      _syncParticipant(localParticipant);
+      _emitSnapshot();
+      _emitEvent(const ReconnectedEvent());
+      return;
+    }
+
+    // Esgotou as 3 tentativas: volta o comportamento de queda (idle).
+    _emitEvent(const DisconnectedEvent());
+    await _cleanupRoom();
+  }
+
+  /// Encerramento definitivo da sessão: zera o token generator e a URL (a
+  /// reconexão automática não pode mais acontecer) e descarta o [Room].
   /// Idempotente (chamado pelo próprio disconnect e pelo
-  /// [RoomDisconnectedEvent]). AWAIT obrigatório: o [dispose] nativo é o que
-  /// garante a liberação dos recursos WebRTC — retornar antes deixaria dois
-  /// [Room]/PeerConnection vivos num reconnect rápido.
+  /// [RoomDisconnectedEvent] sem reconexão).
   Future<void> _cleanupRoom() async {
     _tokenGenerator = null;
+    _livekitUrl = null;
+    await _teardownRoom();
+  }
+
+  /// Descarta o [Room] atual SEM mexer em [_tokenGenerator]/[_livekitUrl] —
+  /// o loop de reconexão usa este teardown para não perder a sessão. AWAIT
+  /// obrigatório: o [dispose] nativo é o que garante a liberação dos
+  /// recursos WebRTC — retornar antes deixaria dois [Room]/PeerConnection
+  /// vivos num reconnect rápido.
+  Future<void> _teardownRoom() async {
     for (final cancel in _roomListeners) {
       cancel();
     }
