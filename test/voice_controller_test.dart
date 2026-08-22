@@ -930,6 +930,40 @@ void main() {
           reason: 'dispensa manual desativa o auto — sem loop visual');
     });
 
+    test('selecionar OUTRO participante dispensa o auto-spotlight (não só o sharer)',
+        () async {
+      rtc.localId = 'user_u1';
+      final notifier = buildVoice();
+
+      rtc.pushParticipants([
+        _participant('user_u1', 'Ana'),
+        _participant('user_u2', 'Bia', screenShare: true),
+        _participant('user_u3', 'Caio', camera: true),
+      ]);
+      await settle();
+      expect(state().spotlightParticipantId, 'user_u2');
+      expect(state().autoSpotlightActive, isTrue);
+
+      // Seleção manual de OUTRO tile (não o sharer): assume o controle —
+      // dispensa o auto e limpa o saved (senão o snapshot re-forçaria o
+      // sharer e o fim do share restauraria um estado obsoleto).
+      notifier.toggleSpotlight('user_u3');
+      expect(state().spotlightParticipantId, 'user_u3');
+      expect(state().autoSpotlightActive, isFalse);
+      expect(state().savedSpotlightParticipantId, isNull);
+
+      // Snapshot seguinte com o sharer AINDA compartilhando: não re-força.
+      rtc.pushParticipants([
+        _participant('user_u1', 'Ana'),
+        _participant('user_u2', 'Bia', screenShare: true),
+        _participant('user_u3', 'Caio', camera: true),
+      ]);
+      await settle();
+      expect(state().spotlightParticipantId, 'user_u3',
+          reason: 'seleção manual sobrevive ao snapshot');
+      expect(state().autoSpotlightActive, isFalse);
+    });
+
     test('reconexão: Reconnecting mantém connected; Reconnected reseta mídia',
         () async {
       repo.onJoinVoice = (serverId, channelId) async => _joinInfo;

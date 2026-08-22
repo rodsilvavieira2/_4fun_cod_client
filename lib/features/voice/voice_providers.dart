@@ -354,12 +354,15 @@ class VoiceController
   /// mesmo tile volta ao grid. O snapshot de participantes revalida —
   /// destaque de quem saiu ou desligou a câmera é limpo em [_applyParticipants].
   void toggleSpotlight(String participantId) {
-    if (state.autoSpotlightActive &&
-        state.spotlightParticipantId == participantId) {
-      // Dispensa explícita do destaque automático do share: volta ao grid e
-      // DESATIVA o auto — senão o snapshot seguinte re-forçaria o sharer.
+    if (state.autoSpotlightActive) {
+      // QUALQUER seleção manual dispensa o destaque automático do share:
+      // o usuário assumiu o controle. Tocar o próprio sharer volta ao grid;
+      // tocar outro participante o destaca — em ambos os casos o auto é
+      // desligado (senão o snapshot seguinte re-forçaria o sharer e o fim
+      // do share restauraria um estado obsoleto, perdendo a seleção manual).
       state = state.copyWith(
-        spotlightParticipantId: null,
+        spotlightParticipantId:
+            state.spotlightParticipantId == participantId ? null : participantId,
         autoSpotlightActive: false,
         savedSpotlightParticipantId: null,
       );
