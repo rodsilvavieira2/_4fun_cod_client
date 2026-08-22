@@ -556,6 +556,15 @@ void main() {
       expect(state().status, VoiceSessionStatus.connected);
       expect(state().errorMessage, 'Não foi possível trocar a câmera.');
       expect(rtc.disconnectCalls, 0);
+
+      // Sucesso APÓS falha: limpa a mensagem — senão o SnackBar de uma
+      // falha antiga nunca reaparece (o listener só dispara em mudança).
+      rtc.failSwitchCamera = false;
+      await notifier.selectCamera('dev-4');
+      await settle();
+      expect(state().errorMessage, isNull);
+      expect(state().selectedCameraId, 'dev-4');
+      expect(rtc.switchCameraCalls, ['dev-2', 'dev-4']);
     });
 
     test('applyTileQuality: remoto com setQuality, local ignorado, dedupe',

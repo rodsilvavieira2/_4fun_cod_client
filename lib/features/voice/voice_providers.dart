@@ -64,7 +64,7 @@ class VoiceState {
 
   VoiceState copyWith({
     VoiceSessionStatus? status,
-    String? errorMessage,
+    Object? errorMessage = _unset,
     List<RtcParticipant>? participants,
     bool? isMicrophoneEnabled,
     bool? isCameraEnabled,
@@ -74,7 +74,12 @@ class VoiceState {
   }) {
     return VoiceState(
       status: status ?? this.status,
-      errorMessage: errorMessage ?? this.errorMessage,
+      // Sentinel: errorMessage é LIMPÁVEL — `copyWith(errorMessage: null)`
+      // deve zerar a mensagem (o padrão `??` manteria a anterior, fazendo o
+      // SnackBar de uma falha antiga nunca mais reaparecer).
+      errorMessage: identical(errorMessage, _unset)
+          ? this.errorMessage
+          : errorMessage as String?,
       participants: participants ?? this.participants,
       isMicrophoneEnabled: isMicrophoneEnabled ?? this.isMicrophoneEnabled,
       isCameraEnabled: isCameraEnabled ?? this.isCameraEnabled,
@@ -262,7 +267,6 @@ class VoiceController
       devices = await rtc.listCameraDevices();
     } catch (_) {
       // Hardware ausente/permissão pendente: mantém o cache anterior.
-      if (_disposed) return;
       return;
     }
     if (_disposed) return;
@@ -283,7 +287,10 @@ class VoiceController
   Future<void> selectCamera(String deviceId) async {
     final current = state;
     if (current.status != VoiceSessionStatus.connected) return;
-    state = state.copyWith(selectedCameraId: deviceId);
+    // Sucesso (com ou sem câmera ligada) limpa mensagem de erro anterior —
+    // senão o SnackBar de uma falha antiga nunca mais reaparece (o listener
+    // só dispara quando a mensagem muda).
+    state = state.copyWith(selectedCameraId: deviceId, errorMessage: null);
     if (!current.isCameraEnabled) return;
     final rtc = ref.read(rtcServiceProvider);
     try {
