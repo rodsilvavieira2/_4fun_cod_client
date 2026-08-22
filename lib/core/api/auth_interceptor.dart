@@ -22,11 +22,11 @@ class AuthInterceptor extends QueuedInterceptor {
 
   /// Rotas que NÃO aceitam/necessitam de access token e, portanto, não devem
   /// disparar refresh-retry em 401. Atenção: `/auth/logout` e
-  /// `/auth/revoke-sessions` NÃO estão aqui — exigem access válido e devem
+  /// `/auth/change-password` NÃO estão aqui — exigem access válido e devem
   /// passar pelo refresh.
   static const _publicAuthPaths = <String>{
-    '/auth/firebase/register',
-    '/auth/firebase/login',
+    '/auth/register',
+    '/auth/login',
     '/auth/refresh',
   };
 

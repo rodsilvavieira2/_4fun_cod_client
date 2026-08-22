@@ -2,7 +2,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../features/auth/forgot_password_screen.dart';
 import '../../features/auth/login_screen.dart';
 import '../../features/auth/register_screen.dart';
 import '../../features/home/home_screen.dart';
@@ -48,7 +47,6 @@ final routerProvider = Provider<GoRouter>((ref) {
       // sessão; o aceite exige login e volta para cá).
       final isPublicRoute = location == '/login' ||
           location == '/register' ||
-          location == '/forgot-password' ||
           location.startsWith('/invite/');
 
       // Bootstrap ainda em andamento → splash.
@@ -62,8 +60,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       // /invite/:code continua acessível.
       if (location == '/splash' ||
           location == '/login' ||
-          location == '/register' ||
-          location == '/forgot-password') {
+          location == '/register') {
         return '/';
       }
       return null;
@@ -83,11 +80,6 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/register',
         name: 'register',
         builder: (context, state) => const RegisterScreen(),
-      ),
-      GoRoute(
-        path: '/forgot-password',
-        name: 'forgot-password',
-        builder: (context, state) => const ForgotPasswordScreen(),
       ),
       GoRoute(
         path: '/',

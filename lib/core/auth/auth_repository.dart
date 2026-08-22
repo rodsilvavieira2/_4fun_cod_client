@@ -1,5 +1,4 @@
 import 'package:dio/dio.dart';
-import 'package:firebase_auth/firebase_auth.dart' hide User;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../shared/models/auth_tokens.dart';
@@ -7,13 +6,12 @@ import '../../shared/models/user.dart';
 import '../api/api_client.dart';
 import '../api/api_exception.dart';
 import '../api/auth_interceptor.dart';
+import '../storage/api_storage_service.dart';
 import 'token_storage.dart';
 
-/// Repositório de autenticação: identidade no **Firebase Auth** (client-side)
-/// + sessão própria do **backend** (JWT access/refresh rotativo, §3.1).
-///
-/// Único lugar (junto de `core/auth`) que importa `firebase_auth` — a UI
-/// nunca importa Firebase diretamente.
+/// Repositório de autenticação: identidade 100% no **backend** (NestJS —
+/// e-mail/senha local + JWT próprio rotativo, §3.1), sem SDK de terceiros
+/// de identidade em nenhuma camada.
 class AuthRepository {
   AuthRepository(this._ref) {
     // Anexa o interceptor de refresh single-flight ao dio compartilhado.
@@ -24,32 +22,21 @@ class AuthRepository {
 
   late final Dio _dio = _ref.read(apiClientProvider);
   late final TokenStorage _tokenStorage = _ref.read(tokenStorageProvider);
-  final FirebaseAuth _firebaseAuth = FirebaseAuth.instance;
 
   /// Access token atual (nulo se não houver sessão).
   Future<String?> get accessToken => _tokenStorage.readAccessToken();
 
-  /// Login híbrido: Firebase Auth (email/senha) → ID token →
-  /// `POST /auth/firebase/login` → tokens de sessão do backend.
+  /// Login com e-mail/senha: `POST /auth/login` → tokens de sessão.
   ///
-  /// Se o backend não encontrar o User (404), orienta o cadastro.
+  /// Credenciais inválidas → 404 do backend; orienta o cadastro.
   Future<AuthSession> login({
     required String email,
     required String password,
   }) async {
     try {
-      final credential = await _firebaseAuth.signInWithEmailAndPassword(
-        email: email,
-        password: password,
-      );
-      final firebaseUser = credential.user;
-      if (firebaseUser == null) {
-        throw const ApiException(message: 'Não foi possível autenticar. Tente novamente.');
-      }
-      final idToken = await firebaseUser.getIdToken();
       final response = await _dio.post(
-        '/auth/firebase/login',
-        data: {'idToken': idToken},
+        '/auth/login',
+        data: {'email': email, 'password': password},
       );
       return _establishSession(response);
     } on DioException catch (e) {
@@ -60,13 +47,11 @@ class AuthRepository {
         );
       }
       throw ApiException.fromDio(e);
-    } on FirebaseAuthException catch (e) {
-      throw ApiException(message: _firebaseAuthErrorMessage(e));
     }
   }
 
-  /// Cadastro híbrido: Firebase Auth → ID token →
-  /// `POST /auth/firebase/register` (idempotente por `firebaseUid`).
+  /// Cadastro: `POST /auth/register` com e-mail/senha local no backend
+  /// (email/username duplicados → 409).
   Future<AuthSession> register({
     required String name,
     required String username,
@@ -74,24 +59,18 @@ class AuthRepository {
     required String password,
   }) async {
     try {
-      final credential = await _firebaseAuth.createUserWithEmailAndPassword(
-        email: email,
-        password: password,
-      );
-      final firebaseUser = credential.user;
-      if (firebaseUser == null) {
-        throw const ApiException(message: 'Não foi possível criar a conta. Tente novamente.');
-      }
-      final idToken = await firebaseUser.getIdToken();
       final response = await _dio.post(
-        '/auth/firebase/register',
-        data: {'idToken': idToken, 'name': name, 'username': username},
+        '/auth/register',
+        data: {
+          'name': name,
+          'username': username,
+          'email': email,
+          'password': password,
+        },
       );
       return _establishSession(response);
     } on DioException catch (e) {
       throw ApiException.fromDio(e);
-    } on FirebaseAuthException catch (e) {
-      throw ApiException(message: _firebaseAuthErrorMessage(e));
     }
   }
 
@@ -127,8 +106,8 @@ class AuthRepository {
     return tokens.accessToken;
   }
 
-  /// Logout completo: revoga o refresh no backend (best-effort), encerra a
-  /// sessão no Firebase e limpa o armazenamento de tokens.
+  /// Logout completo: revoga o refresh no backend (best-effort) e limpa o
+  /// armazenamento de tokens.
   Future<void> signOut() async {
     try {
       final refreshToken = await _tokenStorage.readRefreshToken();
@@ -138,17 +117,7 @@ class AuthRepository {
     } catch (_) {
       // Best-effort: backend indisponível não impede o logout local.
     }
-    await _firebaseAuth.signOut();
     await _tokenStorage.clear();
-  }
-
-  /// Revoga TODAS as sessões do usuário no backend (após troca de senha).
-  Future<void> revokeSessions() async {
-    try {
-      await _dio.post('/auth/revoke-sessions');
-    } on DioException catch (e) {
-      throw ApiException.fromDio(e);
-    }
   }
 
   /// Perfil do usuário autenticado (`GET /users/me`).
@@ -161,19 +130,21 @@ class AuthRepository {
     }
   }
 
-  /// Atualiza nome/username/avatarUrl via `PATCH /users/me`.
+  /// Atualiza nome/username via `PATCH /users/me`.
   ///
-  /// `clearAvatar: true` envia `avatarUrl: null` (remove o avatar).
+  /// Avatar é responsabilidade do [StorageService] (multipart para o
+  /// backend) — `clearAvatar: true` remove via `DELETE /users/me/avatar`.
   Future<User> updateProfile({
     String? name,
     String? username,
-    String? avatarUrl,
     bool clearAvatar = false,
   }) async {
+    if (clearAvatar) {
+      await _ref.read(storageServiceProvider).deleteAvatar();
+    }
     final data = <String, dynamic>{
       'name': ?name,
       'username': ?username,
-      if (clearAvatar) 'avatarUrl': null else 'avatarUrl': ?avatarUrl,
     };
     try {
       final response = await _dio.patch('/users/me', data: data);
@@ -183,37 +154,24 @@ class AuthRepository {
     }
   }
 
-  /// Redefinição de senha 100% no Firebase (`sendPasswordResetEmail`).
-  Future<void> sendPasswordResetEmail(String email) async {
-    try {
-      await _firebaseAuth.sendPasswordResetEmail(email: email);
-    } on FirebaseAuthException catch (e) {
-      throw ApiException(message: _firebaseAuthErrorMessage(e));
-    }
-  }
-
-  /// Troca de senha: reauth + `updatePassword` no Firebase e depois
-  /// `POST /auth/revoke-sessions` (derruba todas as sessões do backend).
+  /// Troca de senha: `POST /auth/change-password` — o backend verifica a
+  /// senha atual, grava o novo hash e **revoga TODAS as sessões** (tokens +
+  /// realtime); o controller encerra a sessão local na sequência.
   Future<void> changePassword({
     required String currentPassword,
     required String newPassword,
   }) async {
-    final firebaseUser = _firebaseAuth.currentUser;
-    final email = firebaseUser?.email;
-    if (firebaseUser == null || email == null) {
-      throw const ApiException(message: 'Sessão expirada. Faça login novamente.');
-    }
     try {
-      final credential = EmailAuthProvider.credential(
-        email: email,
-        password: currentPassword,
+      await _dio.post(
+        '/auth/change-password',
+        data: {
+          'currentPassword': currentPassword,
+          'newPassword': newPassword,
+        },
       );
-      await firebaseUser.reauthenticateWithCredential(credential);
-      await firebaseUser.updatePassword(newPassword);
-    } on FirebaseAuthException catch (e) {
-      throw ApiException(message: _firebaseAuthErrorMessage(e));
+    } on DioException catch (e) {
+      throw ApiException.fromDio(e);
     }
-    await revokeSessions();
   }
 
   Future<AuthSession> _establishSession(Response<dynamic> response) async {
@@ -225,26 +183,9 @@ class AuthRepository {
     await _tokenStorage.saveTokens(session.tokens);
     return session;
   }
-
-  String _firebaseAuthErrorMessage(FirebaseAuthException e) {
-    return switch (e.code) {
-      'invalid-email' => 'E-mail inválido.',
-      'user-not-found' ||
-      'invalid-credential' ||
-      'wrong-password' =>
-        'E-mail ou senha incorretos.',
-      'email-already-in-use' => 'Este e-mail já está cadastrado.',
-      'weak-password' => 'Senha muito fraca.',
-      'user-disabled' => 'Conta desativada.',
-      'too-many-requests' => 'Muitas tentativas. Aguarde um pouco e tente novamente.',
-      'network-request-failed' => 'Sem conexão com a rede.',
-      'requires-recent-login' => 'Sessão expirada. Faça login novamente.',
-      _ => e.message ?? 'Erro de autenticação.',
-    };
-  }
 }
 
-/// Provider do repositório de autenticação (Firebase + backend).
+/// Provider do repositório de autenticação (backend via dio).
 final authRepositoryProvider = Provider<AuthRepository>(
   (ref) => AuthRepository(ref),
 );

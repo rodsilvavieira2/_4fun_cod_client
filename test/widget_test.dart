@@ -11,7 +11,7 @@ import 'package:_4fun_cod_client/features/servers/servers_providers.dart';
 import 'package:_4fun_cod_client/shared/models/servers.dart';
 import 'package:_4fun_cod_client/shared/models/user.dart';
 
-/// Fake do AuthController: nunca toca em Firebase/storage/dio.
+/// Fake do AuthController: nunca toca em backend/storage/dio.
 class _FakeAuthController extends AuthController {
   _FakeAuthController(this.initialState);
 
@@ -22,7 +22,7 @@ class _FakeAuthController extends AuthController {
 
   @override
   Future<void> login({required String email, required String password}) async {
-    // Sem chamadas reais a Firebase/backend no widget test.
+    // Sem chamadas reais a backend no widget test.
   }
 }
 
@@ -61,7 +61,6 @@ void main() {
     expect(find.text('Senha'), findsOneWidget);
     expect(find.byType(TextFormField), findsNWidgets(2));
     expect(find.text('Criar conta'), findsOneWidget);
-    expect(find.text('Esqueci minha senha'), findsOneWidget);
   });
 
   testWidgets('App renderiza home quando autenticado', (WidgetTester tester) async {

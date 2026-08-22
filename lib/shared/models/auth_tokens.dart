@@ -2,8 +2,8 @@ import 'user.dart';
 
 /// Par de tokens de sessão emitidos pelo backend (JWT próprio).
 ///
-/// Espelha a resposta de `/auth/firebase/register`, `/auth/firebase/login`
-/// e `/auth/refresh` (§3.1 do plano de arquitetura).
+/// Espelha a resposta de `/auth/login`, `/auth/register` e `/auth/refresh`
+/// (§3.1 do plano de arquitetura).
 class SessionTokens {
   const SessionTokens({required this.accessToken, required this.refreshToken});
 

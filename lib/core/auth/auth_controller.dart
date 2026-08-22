@@ -133,9 +133,9 @@ class AuthController extends AsyncNotifier<AuthState> {
     }
   }
 
-  /// Troca de senha (Firebase + revoke-sessions) e encerra a sessão local —
-  /// todas as sessões foram revogadas no backend, então o usuário precisa
-  /// entrar novamente com a nova senha.
+  /// Troca de senha (`POST /auth/change-password` — o backend revoga todas
+  /// as sessões) e encerra a sessão local — o usuário precisa entrar
+  /// novamente com a nova senha.
   Future<void> changePassword({
     required String currentPassword,
     required String newPassword,
@@ -154,12 +154,6 @@ class AuthController extends AsyncNotifier<AuthState> {
     state = const AsyncData(Unauthenticated());
   }
 
-  /// Redefinição de senha via e-mail (100% Firebase).
-  Future<void> sendPasswordResetEmail(String email) async {
-    final repo = ref.read(authRepositoryProvider);
-    await repo.sendPasswordResetEmail(email);
-  }
-
   /// Reflete no estado o logout forçado pelo interceptor (refresh falhou) ou
   /// pelo socket (handshake rejeitado) e encerra a conexão realtime.
   void setUnauthenticated() {
@@ -169,18 +163,19 @@ class AuthController extends AsyncNotifier<AuthState> {
     }
   }
 
-  /// Edita nome/username/avatar via `PATCH /users/me` e reflete no estado.
+  /// Edita nome/username via `PATCH /users/me` e reflete no estado.
+  ///
+  /// `clearAvatar: true` remove o avatar via storage service
+  /// (`DELETE /users/me/avatar`).
   Future<void> updateProfile({
     String? name,
     String? username,
-    String? avatarUrl,
     bool clearAvatar = false,
   }) async {
     final repo = ref.read(authRepositoryProvider);
     final updated = await repo.updateProfile(
       name: name,
       username: username,
-      avatarUrl: avatarUrl,
       clearAvatar: clearAvatar,
     );
     state = AsyncData(Authenticated(user: updated));

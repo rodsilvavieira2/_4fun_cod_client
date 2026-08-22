@@ -5,7 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/api/api_exception.dart';
 import '../../core/auth/auth_controller.dart';
 
-/// Tela de login (email/senha via Firebase Auth + sessão no backend).
+/// Tela de login (e-mail/senha → sessão no backend).
 ///
 /// Após o login: se veio de um deep link com `?redirect=/caminho-interno`
 /// (ex.: /invite/:code), volta para lá; senão o redirect do router (§7.2)
@@ -134,11 +134,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           : const Text('Entrar'),
                     ),
                     const SizedBox(height: 12),
-                    TextButton(
-                      onPressed:
-                          _submitting ? null : () => context.go('/forgot-password'),
-                      child: const Text('Esqueci minha senha'),
-                    ),
                     TextButton(
                       onPressed: _submitting ? null : () => context.go('/register'),
                       child: const Text('Criar conta'),

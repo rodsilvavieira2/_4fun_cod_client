@@ -5,8 +5,8 @@ import 'package:go_router/go_router.dart';
 import '../../core/api/api_exception.dart';
 import '../../core/auth/auth_controller.dart';
 
-/// Tela de cadastro: cria a conta no Firebase Auth e registra o User no
-/// backend (`POST /auth/firebase/register` com o ID token).
+/// Tela de cadastro: cria a conta no backend (`POST /auth/register`) com
+/// e-mail/senha local (bcrypt no servidor).
 class RegisterScreen extends ConsumerStatefulWidget {
   const RegisterScreen({super.key});
 
