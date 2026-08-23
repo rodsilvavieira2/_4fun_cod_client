@@ -45,6 +45,11 @@ class FakeRtcService implements RtcService {
   List<RtcVideoDevice> cameraDevices = const [];
   RtcVideoTrackRef? cameraTrackRef;
 
+  // Contrato de qualidade de PUBLICAÇÃO (Fase 7) — mesmo padrão dos demais.
+  RtcCameraQuality cameraQualityValue = RtcCameraQuality.auto;
+  final List<RtcCameraQuality> setCameraQualityCalls = [];
+  bool failSetCameraQuality = false;
+
   // Contadores do contrato de screen share (Fase 6) — mesmo padrão do mic.
   int startScreenShareCalls = 0;
   int stopScreenShareCalls = 0;
@@ -129,6 +134,16 @@ class FakeRtcService implements RtcService {
   Future<void> switchCamera(String deviceId) async {
     if (failSwitchCamera) throw Exception('troca de câmera falhou');
     switchCameraCalls.add(deviceId);
+  }
+
+  @override
+  RtcCameraQuality get cameraQuality => cameraQualityValue;
+
+  @override
+  Future<void> setCameraQuality(RtcCameraQuality quality) async {
+    if (failSetCameraQuality) throw Exception('qualidade indisponível');
+    cameraQualityValue = quality;
+    setCameraQualityCalls.add(quality);
   }
 
   @override
@@ -255,8 +270,10 @@ void main() {
       expect(rtc.lastTokenGenerator, isNotNull,
           reason: 'tokenGenerator registrado para reconexão futura');
       expect(state().status, VoiceSessionStatus.connected);
-      expect(state().isMicrophoneEnabled, isFalse,
-          reason: 'mic entra mutado por padrão (decisão Fase 4)');
+      expect(state().isMicrophoneEnabled, isTrue,
+          reason: 'mic entra ativo por padrão (decisão Fase 7)');
+      expect(state().cameraQuality, RtcCameraQuality.auto,
+          reason: 'perfil de transmissão começa em Auto (Fase 7)');
     });
 
     test('falha de connect refaz o join e reconecta com token fresco',
@@ -333,16 +350,18 @@ void main() {
       final notifier = buildVoice();
       await notifier.join();
       await settle();
-
-      await notifier.toggleMicrophone();
-      await settle();
-      expect(rtc.enableMicCalls, 1);
-      expect(state().isMicrophoneEnabled, isTrue);
+      expect(state().isMicrophoneEnabled, isTrue,
+          reason: 'mic entra ATIVO por padrão (Fase 7)');
 
       await notifier.toggleMicrophone();
       await settle();
       expect(rtc.disableMicCalls, 1);
       expect(state().isMicrophoneEnabled, isFalse);
+
+      await notifier.toggleMicrophone();
+      await settle();
+      expect(rtc.enableMicCalls, 1);
+      expect(state().isMicrophoneEnabled, isTrue);
     });
 
     test('toggleMicrophone fora da sessão é ignorado', () async {
@@ -424,16 +443,17 @@ void main() {
       final notifier = buildVoice();
       await notifier.join();
       await settle();
-      expect(state().isMicrophoneEnabled, isFalse);
+      expect(state().isMicrophoneEnabled, isTrue,
+          reason: 'mic entra ATIVO por padrão (Fase 7)');
 
-      // O RtcService real emite isso quando o unmute local é confirmado.
+      // O RtcService real emite isso quando o mute local é confirmado.
       rtc.pushEvent(const MicEnabledChangedEvent(
         participantId: 'user_u1',
-        isMicrophoneEnabled: true,
+        isMicrophoneEnabled: false,
       ));
       await settle();
 
-      expect(state().isMicrophoneEnabled, isTrue);
+      expect(state().isMicrophoneEnabled, isFalse);
     });
 
     test('MicEnabledChangedEvent de outro participante não toca o botão',
@@ -446,11 +466,12 @@ void main() {
 
       rtc.pushEvent(const MicEnabledChangedEvent(
         participantId: 'user_u2',
-        isMicrophoneEnabled: true,
+        isMicrophoneEnabled: false,
       ));
       await settle();
 
-      expect(state().isMicrophoneEnabled, isFalse);
+      expect(state().isMicrophoneEnabled, isTrue,
+          reason: 'evento de remoto não toca o botão local (mic segue ativo)');
     });
 
     // ── Fase 5 (Prompt 2): câmera, spotlight, devices e qualidade ──────────
@@ -624,6 +645,75 @@ void main() {
       await settle();
       expect(rtc.setQualityCalls.length, 2,
           reason: 'qualidade local é da publicação — nunca setQuality');
+    });
+
+    // ── Fase 7: qualidade de transmissão (publicação) ────────────────
+
+    test('setCameraQuality conectado chama o serviço e atualiza o estado',
+        () async {
+      repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
+      final notifier = buildVoice();
+      await notifier.join();
+      await settle();
+      expect(state().cameraQuality, RtcCameraQuality.auto);
+
+      await notifier.setCameraQuality(RtcCameraQuality.q1080);
+      await settle();
+      expect(rtc.setCameraQualityCalls, [RtcCameraQuality.q1080]);
+      expect(state().cameraQuality, RtcCameraQuality.q1080);
+
+      await notifier.setCameraQuality(RtcCameraQuality.q720);
+      await settle();
+      expect(rtc.setCameraQualityCalls,
+          [RtcCameraQuality.q1080, RtcCameraQuality.q720]);
+      expect(state().cameraQuality, RtcCameraQuality.q720);
+    });
+
+    test('setCameraQuality fora da sessão é ignorado', () async {
+      final notifier = buildVoice();
+
+      await notifier.setCameraQuality(RtcCameraQuality.q1080);
+      await settle();
+
+      expect(rtc.setCameraQualityCalls, isEmpty);
+      expect(state().cameraQuality, RtcCameraQuality.auto);
+    });
+
+    test('falha de setCameraQuality não derruba a sessão', () async {
+      repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
+      final notifier = buildVoice();
+      await notifier.join();
+      await settle();
+
+      rtc.failSetCameraQuality = true;
+      await notifier.setCameraQuality(RtcCameraQuality.q1080);
+      await settle();
+
+      expect(state().status, VoiceSessionStatus.connected);
+      expect(state().cameraQuality, RtcCameraQuality.auto,
+          reason: 'sem otimismo: perfil não muda quando o serviço falha');
+      expect(state().errorMessage,
+          'Não foi possível ajustar a qualidade da câmera.');
+      expect(rtc.disconnectCalls, 0,
+          reason: 'erro de qualidade nunca desconecta a sala');
+    });
+
+    test('join reseta o perfil de transmissão para Auto', () async {
+      repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
+      final notifier = buildVoice();
+      await notifier.join();
+      await settle();
+
+      await notifier.setCameraQuality(RtcCameraQuality.q720);
+      await settle();
+      expect(state().cameraQuality, RtcCameraQuality.q720);
+
+      await notifier.leave();
+      await settle();
+      await notifier.join();
+      await settle();
+      expect(state().cameraQuality, RtcCameraQuality.auto,
+          reason: 'sessão nova = perfil default (decisão: por sessão)');
     });
 
     test('toggleSpotlight seta, repete limpa; snapshot órfão limpa sozinho',
