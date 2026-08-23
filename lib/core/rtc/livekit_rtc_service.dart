@@ -267,7 +267,10 @@ class LiveKitRtcService implements RtcService {
     }
     if (publication != null) {
       // Perfil pendente diferente do aplicado: despublica para republicar
-      // com as novas options (mesmo caminho do setCameraQuality ao vivo).
+      // com as novas options. DIFERENTE do setCameraQuality (que cria a
+      // track antes de remover), aqui o usuário já está religando a câmera
+      // — se o create falhar, a câmera simplesmente não liga (estado
+      // visível e esperado, sem publicação órfã).
       await localParticipant.removePublishedTrack(publication.sid);
     }
     // 1ª publicação OU re-publicação com perfil novo: nasce no perfil
@@ -318,6 +321,9 @@ class LiveKitRtcService implements RtcService {
     // create falhar (hardware não suporta o perfil), a publicação atual
     // permanece intacta e _cameraQuality NÃO muda (rollback natural; o
     // controller também não atualiza o estado em erro — sem divergência).
+    // Se o PUBLISH falhar após o remove, o LocalTrackUnpublishedEvent já
+    // reconcilia isCameraEnabled para false (câmera cai como "off", nunca
+    // em estado zumbi) — fail-safe pelo padrão de eventos do serviço.
     final (captureOptions, publishOptions) = _optionsFor(quality);
     final track = await LocalVideoTrack.createCameraTrack(captureOptions);
     final publication =
