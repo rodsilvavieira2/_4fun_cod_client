@@ -136,6 +136,13 @@ class LiveKitRtcService implements RtcService {
   /// [setCameraQuality]. Resetado no [_cleanupRoom] (sessão nova = auto).
   RtcCameraQuality _cameraQuality = RtcCameraQuality.auto;
 
+  /// Perfil da ÚLTIMA publicação de câmera BEM-SUCEDIDA. Comparado com
+  /// [_cameraQuality] no [enableCamera] para detectar perfil pendente com
+  /// publicação existente (desligou→trocou perfil→religou): se divergirem,
+  /// republica em vez de só desmutar. Atualizado só APÓS publish/republish
+  /// bem-sucedido (rollback natural em falha).
+  RtcCameraQuality _appliedCameraQuality = RtcCameraQuality.auto;
+
   @override
   RtcCameraQuality get cameraQuality => _cameraQuality;
 
@@ -242,20 +249,36 @@ class LiveKitRtcService implements RtcService {
     if (localParticipant == null) return;
     final publication =
         localParticipant.getTrackPublicationBySource(TrackSource.camera);
-    if (publication != null) {
-      // Publicação existente: apenas desmuta (participant/local.dart:795-821).
+    // Publicação existente COM o perfil já aplicado: apenas desmuta
+    // (participant/local.dart:795-821). Se o perfil PENDENTE diverge do
+    // aplicado (desligou→trocou perfil→religou), republica — senão o perfil
+    // escolhido seria descartado silenciosamente (fix CRÍTICO do review).
+    // Decisão extraída em [cameraNeedsRepublish] (função pura testável).
+    if (!cameraNeedsRepublish(
+      hasPublication: publication != null,
+      pending: _cameraQuality,
+      applied: _appliedCameraQuality,
+    )) {
       // Erros de permissão/hardware (TrackCreateException, exceptions.dart:81)
       // PROPAGAM — o controller decide a mensagem; falha de câmera NUNCA
       // derruba a sessão (nada de _cleanupRoom aqui).
       await localParticipant.setCameraEnabled(true);
       return;
     }
-    // 1ª publicação: já nasce no perfil de qualidade selecionado (Fase 7 —
-    // o `auto` equivale aos defaults do RoomOptions; perfis fixos aplicam
-    // captura + publish options próprios).
+    if (publication != null) {
+      // Perfil pendente diferente do aplicado: despublica para republicar
+      // com as novas options (mesmo caminho do setCameraQuality ao vivo).
+      await localParticipant.removePublishedTrack(publication.sid);
+    }
+    // 1ª publicação OU re-publicação com perfil novo: nasce no perfil
+    // selecionado (Fase 7 — o `auto` equivale aos defaults do RoomOptions).
     final (captureOptions, publishOptions) = _optionsFor(_cameraQuality);
     final track = await LocalVideoTrack.createCameraTrack(captureOptions);
-    await localParticipant.publishVideoTrack(track, publishOptions: publishOptions);
+    await localParticipant
+        .publishVideoTrack(track, publishOptions: publishOptions);
+    // Só após o sucesso: o perfil aplicado agora é o corrente (rollback
+    // natural se o create/publish falhar — _appliedCameraQuality intacto).
+    _appliedCameraQuality = _cameraQuality;
   }
 
   @override
@@ -272,13 +295,17 @@ class LiveKitRtcService implements RtcService {
 
   @override
   Future<void> setCameraQuality(RtcCameraQuality quality) async {
-    _cameraQuality = quality; // sempre guardado (vale para a próxima ligada)
     final room = _room;
     if (room == null || _disposed) return;
     final localParticipant = room.localParticipant;
     if (localParticipant == null) return;
-    // Câmera OFF: perfil fica pendente — a 1ª enableCamera() aplica.
-    if (!localParticipant.isCameraEnabled()) return;
+    // Câmera OFF: perfil fica PENDENTE — a próxima enableCamera() aplica
+    // (e o enableCamera detecta divergência com o aplicado). Grava já o
+    // pendente; nada foi publicado ainda, então não há estado inconsistente.
+    if (!localParticipant.isCameraEnabled()) {
+      _cameraQuality = quality;
+      return;
+    }
 
     // Câmera LIGADA: troca ao vivo sem sair da sala. restartTrack recria a
     // captura no MESMO sender mas NÃO renegocia os publish options
@@ -286,16 +313,26 @@ class LiveKitRtcService implements RtcService {
     // + _publishVideoTrack usa lastPublishOptions/defaults). Para mudar o
     // teto de publicação é preciso despublicar + republicar com as novas
     // options (padrão real validado no commetchat/commet via MCP grep).
+    //
+    // Ordem defensiva: CRIA a track nova ANTES de remover a antiga — se o
+    // create falhar (hardware não suporta o perfil), a publicação atual
+    // permanece intacta e _cameraQuality NÃO muda (rollback natural; o
+    // controller também não atualiza o estado em erro — sem divergência).
+    final (captureOptions, publishOptions) = _optionsFor(quality);
+    final track = await LocalVideoTrack.createCameraTrack(captureOptions);
     final publication =
         localParticipant.getTrackPublicationBySource(TrackSource.camera);
     if (publication != null) {
       await localParticipant.removePublishedTrack(publication.sid);
     }
-    final (captureOptions, publishOptions) = _optionsFor(quality);
-    final track = await LocalVideoTrack.createCameraTrack(captureOptions);
-    // Erros de captura (TrackCreateException) PROPAGAM — o controller
-    // decide a mensagem; falha NUNCA derruba a sessão (nada de _cleanupRoom).
-    await localParticipant.publishVideoTrack(track, publishOptions: publishOptions);
+    // Erros de captura/publish (TrackCreateException) PROPAGAM — o
+    // controller decide a mensagem; falha NUNCA derruba a sessão.
+    await localParticipant
+        .publishVideoTrack(track, publishOptions: publishOptions);
+    // Só após o sucesso: perfil pendente E aplicado passam a ser o novo
+    // (em falha, _cameraQuality continua o antigo = estado do controller).
+    _cameraQuality = quality;
+    _appliedCameraQuality = quality;
   }
 
   @override
@@ -733,6 +770,7 @@ class LiveKitRtcService implements RtcService {
     _tokenGenerator = null;
     _livekitUrl = null;
     _cameraQuality = RtcCameraQuality.auto;
+    _appliedCameraQuality = RtcCameraQuality.auto;
     await _teardownRoom();
   }
 
@@ -764,6 +802,21 @@ class LiveKitRtcService implements RtcService {
     _emitSnapshot();
   }
 }
+
+/// Decisão PURA (testável isoladamente) de quando [LiveKitRtcService.enableCamera]
+/// deve REPUBLICAR a track de câmera em vez de apenas desmutar a publicação
+/// existente:
+/// - sem publicação → precisa republicar (1ª ligada);
+/// - publicação existe e perfil pendente == perfil aplicado → só unmute;
+/// - publicação existe e perfil pendente != aplicado → precisa republicar
+///   (usuário trocou o perfil com a câmera DESLIGADA — fix CRÍTICO do review
+///   de SPEC Fase 7; sem esta regra o perfil escolhido era descartado).
+bool cameraNeedsRepublish({
+  required bool hasPublication,
+  required RtcCameraQuality pending,
+  required RtcCameraQuality applied,
+}) =>
+    !hasPublication || pending != applied;
 
 /// Função PURA (testável isoladamente) que mapeia um perfil de qualidade
 /// de publicação para as opções de captura/publicação da câmera local.

@@ -9,6 +9,43 @@ import 'package:_4fun_cod_client/core/rtc/rtc_service.dart';
 /// (CameraCaptureOptions, VideoPublishOptions). Confere dimensões/fps das
 /// capturas e as camadas simulcast de cada perfil contra a tabela da SPEC.
 void main() {
+  group('cameraNeedsRepublish (fix CRÍTICO do review)', () {
+    test('sem publicação → sempre republica (1ª ligada)', () {
+      expect(
+        cameraNeedsRepublish(
+          hasPublication: false,
+          pending: RtcCameraQuality.auto,
+          applied: RtcCameraQuality.auto,
+        ),
+        isTrue,
+      );
+    });
+
+    test('publicação existe e perfil pendente == aplicado → só unmute', () {
+      expect(
+        cameraNeedsRepublish(
+          hasPublication: true,
+          pending: RtcCameraQuality.q1080,
+          applied: RtcCameraQuality.q1080,
+        ),
+        isFalse,
+      );
+    });
+
+    test('publicação existe e perfil pendente != aplicado → republica '
+        '(desligou→trocou perfil→religou)', () {
+      expect(
+        cameraNeedsRepublish(
+          hasPublication: true,
+          pending: RtcCameraQuality.q720,
+          applied: RtcCameraQuality.auto,
+        ),
+        isTrue,
+        reason: 'perfil trocado com a câmera OFF não pode ser descartado '
+            'ao religar (fix do review)');
+    });
+  });
+
   group('cameraQualityOptions', () {
     test('auto e q1080 compartilham o teto 1080p@60 com simulcast h180/h540/h1080_60',
         () {
