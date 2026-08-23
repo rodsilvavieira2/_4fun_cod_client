@@ -160,8 +160,8 @@ class ReconnectingEvent extends RtcEvent {
 }
 
 /// A RECONEXÃO AUTOMÁTICA concluiu (nova sala criada e conectada). O
-/// serviço republicou o mic MUTADO (padrão do connect); câmera e share
-/// locais recomeçam DESLIGADOS (risco V1 documentado).
+/// serviço republicou o mic ATIVO (padrão do connect desde a Fase 7);
+/// câmera e share locais recomeçam DESLIGADOS (risco V1 documentado).
 class ReconnectedEvent extends RtcEvent {
   const ReconnectedEvent();
 }
@@ -172,6 +172,14 @@ class ReconnectedEvent extends RtcEvent {
 /// O enum do LiveKit tem apenas LOW/MEDIUM/HIGH — o serviço traduz
 /// low/medium/high; OFF não existe no protocolo.
 enum RtcVideoQuality { low, medium, high }
+
+/// Qualidade de PUBLICAÇÃO da câmera local (Fase 7) — o "teto" de
+/// resolução/fps/bitrate que EU transmito.
+///
+/// DISTINTO de [RtcVideoQuality] (recepção remota): este enum governa a
+/// captura/publicação local. `auto` = comportamento adaptativo (simulcast
+/// h180/h540/h1080_60 + dynacast), default da feature.
+enum RtcCameraQuality { auto, q1080, q720, q480, q360, q240, q144 }
 
 /// Dispositivo de captura de vídeo (câmera).
 class RtcVideoDevice {
@@ -264,6 +272,18 @@ abstract class RtcService {
   /// Sem efeito quando a câmera está OFF — a primeira [enableCamera] usa o
   /// device default.
   Future<void> switchCamera(String deviceId);
+
+  /// Define o perfil de qualidade de PUBLICAÇÃO da câmera local (o "teto"
+  /// de resolução/fps/bitrate). `auto` mantém o comportamento adaptativo
+  /// (simulcast + dynacast). Pode ser chamado com a câmera OFF (fica
+  /// pendente para a próxima [enableCamera]) ou LIGADA (aplica ao vivo,
+  /// despublicando+republicando a track — blip visual breve). Erros de
+  /// captura propagam para o controller decidir a mensagem — uma falha
+  /// NÃO derruba a sessão.
+  Future<void> setCameraQuality(RtcCameraQuality quality);
+
+  /// Perfil de câmera atualmente configurado (default: [RtcCameraQuality.auto]).
+  RtcCameraQuality get cameraQuality;
 
   /// Referência renderizável da câmera de [participantId], ou null quando a
   /// câmera está OFF/ausente (track inexistente ou publicação mutada).

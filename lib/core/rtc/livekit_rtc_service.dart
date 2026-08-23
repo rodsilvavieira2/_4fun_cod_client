@@ -58,14 +58,16 @@ class LiveKitRtcService implements RtcService {
   /// plano: 32–64k; o encoder WebRTC opera em ABR entre o piso e o teto).
   ///
   /// Pitfall 2.11.0: [AudioCaptureOptions] NÃO tem campo `enabled` — o
-  /// "mic mutado por padrão" é feito no [connect] via `publication.mute()`.
+  /// "mic mutado por padrão" era feito no [connect] via `publication.mute()`;
+  /// desde a Fase 7 o mic entra ATIVO (requisito "áudio por padrão").
   ///
-  /// Vídeo (Fase 5):
+  /// Vídeo (Fase 5/7):
   /// - `adaptiveStream`/`dynacast` ligados no CLIENT (defaults false —
   ///   options.dart:298-299); dynacast requer simulcast (options.dart:264);
-  /// - `defaultCameraCaptureOptions` h540_169: a 1ª publicação de câmera
-  ///   usa estes params (o SDK clampa às dimensões reais do device);
-  /// - `videoSimulcastLayers` h180/h540/h1080: `simulcast` já é default
+  /// - `defaultCameraCaptureOptions` h1080_60 (Fase 7): a 1ª publicação de
+  ///   câmera usa estes params (o SDK clampa às dimensões reais do device);
+  ///   o modo `auto` do seletor equivale a estes defaults;
+  /// - `videoSimulcastLayers` h180/h540/h1080_60: `simulcast` já é default
   ///   true, mas fica explícito; `videoEncoding` fica null de propósito —
   ///   o SDK sugere os encodings a partir dos layers (options.dart:461-469).
   static final RoomOptions defaultRoomOptions = RoomOptions(
@@ -80,19 +82,46 @@ class LiveKitRtcService implements RtcService {
     adaptiveStream: true,
     dynacast: true,
     defaultCameraCaptureOptions: const CameraCaptureOptions(
-      params: VideoParametersPresets.h540_169,
+      params: h1080_60,
     ),
     defaultVideoPublishOptions: const VideoPublishOptions(
       simulcast: true,
       videoSimulcastLayers: [
         VideoParametersPresets.h180_169,
         VideoParametersPresets.h540_169,
-        VideoParametersPresets.h1080_169,
+        h1080_60,
       ],
     ),
   );
 
-  /// Opções da sala (mic publicado muted por padrão no [connect]).
+  /// 1080p@60 CUSTOM — NENHUM preset do SDK tem 60fps (máx 30 em
+  /// `video_parameters.dart`). Teto da Fase 7 (decisão: parar em 1080p60;
+  /// o h1440_169 existente é 1440p@30/5Mbps e ficou fora de escopo).
+  /// Bitrate ~6 Mbps (referência de encoders para 1080p60 H.264/VP8).
+  static const VideoParameters h1080_60 = VideoParameters(
+    dimensions: VideoDimensions(1920, 1080),
+    encoding: VideoEncoding(maxBitrate: 6000000, maxFramerate: 60),
+  );
+
+  /// 480p 16:9 custom — o SDK só tem `h480_43` (4:3); o seletor usa 16:9.
+  static const VideoParameters h480_169 = VideoParameters(
+    dimensions: VideoDimensions(854, 480),
+    encoding: VideoEncoding(maxBitrate: 800000, maxFramerate: 30),
+  );
+
+  /// 240p 16:9 custom — SDK não tem preset 240p 16:9.
+  static const VideoParameters h240_169 = VideoParameters(
+    dimensions: VideoDimensions(426, 240),
+    encoding: VideoEncoding(maxBitrate: 200000, maxFramerate: 30),
+  );
+
+  /// 144p 16:9 custom — SDK não tem preset 144p 16:9.
+  static const VideoParameters h144_169 = VideoParameters(
+    dimensions: VideoDimensions(256, 144),
+    encoding: VideoEncoding(maxBitrate: 100000, maxFramerate: 15),
+  );
+
+  /// Opções da sala (mic publicado ATIVO por padrão desde a Fase 7).
   final RoomOptions _roomOptions;
 
   Room? _room;
@@ -101,6 +130,14 @@ class LiveKitRtcService implements RtcService {
   /// automática (zerada no [_cleanupRoom], junto com o [_tokenGenerator]).
   String? _livekitUrl;
   bool _disposed = false;
+
+  /// Perfil de qualidade de PUBLICAÇÃO da câmera local (default: auto).
+  /// Aplicado na 1ª [enableCamera] e reaplicado ao vivo por
+  /// [setCameraQuality]. Resetado no [_cleanupRoom] (sessão nova = auto).
+  RtcCameraQuality _cameraQuality = RtcCameraQuality.auto;
+
+  @override
+  RtcCameraQuality get cameraQuality => _cameraQuality;
 
   /// identity → participante atual da sala.
   final Map<String, RtcParticipant> _participantsById = {};
@@ -151,13 +188,10 @@ class LiveKitRtcService implements RtcService {
       rethrow; // o controller trata o erro (token inválido, servidor fora etc.)
     }
 
-    // Publica o mic MUTADO por padrão: o usuário entra na sala sem
-    // transmitir áudio; habilita via enableMicrophone().
-    //
-    // RISCO ACEITO (V1): entre `setMicrophoneEnabled(true)` e `mute()` há uma
-    // janela de milissegundos em que a track pode ir à rede destapada. O SDK
-    // 2.11.0 não permite publicar já mutado (`AudioCaptureOptions` não tem
-    // `enabled`); o mute é o mais cedo possível após a publicação.
+    // Publica o mic ATIVO por padrão (Fase 7 — requisito "áudio por
+    // padrão"; a Fase 4 publicava mutado via publication.mute(), removido).
+    // O AEC/NS/AGC do defaultRoomOptions mitigam eco/ruído; o usuário pode
+    // mutar a qualquer momento pelo botão da barra de controles.
     final localParticipant = room.localParticipant;
     if (localParticipant == null) {
       // Impossível na prática pós-connect (o Room sempre tem o participante
@@ -165,14 +199,9 @@ class LiveKitRtcService implements RtcService {
       return;
     }
     try {
-      final micPublication =
-          await localParticipant.setMicrophoneEnabled(true);
-      if (micPublication != null && !micPublication.muted) {
-        await micPublication.mute(); // `muted` é getter-only na 2.11.0
-      }
+      await localParticipant.setMicrophoneEnabled(true);
     } catch (_) {
-      // Falha ao publicar/mutar o mic: NUNCA deixa o Room órfão com o mic
-      // destapado (invariante "mic sempre entra mutado") — limpa e propaga.
+      // Falha ao publicar o mic: NUNCA deixa o Room órfão — limpa e propaga.
       await _cleanupRoom();
       rethrow;
     }
@@ -211,13 +240,22 @@ class LiveKitRtcService implements RtcService {
     if (room == null || _disposed) return;
     final localParticipant = room.localParticipant;
     if (localParticipant == null) return;
-    // 1ª chamada: LocalVideoTrack.createCameraTrack(captureOptions) +
-    // publish (usando os defaults do RoomOptions); com publicação
-    // existente: unmute() (participant/local.dart:762-765, 795-821).
-    // Erros de permissão/hardware (TrackCreateException, exceptions.dart:81)
-    // PROPAGAM — o controller decide a mensagem; falha de câmera NUNCA
-    // derruba a sessão (nada de _cleanupRoom aqui).
-    await localParticipant.setCameraEnabled(true);
+    final publication =
+        localParticipant.getTrackPublicationBySource(TrackSource.camera);
+    if (publication != null) {
+      // Publicação existente: apenas desmuta (participant/local.dart:795-821).
+      // Erros de permissão/hardware (TrackCreateException, exceptions.dart:81)
+      // PROPAGAM — o controller decide a mensagem; falha de câmera NUNCA
+      // derruba a sessão (nada de _cleanupRoom aqui).
+      await localParticipant.setCameraEnabled(true);
+      return;
+    }
+    // 1ª publicação: já nasce no perfil de qualidade selecionado (Fase 7 —
+    // o `auto` equivale aos defaults do RoomOptions; perfis fixos aplicam
+    // captura + publish options próprios).
+    final (captureOptions, publishOptions) = _optionsFor(_cameraQuality);
+    final track = await LocalVideoTrack.createCameraTrack(captureOptions);
+    await localParticipant.publishVideoTrack(track, publishOptions: publishOptions);
   }
 
   @override
@@ -230,6 +268,34 @@ class LiveKitRtcService implements RtcService {
     // (participant/local.dart:797-814): a publicação PERMANECE publicada
     // (como o mic); o estado é reconciliado pelos eventos já ouvidos.
     await localParticipant.setCameraEnabled(false);
+  }
+
+  @override
+  Future<void> setCameraQuality(RtcCameraQuality quality) async {
+    _cameraQuality = quality; // sempre guardado (vale para a próxima ligada)
+    final room = _room;
+    if (room == null || _disposed) return;
+    final localParticipant = room.localParticipant;
+    if (localParticipant == null) return;
+    // Câmera OFF: perfil fica pendente — a 1ª enableCamera() aplica.
+    if (!localParticipant.isCameraEnabled()) return;
+
+    // Câmera LIGADA: troca ao vivo sem sair da sala. restartTrack recria a
+    // captura no MESMO sender mas NÃO renegocia os publish options
+    // (bitrate/simulcast layers ficam os do publish original — local.dart:289
+    // + _publishVideoTrack usa lastPublishOptions/defaults). Para mudar o
+    // teto de publicação é preciso despublicar + republicar com as novas
+    // options (padrão real validado no commetchat/commet via MCP grep).
+    final publication =
+        localParticipant.getTrackPublicationBySource(TrackSource.camera);
+    if (publication != null) {
+      await localParticipant.removePublishedTrack(publication.sid);
+    }
+    final (captureOptions, publishOptions) = _optionsFor(quality);
+    final track = await LocalVideoTrack.createCameraTrack(captureOptions);
+    // Erros de captura (TrackCreateException) PROPAGAM — o controller
+    // decide a mensagem; falha NUNCA derruba a sessão (nada de _cleanupRoom).
+    await localParticipant.publishVideoTrack(track, publishOptions: publishOptions);
   }
 
   @override
@@ -388,6 +454,17 @@ class LiveKitRtcService implements RtcService {
   // ---------------------------------------------------------------------
   // Internals
   // ---------------------------------------------------------------------
+
+  /// Perfil de qualidade → opções de captura e publicação da câmera local.
+  /// `auto` devolve EXATAMENTE os defaults do [defaultRoomOptions] (Fase 7:
+  /// simulcast h180/h540/h1080_60 + dynacast). Perfis fixos escalonam 3
+  /// camadas simulcast até o teto escolhido (LiveKit aceita máx 3) — o
+  /// dynacast continua protegendo assinantes com banda ruim; abaixo de
+  /// 480p o simulcast perde o valor e cai para 1 camada.
+  (CameraCaptureOptions, VideoPublishOptions) _optionsFor(
+    RtcCameraQuality quality,
+  ) =>
+      cameraQualityOptions(quality);
 
   void _wire(Room room) {
     _roomListeners.addAll([
@@ -623,15 +700,11 @@ class LiveKitRtcService implements RtcService {
         continue;
       }
       try {
-        // Mesmo padrão do connect: mic MUTADO por padrão (RISCO ACEITO V1 —
-        // janela de ms entre publicar e mutar; o SDK 2.11.0 não publica já
-        // mutado). Câmera/share locais recomeçam DESLIGADOS (risco V1
-        // documentado no contrato do ReconnectedEvent).
-        final micPublication =
-            await localParticipant.setMicrophoneEnabled(true);
-        if (micPublication != null && !micPublication.muted) {
-          await micPublication.mute();
-        }
+        // Mesmo padrão do connect (Fase 7): mic publicado ATIVO (requisito
+        // "áudio por padrão"; a Fase 4 republicava mutado). Câmera/share
+        // locais recomeçam DESLIGADOS (risco V1 documentado no contrato do
+        // ReconnectedEvent).
+        await localParticipant.setMicrophoneEnabled(true);
       } catch (error) {
         debugPrint('[rtc] falha ao republicar o mic na reconexão: $error');
         await _teardownRoom();
@@ -652,12 +725,14 @@ class LiveKitRtcService implements RtcService {
   }
 
   /// Encerramento definitivo da sessão: zera o token generator e a URL (a
-  /// reconexão automática não pode mais acontecer) e descarta o [Room].
+  /// reconexão automática não pode mais acontecer), volta o perfil de
+  /// câmera para `auto` (sessão nova = padrão) e descarta o [Room].
   /// Idempotente (chamado pelo próprio disconnect e pelo
   /// [RoomDisconnectedEvent] sem reconexão).
   Future<void> _cleanupRoom() async {
     _tokenGenerator = null;
     _livekitUrl = null;
+    _cameraQuality = RtcCameraQuality.auto;
     await _teardownRoom();
   }
 
@@ -687,6 +762,91 @@ class LiveKitRtcService implements RtcService {
       }
     }
     _emitSnapshot();
+  }
+}
+
+/// Função PURA (testável isoladamente) que mapeia um perfil de qualidade
+/// de publicação para as opções de captura/publicação da câmera local.
+///
+/// `auto` e `q1080` compartilham o teto 1080p60 com simulcast h180/h540/
+/// h1080_60 (diferença conceitual: `auto` deixa o dynacast decidir por
+/// banda; `q1080` é a escolha explícita do mesmo teto — opções idênticas
+/// por design). Perfis abaixo de 480p caem para 1 camada (simulcast perde
+/// o valor em resoluções pequenas).
+///
+/// As constantes de vídeo ([LiveKitRtcService.h1080_60] etc.) são públicas
+/// da classe para os testes conferirem os valores esperados.
+(CameraCaptureOptions, VideoPublishOptions) cameraQualityOptions(
+  RtcCameraQuality quality,
+) {
+  switch (quality) {
+    case RtcCameraQuality.auto:
+    case RtcCameraQuality.q1080:
+      return (
+        const CameraCaptureOptions(params: LiveKitRtcService.h1080_60),
+        const VideoPublishOptions(
+          simulcast: true,
+          videoSimulcastLayers: [
+            VideoParametersPresets.h180_169,
+            VideoParametersPresets.h540_169,
+            LiveKitRtcService.h1080_60,
+          ],
+        ),
+      );
+    case RtcCameraQuality.q720:
+      return (
+        const CameraCaptureOptions(
+          params: VideoParametersPresets.h720_169,
+        ),
+        const VideoPublishOptions(
+          simulcast: true,
+          videoSimulcastLayers: [
+            VideoParametersPresets.h180_169,
+            VideoParametersPresets.h360_169,
+            VideoParametersPresets.h720_169,
+          ],
+        ),
+      );
+    case RtcCameraQuality.q480:
+      // Camadas 16:9 escalonadas até 480p (h120/h240 16:9 não existem no
+      // SDK — h180/h360/h480 preservam o padrão do projeto).
+      return (
+        const CameraCaptureOptions(params: LiveKitRtcService.h480_169),
+        const VideoPublishOptions(
+          simulcast: true,
+          videoSimulcastLayers: [
+            VideoParametersPresets.h180_169,
+            VideoParametersPresets.h360_169,
+            LiveKitRtcService.h480_169,
+          ],
+        ),
+      );
+    case RtcCameraQuality.q360:
+      return (
+        const CameraCaptureOptions(
+          params: VideoParametersPresets.h360_169,
+        ),
+        VideoPublishOptions(
+          simulcast: false,
+          videoEncoding: VideoParametersPresets.h360_169.encoding,
+        ),
+      );
+    case RtcCameraQuality.q240:
+      return (
+        const CameraCaptureOptions(params: LiveKitRtcService.h240_169),
+        VideoPublishOptions(
+          simulcast: false,
+          videoEncoding: LiveKitRtcService.h240_169.encoding,
+        ),
+      );
+    case RtcCameraQuality.q144:
+      return (
+        const CameraCaptureOptions(params: LiveKitRtcService.h144_169),
+        VideoPublishOptions(
+          simulcast: false,
+          videoEncoding: LiveKitRtcService.h144_169.encoding,
+        ),
+      );
   }
 }
 
