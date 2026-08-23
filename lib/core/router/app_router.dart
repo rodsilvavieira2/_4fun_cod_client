@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -15,6 +15,33 @@ import '../../features/servers/server_shell_screen.dart';
 import '../../features/splash/splash_screen.dart';
 import '../auth/auth_controller.dart';
 import '../auth/auth_state.dart';
+import '../logging/app_logger.dart';
+
+/// Observer de navegação: loga todas as transições de rota (diagnóstico).
+class RouterLogObserver extends NavigatorObserver {
+  RouterLogObserver(this._log);
+
+  final AppLogger _log;
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    _log.i('navegação → ${route.settings.name ?? route.settings.toString()}',
+        tag: 'router');
+  }
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    _log.i('navegação ← ${route.settings.name ?? route.settings.toString()}',
+        tag: 'router');
+  }
+
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
+    _log.i(
+        'navegação ⇄ ${newRoute?.settings.name ?? newRoute?.settings.toString()}',
+        tag: 'router');
+  }
+}
 
 /// Repassa mudanças do [authControllerProvider] para o go_router via
 /// [ChangeNotifier] — faz o redirect reavaliar quando o estado de auth muda
@@ -40,6 +67,7 @@ final routerProvider = Provider<GoRouter>((ref) {
   final router = GoRouter(
     initialLocation: '/',
     refreshListenable: refreshStream,
+    observers: [RouterLogObserver(ref.watch(appLoggerProvider))],
     redirect: (context, state) {
       final authState = ref.read(authControllerProvider).valueOrNull;
       final location = state.matchedLocation;

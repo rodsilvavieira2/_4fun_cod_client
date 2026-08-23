@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/websocket/socket_service.dart';
+import '../logging/app_logger.dart';
+import '../websocket/socket_service.dart';
 import 'auth_repository.dart';
 import 'auth_state.dart';
 import 'token_storage.dart';
@@ -16,6 +17,7 @@ class AuthController extends AsyncNotifier<AuthState> {
 
   @override
   Future<AuthState> build() async {
+    final log = ref.watch(appLoggerProvider);
     // Sinal de auth rejeitada pelo socket durante toda a vida do app:
     // token inválido/expirado no handshake ⇒ tenta renovar a sessão e
     // reconectar; só desloga se o refresh falhar (revogação real).
@@ -38,13 +40,18 @@ class AuthController extends AsyncNotifier<AuthState> {
     final repo = ref.read(authRepositoryProvider);
     try {
       final hasRefreshToken = await storage.readRefreshToken() != null;
-      if (!hasRefreshToken) return const Unauthenticated();
-
+      if (!hasRefreshToken) {
+        log.i('bootstrap: sem sessão', tag: 'auth');
+        return const Unauthenticated();
+      }
+      log.d('bootstrap: renovando sessão (refresh rotativo)', tag: 'auth');
       await repo.refresh(); // silencioso; rotação do refresh token
       final user = await repo.getMe();
       await _connectSocket();
+      log.i('bootstrap: autenticado (${user.username})', tag: 'auth');
       return Authenticated(user: user);
-    } catch (_) {
+    } catch (e, st) {
+      log.e('bootstrap: sessão inválida', error: e, stackTrace: st, tag: 'auth');
       // Falha de storage (ex.: Keystore Android invalidada após restore) ou
       // de refresh: trata como "sem sessão" — NUNCA deixa o app preso na
       // splash (o router manda para /login).
@@ -64,6 +71,9 @@ class AuthController extends AsyncNotifier<AuthState> {
   }) async {
     final repo = ref.read(authRepositoryProvider);
     final session = await repo.login(email: email, password: password);
+    ref
+        .read(appLoggerProvider)
+        .i('login ok (${session.user.username})', tag: 'auth');
     state = AsyncData(Authenticated(user: session.user));
     await _connectSocket();
   }
@@ -81,6 +91,9 @@ class AuthController extends AsyncNotifier<AuthState> {
       email: email,
       password: password,
     );
+    ref
+        .read(appLoggerProvider)
+        .i('cadastro ok (${session.user.username})', tag: 'auth');
     state = AsyncData(Authenticated(user: session.user));
     await _connectSocket();
   }

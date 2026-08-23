@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/api/api_client.dart';
+import '../../core/logging/app_logger.dart';
 import '../../core/websocket/realtime_event.dart';
 import '../../core/websocket/socket_service.dart';
 import '../../shared/models/servers.dart';
@@ -42,8 +43,25 @@ final serversProvider =
 class ServerDetailController
     extends AutoDisposeFamilyAsyncNotifier<ServerDetail, String> {
   @override
-  Future<ServerDetail> build(String serverId) {
-    return ref.watch(serversRepositoryProvider).fetchServerDetail(serverId);
+  Future<ServerDetail> build(String serverId) async {
+    final log = ref.watch(appLoggerProvider);
+    log.d('detail fetch: $serverId', tag: 'server-detail');
+    // Timeout defensivo: mesmo com o interceptor corrigido, um fetch preso
+    // (fila do dio, rede) nunca pode deixar o painel em loading eterno —
+    // vira AsyncError (ícone de refresh) após 20s.
+    try {
+      final detail = await ref
+          .watch(serversRepositoryProvider)
+          .fetchServerDetail(serverId)
+          .timeout(const Duration(seconds: 20));
+      log.d('detail ok: $serverId (${detail.channels.length} canais)',
+          tag: 'server-detail');
+      return detail;
+    } catch (e, st) {
+      log.e('detail falhou: $serverId', error: e, stackTrace: st,
+          tag: 'server-detail');
+      rethrow;
+    }
   }
 
   /// Exclui o servidor (OWNER) e remove da lista. NÃO re-busca o detalhe

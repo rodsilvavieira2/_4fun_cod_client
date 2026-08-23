@@ -15,16 +15,28 @@ import 'token_storage.dart';
 class AuthRepository {
   AuthRepository(this._ref) {
     // Anexa o interceptor de refresh single-flight ao dio compartilhado.
-    _dio.interceptors.add(AuthInterceptor(this, _dio, _ref));
+    _dio.interceptors.add(AuthInterceptor(this, _ref));
   }
 
   final Ref _ref;
 
   late final Dio _dio = _ref.read(apiClientProvider);
+
+  /// Dio "nu" (sem o AuthInterceptor) para refresh/logout — uma request
+  /// aninhada no onError do QueuedInterceptor que falhe causa deadlock na
+  /// _errorQueue (spinner infinito). Ver [apiBareClientProvider].
+  late final Dio _bareDio = _ref.read(apiBareClientProvider);
   late final TokenStorage _tokenStorage = _ref.read(tokenStorageProvider);
 
+  /// Access token em cache (após login/register/refresh). Evita a leitura
+  /// síncrona do secure storage (libsecret/D-Bus) a CADA requisição — uma
+  /// leitura que pendure no `onRequest` seguraria a fila do
+  /// QueuedInterceptor para sempre (todas as requests seguintes travam).
+  String? _accessTokenCache;
+
   /// Access token atual (nulo se não houver sessão).
-  Future<String?> get accessToken => _tokenStorage.readAccessToken();
+  Future<String?> get accessToken async =>
+      _accessTokenCache ??= await _tokenStorage.readAccessToken();
 
   /// Login com e-mail/senha: `POST /auth/login` → tokens de sessão.
   ///
@@ -97,12 +109,13 @@ class AuthRepository {
         statusCode: 401,
       );
     }
-    final response = await _dio.post(
+    final response = await _bareDio.post(
       '/auth/refresh',
       data: {'refreshToken': refreshToken},
     );
     final tokens = SessionTokens.fromJson(response.data as Map<String, dynamic>);
     await _tokenStorage.saveTokens(tokens);
+    _accessTokenCache = tokens.accessToken;
     return tokens.accessToken;
   }
 
@@ -112,11 +125,12 @@ class AuthRepository {
     try {
       final refreshToken = await _tokenStorage.readRefreshToken();
       if (refreshToken != null) {
-        await _dio.post('/auth/logout', data: {'refreshToken': refreshToken});
+        await _bareDio.post('/auth/logout', data: {'refreshToken': refreshToken});
       }
     } catch (_) {
       // Best-effort: backend indisponível não impede o logout local.
     }
+    _accessTokenCache = null;
     await _tokenStorage.clear();
   }
 
@@ -181,6 +195,7 @@ class AuthRepository {
       user: User.fromJson(data['user'] as Map<String, dynamic>),
     );
     await _tokenStorage.saveTokens(session.tokens);
+    _accessTokenCache = session.tokens.accessToken;
     return session;
   }
 }

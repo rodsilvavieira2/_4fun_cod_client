@@ -74,7 +74,9 @@ class ServerMember {
   });
 
   factory ServerMember.fromJson(Map<String, dynamic> json) => ServerMember(
-        id: json['id'] as String,
+        // `GET /servers/:id` (detalhe) nem sempre traz o id da linha de
+        // membership — fallback para o userId (identidade única do membro).
+        id: json['id'] as String? ?? json['userId'] as String,
         userId: json['userId'] as String,
         role: json['role'] as String,
         joinedAt: DateTime.tryParse(json['joinedAt'] as String? ?? '') ??

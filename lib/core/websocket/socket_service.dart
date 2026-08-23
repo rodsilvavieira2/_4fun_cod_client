@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 
 import '../config/app_config.dart';
+import '../logging/app_logger.dart';
 import 'realtime_event.dart';
 
 /// Cliente Socket.IO encapsulado — único lugar do app que importa
@@ -17,10 +18,13 @@ import 'realtime_event.dart';
 /// joins de servidores/canais abertos são reemitidos a partir do estado
 /// registrado por [joinServer]/[joinChannel], sem interação do usuário.
 class SocketService {
-  SocketService({required this.apiUrl});
+  SocketService({required this.apiUrl, AppLogger? logger})
+      : _log = logger ?? AppLogger();
 
   /// Base URL da API (mesma usada pelo dio; o gateway responde nela).
   final String apiUrl;
+
+  final AppLogger _log;
 
   io.Socket? _socket;
   final StreamController<RealtimeEvent> _events =
@@ -121,6 +125,8 @@ class SocketService {
     socket.on('connect', (_) {
       final wasConnected = _hasConnectedOnce;
       _hasConnectedOnce = true;
+      _log.i('socket conectado${wasConnected ? ' (reconexão)' : ''} '
+          'id=${socket.id}', tag: 'socket');
       _startHeartbeat();
       _rejoin();
       if (wasConnected) {
@@ -129,6 +135,7 @@ class SocketService {
     });
     socket.on('disconnect', (data) {
       _stopHeartbeat();
+      _log.w('socket desconectado (data=$data)', tag: 'socket');
       // 'io server disconnect' = o servidor encerrou a conexão: handshake
       // rejeitado (token inválido) ou revogação de sessão. Em ambos os
       // casos o app deve tratar como falha de auth (logout/reconnect).
@@ -136,7 +143,10 @@ class SocketService {
         _authFailures.add(null);
       }
     });
-    socket.on('connect_error', _handleConnectError);
+    socket.on('connect_error', (data) {
+      _log.w('socket connect_error: ${_errorMessage(data)}', tag: 'socket');
+      _handleConnectError(data);
+    });
     socket.on('message.created', (data) => _dispatch('message.created', data));
     socket.on('message.updated', (data) => _dispatch('message.updated', data));
     socket.on('message.deleted', (data) => _dispatch('message.deleted', data));
@@ -156,6 +166,7 @@ class SocketService {
       final event =
           RealtimeEvent.fromJson(type, Map<String, dynamic>.from(data));
       if (event == null) return; // evento desconhecido: ignora
+      _log.d('evento $type', tag: 'socket');
       _events.add(event);
     } catch (_) {
       // Payload malformado de tipo conhecido: ignora em vez de derrubar o
@@ -201,7 +212,11 @@ class SocketService {
 
   void _emit(String event, [Map<String, dynamic>? data]) {
     final socket = _socket;
-    if (socket == null || !socket.connected) return;
+    if (socket == null || !socket.connected) {
+      _log.d('emit ignorado (desconectado): $event', tag: 'socket');
+      return;
+    }
+    _log.d('emit $event', tag: 'socket');
     if (data == null) {
       socket.emit(event);
     } else {
@@ -243,7 +258,10 @@ class SocketService {
 
 /// Instância única do socket — overridable em testes.
 final socketServiceProvider = Provider<SocketService>((ref) {
-  final service = SocketService(apiUrl: ref.watch(appConfigProvider).apiBaseUrl);
+  final service = SocketService(
+    apiUrl: ref.watch(appConfigProvider).apiBaseUrl,
+    logger: ref.watch(appLoggerProvider),
+  );
   ref.onDispose(service.dispose);
   return service;
 });
