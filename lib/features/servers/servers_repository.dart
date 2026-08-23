@@ -122,11 +122,16 @@ class ServersRepository {
     }
   }
 
-  /// `POST /invites/:code/accept` → 201 (idempotente: 200 se já membro).
-  /// A navegação pós-aceite usa o servidor vindo de [fetchInvite].
-  Future<void> acceptInvite(String code) async {
+  /// `POST /invites/:code/accept` → 201/200 idempotente. Retorna o id do
+  /// servidor (o payload traz `serverMember.serverId` nos dois casos — 201
+  /// primeiro aceite, 200 já era membro).
+  Future<String> acceptInvite(String code) async {
     try {
-      await _dio.post('/invites/$code/accept');
+      final response = await _dio.post('/invites/$code/accept');
+      final serverMember =
+          (response.data as Map<String, dynamic>)['serverMember']
+              as Map<String, dynamic>;
+      return serverMember['serverId'] as String;
     } on DioException catch (e) {
       throw ApiException.fromDio(e);
     }

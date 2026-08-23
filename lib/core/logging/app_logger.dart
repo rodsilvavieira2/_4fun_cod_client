@@ -1,7 +1,8 @@
-import 'dart:io';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import 'app_logger_sink_stub.dart'
+    if (dart.library.io) 'app_logger_sink_io.dart';
 
 /// Nível de severidade do log.
 enum LogLevel {
@@ -20,9 +21,10 @@ enum LogLevel {
 ///
 /// - **Console**: `debugPrint` sempre (visível no `flutter run`).
 /// - **Arquivo**: em desktop/IO, grava em
-///   `<HOME>/.local/share/4fun_cod_client/logs/app.log` (rotativo ~2MB) —
-///   permite inspecionar o que o client fez de FORA (ex.: `tail -f` no log
-///   durante um diagnóstico). Em web o file logging é desativado.
+///   `<HOME>/.local/share/4fun_cod_client/logs/app.log` (rotativo ~2MB,
+///   ver [AppLoggerFileSink]) — permite inspecionar o que o client fez de
+///   FORA (ex.: `tail -f` no log durante um diagnóstico). Em web o file
+///   logging é desativado (sink stub).
 /// - **NUNCA logar segredos**: o logger redige `Bearer <token>` e valores
 ///   de campos `password`/`secret`; os interceptors que o usam não logam
 ///   headers nem bodies de auth.
@@ -30,25 +32,13 @@ class AppLogger {
   AppLogger({
     this.minLevel = LogLevel.debug,
     String? logsDirectory,
-  }) : _logsDirectory = logsDirectory ?? _defaultLogsDirectory();
+  }) : _fileSink = AppLoggerFileSink(logsDirectory: logsDirectory);
 
   final LogLevel minLevel;
-  final String? _logsDirectory;
-
-  static const _maxFileBytes = 2 * 1024 * 1024; // 2MB
-  static final _fileLock = <String, Future<void>>{};
-
-  static String? _defaultLogsDirectory() {
-    if (kIsWeb) return null;
-    final home = Platform.environment['HOME'] ??
-        Platform.environment['USERPROFILE'];
-    if (home == null) return null;
-    return '$home/.local/share/4fun_cod_client/logs';
-  }
+  final AppLoggerFileSink _fileSink;
 
   /// Caminho do arquivo de log ativo (null em web / sem diretório).
-  String? get logFilePath =>
-      _logsDirectory == null ? null : '$_logsDirectory/app.log';
+  String? get logFilePath => _fileSink.logFilePath;
 
   void d(String message, {String tag = 'app'}) =>
       _log(LogLevel.debug, message, tag: tag);
@@ -77,7 +67,7 @@ class AppLogger {
     if (level.severity < minLevel.severity) return;
     final line = _format(level, tag, message, error, stackTrace);
     debugPrint(line);
-    _writeToFile(line);
+    _fileSink.write(line);
   }
 
   String _format(
@@ -114,34 +104,6 @@ class AppLogger {
       (m) => '${m.group(1)}***${m.group(2)}',
     );
     return out;
-  }
-
-  void _writeToFile(String line) {
-    final dir = _logsDirectory;
-    if (dir == null) return;
-    // Serializa gravações por diretório (append concorrente seguro).
-    _fileLock[dir] = (_fileLock[dir] ?? Future.value()).then((_) async {
-      try {
-        final directory = Directory(dir);
-        if (!directory.existsSync()) {
-          directory.createSync(recursive: true);
-        }
-        final file = File('$dir/app.log');
-        if (file.existsSync() && file.lengthSync() > _maxFileBytes) {
-          final backup = File('$dir/app.log.1');
-          if (backup.existsSync()) backup.deleteSync();
-          file.renameSync(backup.path);
-        }
-        final sink = file.openSync(mode: FileMode.append);
-        try {
-          sink.writeStringSync('$line\n');
-        } finally {
-          sink.closeSync();
-        }
-      } catch (_) {
-        // Logging nunca pode derrubar o app.
-      }
-    });
   }
 }
 
