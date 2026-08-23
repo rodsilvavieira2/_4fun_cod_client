@@ -71,6 +71,7 @@ class VoiceScreen extends ConsumerWidget {
           onToggleCamera: notifier.toggleCamera,
           onToggleScreenShare: () => _toggleScreenShare(context, ref),
           onOpenSettings: () => _openCameraSettings(context, ref, arg),
+          onOpenQuality: () => _openCameraQuality(context, ref, arg),
         ),
         // Corrige o tom da barra inferior sobre o surface do tema.
         const SizedBox(height: 4),
@@ -109,6 +110,19 @@ class VoiceScreen extends ConsumerWidget {
     showModalBottomSheet<void>(
       context: context,
       builder: (_) => _CameraSettingsSheet(arg: arg),
+    );
+  }
+
+  /// Abre o sheet de qualidade de transmissão (Fase 7). Não precisa de
+  /// refresh — o estado do perfil já vive no controller.
+  void _openCameraQuality(
+    BuildContext context,
+    WidgetRef ref,
+    ({String serverId, String channelId}) arg,
+  ) {
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (_) => _CameraQualitySheet(arg: arg),
     );
   }
 }
@@ -528,6 +542,7 @@ class _Controls extends StatelessWidget {
     required this.onToggleCamera,
     required this.onToggleScreenShare,
     required this.onOpenSettings,
+    required this.onOpenQuality,
   });
 
   final VoiceState state;
@@ -537,6 +552,7 @@ class _Controls extends StatelessWidget {
   final VoidCallback onToggleCamera;
   final VoidCallback onToggleScreenShare;
   final VoidCallback onOpenSettings;
+  final VoidCallback onOpenQuality;
 
   @override
   Widget build(BuildContext context) {
@@ -611,6 +627,20 @@ class _Controls extends StatelessWidget {
                 Icons.present_to_all,
                 color: state.isScreenSharing
                     ? theme.colorScheme.error
+                    : theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(width: 4),
+            // Qualidade de transmissão (Fase 7): abre o seletor de perfil
+            // (Auto/1080p/720p/...). Sempre habilitado — com a câmera OFF a
+            // escolha fica pendente para a próxima ligada.
+            IconButton(
+              onPressed: onOpenQuality,
+              tooltip: 'Qualidade de transmissão',
+              icon: Icon(
+                Icons.hd,
+                color: state.cameraQuality != RtcCameraQuality.auto
+                    ? theme.colorScheme.primary
                     : theme.colorScheme.onSurfaceVariant,
               ),
             ),
@@ -722,6 +752,78 @@ class _CameraSettingsSheet extends ConsumerWidget {
                   ],
                 ),
               ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Rótulo PT-BR de cada perfil de transmissão (Fase 7) — espelho das
+/// opções do print de referência, com `Auto` no topo.
+const Map<RtcCameraQuality, String> _cameraQualityLabels = {
+  RtcCameraQuality.auto: 'Auto',
+  RtcCameraQuality.q1080: '1080p HD',
+  RtcCameraQuality.q720: '720p',
+  RtcCameraQuality.q480: '480p',
+  RtcCameraQuality.q360: '360p',
+  RtcCameraQuality.q240: '240p',
+  RtcCameraQuality.q144: '144p',
+};
+
+/// Sheet de qualidade de TRANSMISSÃO (Fase 7): lista vertical de perfis de
+/// publicação (estilo YouTube), `Auto` no topo com ✓ no ativo. O estado vem
+/// do [voiceControllerProvider] — o sheet apenas lê e aplica via
+/// [VoiceController.setCameraQuality] (ao vivo se a câmera estiver ligada).
+class _CameraQualitySheet extends ConsumerWidget {
+  const _CameraQualitySheet({required this.arg});
+
+  final ({String serverId, String channelId}) arg;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final state = ref.watch(voiceControllerProvider(arg));
+    final notifier = ref.read(voiceControllerProvider(arg).notifier);
+
+    return SafeArea(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Qualidade de transmissão',
+              style: theme.textTheme.titleMedium,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              state.isCameraEnabled
+                  ? 'Aplica ao vivo na câmera ativa.'
+                  : 'Aplica quando a câmera for ligada.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.outline,
+              ),
+            ),
+            const SizedBox(height: 8),
+            RadioGroup<RtcCameraQuality>(
+              groupValue: state.cameraQuality,
+              onChanged: (quality) {
+                if (quality != null) notifier.setCameraQuality(quality);
+              },
+              child: Column(
+                children: [
+                  for (final entry in _cameraQualityLabels.entries)
+                    RadioListTile<RtcCameraQuality>(
+                      value: entry.key,
+                      title: Text(entry.value),
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                ],
+              ),
+            ),
           ],
         ),
       ),

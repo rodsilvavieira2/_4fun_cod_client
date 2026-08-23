@@ -37,6 +37,7 @@ class VoiceState {
     this.spotlightParticipantId,
     this.cameraDevices = const [],
     this.selectedCameraId,
+    this.cameraQuality = RtcCameraQuality.auto,
   });
 
   final VoiceSessionStatus status;
@@ -87,6 +88,11 @@ class VoiceState {
   /// não guarda deviceId pendente com a câmera desligada).
   final String? selectedCameraId;
 
+  /// Perfil de qualidade de PUBLICAÇÃO da câmera local (Fase 7; default
+  /// `auto`). Persistido só na sessão — resetado a cada join (padrão do
+  /// projeto: selectedCameraId idem).
+  final RtcCameraQuality cameraQuality;
+
   VoiceState copyWith({
     VoiceSessionStatus? status,
     Object? errorMessage = _unset,
@@ -100,6 +106,7 @@ class VoiceState {
     Object? spotlightParticipantId = _unset,
     List<RtcVideoDevice>? cameraDevices,
     Object? selectedCameraId = _unset,
+    RtcCameraQuality? cameraQuality,
   }) {
     return VoiceState(
       status: status ?? this.status,
@@ -128,6 +135,7 @@ class VoiceState {
       selectedCameraId: identical(selectedCameraId, _unset)
           ? this.selectedCameraId
           : selectedCameraId as String?,
+      cameraQuality: cameraQuality ?? this.cameraQuality,
     );
   }
 }
@@ -196,6 +204,8 @@ class VoiceController
     state = current.copyWith(
       status: VoiceSessionStatus.connecting,
       errorMessage: null,
+      // Sessão nova = perfil de câmera default (decisão: por sessão).
+      cameraQuality: RtcCameraQuality.auto,
     );
     try {
       final info = await _freshJoinInfo();
@@ -423,6 +433,32 @@ class VoiceController
     }
   }
 
+  /// Define o perfil de qualidade de PUBLICAÇÃO da câmera local (Fase 7).
+  /// Com a câmera LIGADA aplica ao vivo (despublica+republica — blip visual
+  /// breve, igual Zoom/Meet); com a câmera DESLIGADA o perfil fica pendente
+  /// para a próxima [toggleCamera]/[enableCamera]. Erro de captura NUNCA
+  /// derruba a sessão (mesmo padrão de [toggleCamera]).
+  Future<void> setCameraQuality(RtcCameraQuality quality) async {
+    final current = state;
+    if (current.status != VoiceSessionStatus.connected) return;
+    final rtc = ref.read(rtcServiceProvider);
+    try {
+      await rtc.setCameraQuality(quality);
+    } catch (_) {
+      if (_disposed) return;
+      state = state.copyWith(
+        status: VoiceSessionStatus.connected,
+        errorMessage: 'Não foi possível ajustar a qualidade da câmera.',
+      );
+      return;
+    }
+    if (_disposed) return;
+    state = state.copyWith(
+      cameraQuality: quality,
+      errorMessage: null,
+    );
+  }
+
   /// Aplica a qualidade de recepção de um tile REMOTO conforme o papel
   /// (spotlight→high, grid→medium, miniatura→low). Ignora o participante
   /// local (qualidade local é da publicação) e dedupe chamadas repetidas
@@ -482,11 +518,12 @@ class VoiceController
       }
     }
     if (_disposed) return;
-    // O mic entra publicado MUTADO por padrão (decisão da Fase 4) e a
-    // câmera NUNCA é publicada no connect — começa OFF (só via botão).
+    // O mic entra publicado ATIVO por padrão (Fase 7 — "áudio por padrão";
+    // a Fase 4 entrava mutado) e a câmera NUNCA é publicada no connect —
+    // começa OFF (só via botão).
     state = state.copyWith(
       status: VoiceSessionStatus.connected,
-      isMicrophoneEnabled: false,
+      isMicrophoneEnabled: true,
     );
   }
 
