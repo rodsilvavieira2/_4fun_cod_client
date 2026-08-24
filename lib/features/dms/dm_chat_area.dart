@@ -134,46 +134,61 @@ class _DmComposerState extends State<_DmComposer> {
     return SafeArea(
       top: false,
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        // Mesmo padrão do composer de canal (wireframe .composer-wrap).
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
         child: Container(
+          constraints: const BoxConstraints(minHeight: 48),
           decoration: BoxDecoration(
             color: AppThemeColors.card,
             borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: AppThemeColors.hairline),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x80000000),
+                blurRadius: 12,
+                offset: Offset(0, 4),
+              ),
+            ],
           ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _controller,
-                  minLines: 1,
-                  maxLines: 5,
-                  decoration: InputDecoration(
-                    hintText: widget.hintName != null
-                        ? 'Mensagem para @${widget.hintName}'
-                        : 'Mensagem',
-                    border: InputBorder.none,
-                    isDense: true,
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 10,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 6, 8, 6),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _controller,
+                    minLines: 1,
+                    maxLines: 5,
+                    decoration: InputDecoration(
+                      hintText: widget.hintName != null
+                          ? 'Mensagem para @${widget.hintName}'
+                          : 'Mensagem',
+                      border: InputBorder.none,
+                      isDense: true,
+                      contentPadding:
+                          const EdgeInsets.symmetric(horizontal: 0, vertical: 10),
                     ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 4),
-              Padding(
-                padding: const EdgeInsets.only(right: 6, bottom: 4),
-                child: IconButton.filled(
-                  onPressed: _handleSend,
-                  icon: const Icon(Icons.send, size: 18),
-                  tooltip: 'Enviar',
-                  style: IconButton.styleFrom(
-                    minimumSize: const Size(44, 44),
+                // Wireframe: .composer .send 32x32 radius 6.
+                InkWell(
+                  borderRadius: BorderRadius.circular(6),
+                  onTap: _handleSend,
+                  child: Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1A1A1A),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: AppThemeColors.hairline),
+                    ),
+                    alignment: Alignment.center,
+                    child: const Icon(Icons.send, size: 14),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

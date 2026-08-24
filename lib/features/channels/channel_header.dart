@@ -35,8 +35,9 @@ class ChannelHeader extends StatelessWidget {
         ? Icons.tag
         : Icons.volume_up_outlined;
     return Container(
+      // Wireframe: .channel-header height 48, padding 0 16px, gap 10.
       height: 48,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       decoration: const BoxDecoration(
         color: AppThemeColors.canvas,
         border: Border(bottom: BorderSide(color: AppThemeColors.hairline)),
@@ -49,10 +50,10 @@ class ChannelHeader extends StatelessWidget {
               tooltip: 'Voltar para canais',
               onPressed: onBack,
             ),
-            const SizedBox(width: 4),
+            const SizedBox(width: 6),
           ],
           Icon(icon, size: 18, color: Theme.of(context).colorScheme.secondary),
-          const SizedBox(width: 6),
+          const SizedBox(width: 10),
           Expanded(
             child: Text(
               channelName,

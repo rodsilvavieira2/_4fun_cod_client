@@ -104,8 +104,8 @@ class _DmRailItemState extends State<_DmRailItem> {
   Widget build(BuildContext context) {
     final active = widget.active;
     final compact = widget.compact;
-    final itemSize = compact ? 40.0 : 48.0;
-    final radius = compact ? 12.0 : 16.0;
+    final itemSize = compact ? 40.0 : 44.0;
+    final radius = compact ? 10.0 : 12.0;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: MouseRegion(
@@ -114,26 +114,35 @@ class _DmRailItemState extends State<_DmRailItem> {
         child: Tooltip(
           message: 'Mensagens diretas',
           child: InkWell(
-            borderRadius: BorderRadius.circular(radius),
+            borderRadius: BorderRadius.circular(radius + 4),
             onTap: () => context.push('/dms'),
             child: SizedBox(
               height: itemSize,
               child: Stack(
                 alignment: Alignment.center,
+                clipBehavior: Clip.none,
                 children: [
-                  // Pill branca à esquerda (altura 8→20→40).
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 150),
-                    curve: Curves.easeOut,
-                    width: 4,
-                    height: active
-                        ? 40
-                        : (_hovered ? 20 : 8),
-                    decoration: BoxDecoration(
-                      color: active
-                          ? Colors.white
-                          : AppThemeColors.hairline,
-                      borderRadius: BorderRadius.circular(999),
+                  // Pill branca à esquerda (wireframe: 0 idle → 16 hover
+                  // → 32 ativo; left -14 absoluto, opacidade 0/0.5/1).
+                  Positioned(
+                    left: -14,
+                    top: 0,
+                    bottom: 0,
+                    child: Center(
+                      child: AnimatedOpacity(
+                        duration: const Duration(milliseconds: 120),
+                        opacity: active ? 1 : (_hovered ? 0.5 : 0),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 150),
+                          curve: Curves.easeOut,
+                          width: 4,
+                          height: active ? 32 : (_hovered ? 16 : 0),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                   Container(
@@ -190,8 +199,8 @@ class _ServerRailItemState extends State<_ServerRailItem> {
     final server = widget.server;
     final selected = widget.selected;
     final compact = widget.compact;
-    final itemSize = compact ? 40.0 : 48.0;
-    final radius = compact ? 12.0 : 16.0;
+    final itemSize = compact ? 40.0 : 44.0;
+    final radius = compact ? 10.0 : 12.0;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: MouseRegion(
@@ -200,51 +209,62 @@ class _ServerRailItemState extends State<_ServerRailItem> {
         child: Tooltip(
           message: server.name,
           child: InkWell(
-            borderRadius: BorderRadius.circular(radius + 8),
+            borderRadius: BorderRadius.circular(radius + 4),
             onTap: () => context.go('/servers/${server.id}'),
             child: SizedBox(
               height: itemSize,
               child: Stack(
                 alignment: Alignment.center,
+                clipBehavior: Clip.none,
                 children: [
-                  // Pill branca à esquerda (altura 8→20→40).
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 150),
-                    curve: Curves.easeOut,
-                    width: 4,
-                    height: selected ? 40 : (_hovered ? 20 : 8),
-                    decoration: BoxDecoration(
-                      color: selected
-                          ? Colors.white
-                          : AppThemeColors.hairline,
-                      borderRadius: BorderRadius.circular(999),
+                  // Pill branca à esquerda (wireframe: 0 idle → 16 hover
+                  // → 32 ativo; left -14 absoluto, opacidade 0/0.5/1).
+                  Positioned(
+                    left: -14,
+                    top: 0,
+                    bottom: 0,
+                    child: Center(
+                      child: AnimatedOpacity(
+                        duration: const Duration(milliseconds: 120),
+                        opacity: selected ? 1 : (_hovered ? 0.5 : 0),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 150),
+                          curve: Curves.easeOut,
+                          width: 4,
+                          height: selected ? 32 : (_hovered ? 16 : 0),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                        ),
+                      ),
                     ),
                   ),
-                  // Squircle: radius 16 sempre, 24 no hover/ativo.
+                  // Squircle: radius 12 sempre, 16 no hover/ativo.
                   AnimatedContainer(
                     duration: const Duration(milliseconds: 150),
                     curve: Curves.easeOut,
-                    width: compact ? 36 : 48,
-                    height: compact ? 36 : 48,
+                    width: compact ? 36 : 44,
+                    height: compact ? 36 : 44,
                     margin: EdgeInsets.symmetric(
                       horizontal: compact ? 10 : 12,
                     ),
                     decoration: BoxDecoration(
                       color: selected ? colorScheme.primary : AppThemeColors.card,
                       borderRadius: BorderRadius.circular(
-                        selected || _hovered ? radius + 8 : radius,
+                        selected || _hovered ? radius + 4 : radius,
                       ),
                     ),
                     alignment: Alignment.center,
                     child: server.iconUrl != null
                         ? ClipRRect(
                             borderRadius: BorderRadius.circular(
-                              selected || _hovered ? radius + 8 : radius,
+                              selected || _hovered ? radius + 4 : radius,
                             ),
                             child: Image.network(
                               server.iconUrl!,
-                              width: compact ? 36 : 48,
-                              height: compact ? 36 : 48,
+                              width: compact ? 36 : 44,
+                              height: compact ? 36 : 44,
                               fit: BoxFit.cover,
                               errorBuilder: (_, _, _) =>
                                   _initial(server, colorScheme, selected),

@@ -63,38 +63,71 @@ class _MemberRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final user = member.user;
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      child: Row(
-        children: [
-          CircleAvatar(
-            radius: 16,
-            foregroundImage:
-                user.avatarUrl != null ? NetworkImage(user.avatarUrl!) : null,
-            child: user.avatarUrl == null
-                ? Text(
-                    user.name.isEmpty ? '?' : user.name[0].toUpperCase(),
-                    style: const TextStyle(fontSize: 11),
-                  )
-                : null,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              user.name,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: online ? FontWeight.w600 : FontWeight.w400,
-                color: online
-                    ? Theme.of(context).colorScheme.onSurface
-                    : Theme.of(context).colorScheme.secondary,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
+      child: Container(
+        height: 44,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Row(
+          children: [
+            // Avatar 32 com ring + dot de presença no canto (wireframe:
+            // .member .ava 32x32 radius 8, .dot 10px right/bottom -4).
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: AppThemeColors.card,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppThemeColors.hairline),
+                  ),
+                  alignment: Alignment.center,
+                  clipBehavior: Clip.antiAlias,
+                  child: user.avatarUrl != null
+                      ? Image.network(
+                          user.avatarUrl!,
+                          width: 32,
+                          height: 32,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, _, _) => _initial(user.name),
+                        )
+                      : _initial(user.name),
+                ),
+                Positioned(
+                  right: -4,
+                  bottom: -4,
+                  child: PresenceDot(online: online, size: 10),
+                ),
+              ],
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                user.name,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w500,
+                  color: online
+                      ? Theme.of(context).colorScheme.onSurface
+                      : Theme.of(context).colorScheme.secondary,
+                ),
               ),
             ),
-          ),
-          // Dot de presença (componente compartilhado core/ui).
-          PresenceDot(online: online),
-        ],
+          ],
+        ),
       ),
+    );
+  }
+
+  Widget _initial(String name) {
+    return Text(
+      name.isEmpty ? '?' : name[0].toUpperCase(),
+      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
     );
   }
 }

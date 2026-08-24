@@ -42,30 +42,34 @@ class ChannelList extends ConsumerWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 8, 4),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  serverName ?? 'Servidor',
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.labelLarge,
+          // Wireframe: .sidebar-header height 48, padding 0 16px.
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: SizedBox(
+            height: 48,
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    serverName ?? 'Servidor',
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
-              ),
-              if (isOwner)
-                IconButton(
-                  icon: const Icon(Icons.add),
-                  tooltip: 'Criar canal',
-                  onPressed: () =>
-                      showCreateChannelDialog(context, serverId: serverId),
-                ),
-            ],
+                if (isOwner)
+                  IconButton(
+                    icon: const Icon(Icons.add),
+                    tooltip: 'Criar canal',
+                    onPressed: () =>
+                        showCreateChannelDialog(context, serverId: serverId),
+                  ),
+              ],
+            ),
           ),
         ),
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 16),
-          child: Divider(height: 1),
-        ),
+        const Divider(height: 1),
         Expanded(
           child: channels.when(
             loading: () => const Center(
@@ -91,7 +95,11 @@ class ChannelList extends ConsumerWidget {
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     children: [
                       if (textChannels.isNotEmpty) ...[
-                        const SectionHeader('CANAIS DE TEXTO'),
+                        // Wireframe: .channel-section padding 18px 16px 6px.
+                        const SectionHeader(
+                          'CANAIS DE TEXTO',
+                          padding: EdgeInsets.fromLTRB(16, 18, 16, 6),
+                        ),
                         for (final channel in textChannels)
                           _ChannelRow(
                             channel: channel,
@@ -107,7 +115,10 @@ class ChannelList extends ConsumerWidget {
                           ),
                       ],
                       if (voiceChannels.isNotEmpty) ...[
-                        const SectionHeader('CANAIS DE VOZ'),
+                        const SectionHeader(
+                          'CANAIS DE VOZ',
+                          padding: EdgeInsets.fromLTRB(16, 18, 16, 6),
+                        ),
                         for (final channel in voiceChannels)
                           _ChannelRow(
                             channel: channel,
@@ -200,26 +211,28 @@ class _ChannelRowState extends State<_ChannelRow> {
       child: InkWell(
         onTap: widget.onTap,
         child: Container(
-          height: 32,
-          margin: const EdgeInsets.symmetric(horizontal: 8),
+          height: 30,
+          margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
           decoration: BoxDecoration(
             color: selected
                 ? AppOverlayColors.selected
                 : (_hovered ? AppOverlayColors.hover : Colors.transparent),
-            borderRadius: BorderRadius.circular(4),
+            borderRadius: BorderRadius.circular(6),
           ),
           child: Row(
             children: [
-              // Pill azul 2px do canal ativo.
+              // Pill azul 3px do canal ativo (wireframe: left -4, top/bottom 6).
               AnimatedContainer(
                 duration: const Duration(milliseconds: 150),
-                width: 2,
-                height: 20,
+                width: 3,
+                height: 18,
                 decoration: BoxDecoration(
                   color: selected
                       ? theme.colorScheme.primary
                       : Colors.transparent,
-                  borderRadius: BorderRadius.circular(999),
+                  borderRadius: const BorderRadius.horizontal(
+                    right: Radius.circular(4),
+                  ),
                 ),
               ),
               const SizedBox(width: 8),

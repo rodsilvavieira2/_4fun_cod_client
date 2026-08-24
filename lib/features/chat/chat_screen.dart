@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../../shared/models/message.dart';
+import '../../shared/models/user.dart';
 import 'chat_providers.dart';
 
 /// Chat de um canal de texto (wireframe v3 §4.3): lista reversa (mais
@@ -193,7 +194,7 @@ class _MessageTileState extends State<_MessageTile> {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 120),
         color: _hovered ? AppThemeColors.messageHover : Colors.transparent,
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -202,22 +203,29 @@ class _MessageTileState extends State<_MessageTile> {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  // Avatar 40px (radius 20).
-                  CircleAvatar(
-                    radius: 20,
-                    foregroundImage: author.avatarUrl != null
-                        ? NetworkImage(author.avatarUrl!)
-                        : null,
-                    child: author.avatarUrl == null
-                        ? Text(
-                            author.name.isEmpty
-                                ? '?'
-                                : author.name[0].toUpperCase(),
-                            style: const TextStyle(fontSize: 12),
+                  // Avatar 40px quadrado com ring (wireframe: .msg .avatar
+                  // 40x40 radius 10, borda hairline, fundo bg-surface).
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: AppThemeColors.card,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: AppThemeColors.hairline),
+                    ),
+                    alignment: Alignment.center,
+                    clipBehavior: Clip.antiAlias,
+                    child: author.avatarUrl != null
+                        ? Image.network(
+                            author.avatarUrl!,
+                            width: 40,
+                            height: 40,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, _, _) => _avatarInitial(author),
                           )
-                        : null,
+                        : _avatarInitial(author),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 16),
                   Flexible(
                     child: Text(
                       author.name,
@@ -225,7 +233,7 @@ class _MessageTileState extends State<_MessageTile> {
                       // 4 tons por hash do id do autor (decoração, não
                       // identidade — wireframe v3).
                       style: TextStyle(
-                        fontSize: 14,
+                        fontSize: 14.5,
                         fontWeight: FontWeight.w600,
                         color: AppThemeColors.authorColors[
                             author.id.codeUnits
@@ -234,25 +242,40 @@ class _MessageTileState extends State<_MessageTile> {
                       ),
                     ),
                   ),
-                  const SizedBox(width: 6),
+                  const SizedBox(width: 8),
                   Text(
                     _formatTime(widget.message.createdAt),
+                    // Wireframe: .msg .time Geist Mono 11px muted.
                     style: theme.textTheme.bodySmall?.copyWith(
-                      color: const Color(0xFFA1A1AA),
+                      fontSize: 11,
+                      color: const Color(0xFF71717A),
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 2),
             ],
-            // Corpo a 56px (40 avatar + 16 gap).
+            // Corpo a 56px (40 avatar + 16 gap) — .msg.compact .text.
             Padding(
               padding: const EdgeInsets.only(left: 56),
-              child: Text(widget.message.content),
+              child: Text(
+                widget.message.content,
+                style: const TextStyle(
+                  fontSize: 14.5,
+                  height: 1.5,
+                ),
+              ),
             ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _avatarInitial(User author) {
+    return Text(
+      author.name.isEmpty ? '?' : author.name[0].toUpperCase(),
+      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
     );
   }
 
@@ -323,43 +346,69 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
     return SafeArea(
       top: false,
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        // Wireframe: .composer-wrap padding 0 20px 24px.
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
         child: Container(
+          // Wireframe: .composer — bg-surface, border hairline, radius 8,
+          // min-height 48, padding 6/8/6/16, shadow-md.
+          constraints: const BoxConstraints(minHeight: 48),
           decoration: BoxDecoration(
             color: AppThemeColors.card,
             borderRadius: BorderRadius.circular(8),
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _controller,
-                  enabled: !_sending,
-                  minLines: 1,
-                  maxLines: 5,
-                  decoration: const InputDecoration(
-                    hintText: 'Enviar mensagem',
-                    border: InputBorder.none,
-                    isDense: true,
-                    contentPadding:
-                        EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 4),
-              Padding(
-                padding: const EdgeInsets.only(right: 6, bottom: 4),
-                child: IconButton.filled(
-                  onPressed: _sending ? null : _handleSend,
-                  icon: const Icon(Icons.send, size: 18),
-                  tooltip: 'Enviar',
-                  style: IconButton.styleFrom(
-                    minimumSize: const Size(44, 44),
-                  ),
-                ),
+            border: Border.all(color: AppThemeColors.hairline),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x80000000),
+                blurRadius: 12,
+                offset: Offset(0, 4),
               ),
             ],
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 6, 8, 6),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _controller,
+                    enabled: !_sending,
+                    minLines: 1,
+                    maxLines: 5,
+                    decoration: const InputDecoration(
+                      hintText: 'Enviar mensagem',
+                      border: InputBorder.none,
+                      isDense: true,
+                      contentPadding:
+                          EdgeInsets.symmetric(horizontal: 0, vertical: 10),
+                    ),
+                  ),
+                ),
+                // Wireframe: .composer .send 32x32 radius 6, bg
+                // bg-surface-hover, border subtle.
+                InkWell(
+                  borderRadius: BorderRadius.circular(6),
+                  onTap: _sending ? null : _handleSend,
+                  child: Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1A1A1A),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: AppThemeColors.hairline),
+                    ),
+                    alignment: Alignment.center,
+                    child: Icon(
+                      Icons.send,
+                      size: 14,
+                      color: _sending
+                          ? Theme.of(context).colorScheme.secondary
+                          : Theme.of(context).colorScheme.onSurface,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

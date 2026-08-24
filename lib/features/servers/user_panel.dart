@@ -24,23 +24,35 @@ class UserPanel extends ConsumerWidget {
     return Container(
       // color + decoration simultâneos disparam a assert do Flutter
       // ("color is just a shorthand for decoration") — cor vai no
-      // BoxDecoration.
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      // BoxDecoration. Padding 10/14 conforme wireframe (.user-panel).
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: const BoxDecoration(
         color: AppThemeColors.card,
         border: Border(top: BorderSide(color: AppThemeColors.hairline)),
       ),
       child: Row(
         children: [
-          CircleAvatar(
-            radius: 16,
-            foregroundImage: avatarUrl != null ? NetworkImage(avatarUrl) : null,
-            child: avatarUrl == null
-                ? Text(
-                    name.isEmpty ? '?' : name[0].toUpperCase(),
-                    style: const TextStyle(fontSize: 12),
+          // Avatar 32 com "ring" (wireframe: .up-avatar .ring radius 8,
+          // borda hairline, fundo bg-surface).
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: AppThemeColors.card,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: AppThemeColors.hairline),
+            ),
+            alignment: Alignment.center,
+            clipBehavior: Clip.antiAlias,
+            child: avatarUrl != null
+                ? Image.network(
+                    avatarUrl,
+                    width: 32,
+                    height: 32,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => _initial(name),
                   )
-                : null,
+                : _initial(name),
           ),
           const SizedBox(width: 8),
           Expanded(
@@ -66,26 +78,40 @@ class UserPanel extends ConsumerWidget {
               ],
             ),
           ),
-          AppIconButton(
-            icon: Icons.mic_none,
-            tooltip: 'Microfone',
-            minSize: 32,
-            onPressed: () {},
-          ),
-          AppIconButton(
-            icon: Icons.headset_outlined,
-            tooltip: 'Fones de ouvido',
-            minSize: 32,
-            onPressed: () {},
-          ),
-          AppIconButton(
-            icon: Icons.settings_outlined,
-            tooltip: 'Configurações',
-            minSize: 32,
-            onPressed: onOpenSettings,
+          // Ícones 28x28 com gap 4 (wireframe: .up-icons gap 4, .up-icon
+          // 28x28 radius 6).
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AppIconButton(
+                icon: Icons.mic_none,
+                tooltip: 'Microfone',
+                minSize: 28,
+                onPressed: () {},
+              ),
+              AppIconButton(
+                icon: Icons.headset_outlined,
+                tooltip: 'Fones de ouvido',
+                minSize: 28,
+                onPressed: () {},
+              ),
+              AppIconButton(
+                icon: Icons.settings_outlined,
+                tooltip: 'Configurações',
+                minSize: 28,
+                onPressed: onOpenSettings,
+              ),
+            ],
           ),
         ],
       ),
+    );
+  }
+
+  Widget _initial(String name) {
+    return Text(
+      name.isEmpty ? '?' : name[0].toUpperCase(),
+      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
     );
   }
 }
