@@ -41,6 +41,30 @@ void main() {
       );
     });
 
+    test('acha o loopback do pw-loopback ("[Loopback]")', () {
+      expect(
+        findSystemAudioMonitorDevice([
+          device('loop1', '[Loopback]'),
+        ]),
+        'loop1',
+      );
+    });
+
+    test('acha "Stereo Mix" (Realtek) e "What U Hear" (Creative)', () {
+      expect(
+        findSystemAudioMonitorDevice([
+          device('sm1', 'Stereo Mix (Realtek(R) Audio)'),
+        ]),
+        'sm1',
+      );
+      expect(
+        findSystemAudioMonitorDevice([
+          device('wuh1', 'What U Hear (Sound Blaster)'),
+        ]),
+        'wuh1',
+      );
+    });
+
     test('heurística é case-insensitive', () {
       expect(
         findSystemAudioMonitorDevice([

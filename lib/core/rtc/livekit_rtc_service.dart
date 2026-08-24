@@ -136,10 +136,15 @@ class LiveKitRtcService implements RtcService {
   /// [setCameraQuality]. Resetado no [_cleanupRoom] (sessão nova = auto).
   RtcCameraQuality _cameraQuality = RtcCameraQuality.auto;
 
-  /// Guarda de reentrância da publicação de áudio de sistema (ver
-  /// [_publishSystemAudio]): evita que duas chamadas concorrentes de
-  /// [startScreenShare] publiquem duas tracks de screenShareAudio.
-  bool _publishingSystemAudio = false;
+  /// Época da publicação de áudio de sistema: incrementado a cada
+  /// [_teardownRoom] para INVALIDAR publicações pendentes de salas antigas
+  /// (uma captura travada na sala A não pode travar o share da sala B — nem
+  /// o `finally` da operação antiga liberar a fila de uma operação nova).
+  int _systemAudioPublishEpoch = 0;
+
+  /// Publicação de áudio de sistema EM ANDAMENTO (serialização de chamadas
+  /// concorrentes na MESMA sala). Null quando ocioso — ver [_publishSystemAudio].
+  Future<void>? _pendingSystemAudioPublish;
 
   /// Perfil da ÚLTIMA publicação de câmera BEM-SUCEDIDA. Comparado com
   /// [_cameraQuality] no [enableCamera] para detectar perfil pendente com
@@ -428,14 +433,27 @@ class LiveKitRtcService implements RtcService {
     if (room == null || _disposed) return;
     final localParticipant = room.localParticipant;
     if (localParticipant == null) return;
-    // Guarda de reentrância: duas chamadas concorrentes de startScreenShare
-    // podem passar o check de share inativo antes da 1ª publicar o vídeo —
-    // a 2ª chamada que chegasse aqui publicaria OUTRA track de áudio (o SDK
-    // só serializa o vídeo via _publishRunner). Flag no serviço = no-op.
-    if (_publishingSystemAudio) return;
-    _publishingSystemAudio = true;
+    // No-op quando a track JÁ está publicada — check POR SALA (cobre
+    // chamadas concorrentes que chegam depois da 1ª publicar; não há estado
+    // global que vaze entre salas — o _teardownRoom invalida a fila).
+    if (localParticipant
+            .getTrackPublicationBySource(TrackSource.screenShareAudio) !=
+        null) {
+      return;
+    }
+    // Serializa chamadas concorrentes NA MESMA sala: a 2ª aguarda a 1ª
+    // terminar — ela publicou (no-op natural do check acima) OU lançou
+    // SystemAudioPublishException (o await re-propaga para a 2ª também).
+    final pending = _pendingSystemAudioPublish;
+    if (pending != null) {
+      await pending;
+      return;
+    }
+    final epoch = _systemAudioPublishEpoch;
+    final operation = _publishSystemAudioInner(localParticipant);
+    _pendingSystemAudioPublish = operation;
     try {
-      await _publishSystemAudioInner(localParticipant);
+      await operation;
     } on SystemAudioPublishException {
       rethrow;
     } catch (error) {
@@ -446,7 +464,11 @@ class LiveKitRtcService implements RtcService {
         'Não foi possível publicar o áudio de sistema ($error).',
       );
     } finally {
-      _publishingSystemAudio = false;
+      // Só libera a fila se a sala NÃO mudou no meio (senão o finally da
+      // operação antiga liberaria a fila de uma operação nova).
+      if (epoch == _systemAudioPublishEpoch) {
+        _pendingSystemAudioPublish = null;
+      }
     }
   }
 
@@ -978,6 +1000,11 @@ class LiveKitRtcService implements RtcService {
   /// recursos WebRTC — retornar antes deixaria dois [Room]/PeerConnection
   /// vivos num reconnect rápido.
   Future<void> _teardownRoom() async {
+    // Invalida publicações de áudio de sistema pendentes DESTA sala: a sala
+    // nova (reconexão/join) não pode herdar no-op silencioso nem ver a fila
+    // da sala antiga (review codex — fix por época, não flag global).
+    _systemAudioPublishEpoch++;
+    _pendingSystemAudioPublish = null;
     for (final cancel in _roomListeners) {
       cancel();
     }
@@ -1005,13 +1032,20 @@ class LiveKitRtcService implements RtcService {
 /// devices de áudio do SO — função PURA (testável isoladamente).
 ///
 /// Heurística de label (case-insensitive): contém 'monitor' (PipeWire
-/// `alsa_output.*.monitor`, PulseAudio "Monitor of …") ou 'cable' (VB-Cable
-/// "CABLE Output", Windows). Retorna o PRIMEIRO match (ordem do enumerate —
-/// suficiente na V1, sem picker) ou null quando não há nenhum.
+/// `alsa_output.*.monitor`, PulseAudio "Monitor of …"), 'loopback'
+/// (PipeWire `pw-loopback` → "[Loopback]"), 'cable' (VB-Cable "CABLE
+/// Output"), 'stereo mix' (Realtek) ou 'what u hear' (Creative) — estes
+/// dois últimos são devices de captura de sistema comuns no Windows.
+/// Retorna o PRIMEIRO match (ordem do enumerate — suficiente na V1, sem
+/// picker) ou null quando não há nenhum.
 String? findSystemAudioMonitorDevice(Iterable<MediaDevice> devices) {
   for (final device in devices) {
     final label = device.label.toLowerCase();
-    if (label.contains('monitor') || label.contains('cable')) {
+    if (label.contains('monitor') ||
+        label.contains('loopback') ||
+        label.contains('cable') ||
+        label.contains('stereo mix') ||
+        label.contains('what u hear')) {
       return device.deviceId;
     }
   }
