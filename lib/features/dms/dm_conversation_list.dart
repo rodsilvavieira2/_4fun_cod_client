@@ -63,10 +63,12 @@ class _DmConversationListState extends ConsumerState<DmConversationList> {
           const SectionHeader('MENSAGENS'),
           Expanded(
             child: filtered.isEmpty
-                ? const Center(
+                ? Center(
                     child: Text(
                       'Nenhuma conversa.',
-                      style: TextStyle(color: AppThemeColors.hairline),
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.secondary,
+                      ),
                     ),
                   )
                 : ListView.builder(

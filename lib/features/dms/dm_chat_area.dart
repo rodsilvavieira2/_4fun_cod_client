@@ -63,20 +63,20 @@ class DmChatArea extends ConsumerWidget {
                   ),
                 ),
                 const Spacer(),
-                const AppIconButton(
+                AppIconButton(
                   icon: Icons.search,
                   tooltip: 'Buscar',
-                  onPressed: null,
+                  onPressed: () {},
                 ),
-                const AppIconButton(
+                AppIconButton(
                   icon: Icons.call_outlined,
                   tooltip: 'Chamada de voz',
-                  onPressed: null,
+                  onPressed: () {},
                 ),
-                const AppIconButton(
+                AppIconButton(
                   icon: Icons.videocam_outlined,
                   tooltip: 'Chamada de vídeo',
-                  onPressed: null,
+                  onPressed: () {},
                 ),
               ],
             ),

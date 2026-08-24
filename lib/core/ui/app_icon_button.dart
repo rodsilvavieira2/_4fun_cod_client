@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 
-/// Ícone de ação compacto com tooltip e alvo tocável ≥44px (acessibilidade
-/// do wireframe v3) — usado em headers, user panel e ações de linha.
+/// Ícone de ação compacto com tooltip e alvo tocável — usado em headers,
+/// user panel e ações de linha. Default 44px (acessibilidade do wireframe
+/// v3); painéis densos podem reduzir via [minSize].
 class AppIconButton extends StatelessWidget {
   const AppIconButton({
     super.key,
@@ -9,6 +10,7 @@ class AppIconButton extends StatelessWidget {
     required this.tooltip,
     this.onPressed,
     this.iconSize = 18,
+    this.minSize = 44,
     this.visualDensity = VisualDensity.compact,
   });
 
@@ -16,6 +18,10 @@ class AppIconButton extends StatelessWidget {
   final String tooltip;
   final VoidCallback? onPressed;
   final double iconSize;
+
+  /// Lado mínimo do alvo tocável (default 44px).
+  final double minSize;
+
   final VisualDensity visualDensity;
 
   @override
@@ -24,7 +30,7 @@ class AppIconButton extends StatelessWidget {
       icon: Icon(icon, size: iconSize),
       tooltip: tooltip,
       visualDensity: visualDensity,
-      constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+      constraints: BoxConstraints(minWidth: minSize, minHeight: minSize),
       onPressed: onPressed,
     );
   }

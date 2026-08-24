@@ -39,14 +39,10 @@ class DmShellScreen extends ConsumerWidget {
               : Row(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    if (isNarrow)
-                      ServerRail(
-                        dmActive: true,
-                        width: 56,
-                        compact: true,
-                      )
-                    else
-                      const ServerRail(dmActive: true),
+                    // DM mobile: SEM rail fixo (SPEC 3 tarefa 16) — lista
+                    // e chat alternam full-width com back; rota /dms é push
+                    // (gesto/back do navegador sai da visão DM).
+                    if (!isNarrow) const ServerRail(dmActive: true),
                     if (showList) ...[
                       const VerticalDivider(width: 1),
                       SizedBox(

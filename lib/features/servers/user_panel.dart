@@ -63,49 +63,26 @@ class UserPanel extends ConsumerWidget {
               ],
             ),
           ),
-          _ActionIcon(
+          AppIconButton(
             icon: Icons.mic_none,
             tooltip: 'Microfone',
+            minSize: 32,
             onPressed: () {},
           ),
-          _ActionIcon(
+          AppIconButton(
             icon: Icons.headset_outlined,
             tooltip: 'Fones de ouvido',
+            minSize: 32,
             onPressed: () {},
           ),
           AppIconButton(
             icon: Icons.settings_outlined,
             tooltip: 'Configurações',
+            minSize: 32,
             onPressed: onOpenSettings,
           ),
         ],
       ),
-    );
-  }
-}
-
-/// Ícone de ação compacto (mesma mecânica do [AppIconButton], sem forçar
-/// alvo 44px — o user panel é denso; mantém visual compacto).
-class _ActionIcon extends StatelessWidget {
-  const _ActionIcon({
-    required this.icon,
-    required this.tooltip,
-    this.onPressed,
-  });
-
-  final IconData icon;
-  final String tooltip;
-  final VoidCallback? onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return IconButton(
-      icon: Icon(icon, size: 18),
-      tooltip: tooltip,
-      visualDensity: VisualDensity.compact,
-      padding: const EdgeInsets.all(4),
-      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-      onPressed: onPressed,
     );
   }
 }

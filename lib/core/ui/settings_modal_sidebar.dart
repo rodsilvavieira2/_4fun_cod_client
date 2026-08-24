@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../theme/app_theme.dart';
-import '../ui/app_icon_button.dart';
 
 /// Seções do modal de configurações (wireframe v3 §4.6).
 enum SettingsSection {
@@ -133,22 +132,6 @@ class _SidebarItem extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-/// Ícone de fechar reutilizável do modal (mesma mecânica do [AppIconButton]).
-class SettingsCloseIcon extends StatelessWidget {
-  const SettingsCloseIcon({super.key, required this.onPressed});
-
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return AppIconButton(
-      icon: Icons.close,
-      tooltip: 'Fechar',
-      onPressed: onPressed,
     );
   }
 }
