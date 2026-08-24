@@ -65,6 +65,10 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
     }
   }
 
+  /// Abaixo desta largura o shell vira mobile (lista de canais full-width →
+  /// push do conteúdo com back); em ≥ ela mantém as 3 colunas do desktop.
+  static const double _desktopBreakpoint = 800;
+
   @override
   Widget build(BuildContext context) {
     final detail = ref.watch(serverDetailProvider(widget.serverId));
@@ -86,62 +90,123 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
       });
     }
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(detail.valueOrNull?.server.name ?? 'Servidor'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.group_outlined),
-            tooltip: 'Membros',
-            onPressed: () => context.push('/servers/${widget.serverId}/members'),
+    // Layout responsivo pelo ESPAÇO disponível (skill flutter de layout) —
+    // decisão por constraints.maxWidth, nunca por hardware/orientação.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isNarrow = constraints.maxWidth < _desktopBreakpoint;
+        // Mobile: com canal selecionado, o conteúdo ocupa a tela toda e o
+        // AppBar ganha o back para a lista de canais.
+        final showContent = isNarrow && _selectedChannelId != null;
+        return Scaffold(
+          appBar: AppBar(
+            leading: showContent
+                ? IconButton(
+                    icon: const Icon(Icons.arrow_back),
+                    tooltip: 'Voltar para canais',
+                    onPressed: () =>
+                        setState(() => _selectedChannelId = null),
+                  )
+                : null,
+            title: Text(detail.valueOrNull?.server.name ?? 'Servidor'),
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.group_outlined),
+                tooltip: 'Membros',
+                onPressed: () =>
+                    context.push('/servers/${widget.serverId}/members'),
+              ),
+              IconButton(
+                icon: const Icon(Icons.link),
+                tooltip: 'Convites',
+                onPressed: () =>
+                    context.push('/servers/${widget.serverId}/invites'),
+              ),
+              IconButton(
+                icon: const Icon(Icons.settings_outlined),
+                tooltip: 'Configurações',
+                onPressed: () =>
+                    context.push('/servers/${widget.serverId}/settings'),
+              ),
+            ],
           ),
-          IconButton(
-            icon: const Icon(Icons.link),
-            tooltip: 'Convites',
-            onPressed: () => context.push('/servers/${widget.serverId}/invites'),
+          body: isNarrow
+              ? (showContent
+                  ? _channelContent(context, selectedChannel)
+                  : _channelListPanel(
+                      context,
+                      detail: detail,
+                      isOwner: isOwner,
+                      channelList: channelList,
+                    ))
+              : _desktopBody(
+                  context,
+                  detail: detail,
+                  isOwner: isOwner,
+                  channelList: channelList,
+                  selectedChannel: selectedChannel,
+                ),
+        );
+      },
+    );
+  }
+
+  /// Layout desktop (inalterado): rail + lista de canais fixa + conteúdo.
+  Widget _desktopBody(
+    BuildContext context, {
+    required AsyncValue<ServerDetail> detail,
+    required bool isOwner,
+    required List<ServerChannel> channelList,
+    required ServerChannel? selectedChannel,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ServerRail(selectedServerId: widget.serverId),
+        const VerticalDivider(width: 1),
+        SizedBox(
+          width: 240,
+          child: _channelListPanel(
+            context,
+            detail: detail,
+            isOwner: isOwner,
+            channelList: channelList,
           ),
-          IconButton(
-            icon: const Icon(Icons.settings_outlined),
-            tooltip: 'Configurações',
-            onPressed: () => context.push('/servers/${widget.serverId}/settings'),
-          ),
-        ],
+        ),
+        const VerticalDivider(width: 1),
+        Expanded(child: _channelContent(context, selectedChannel)),
+      ],
+    );
+  }
+
+  /// Painel de canais: largura fixa no desktop, full-width no mobile.
+  Widget _channelListPanel(
+    BuildContext context, {
+    required AsyncValue<ServerDetail> detail,
+    required bool isOwner,
+    required List<ServerChannel> channelList,
+  }) {
+    return detail.when(
+      loading: () => const Center(
+        child: SizedBox(
+          width: 24,
+          height: 24,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
       ),
-      body: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          ServerRail(selectedServerId: widget.serverId),
-          const VerticalDivider(width: 1),
-          SizedBox(
-            width: 240,
-            child: detail.when(
-              loading: () => const Center(
-                child: SizedBox(
-                  width: 24,
-                  height: 24,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-              ),
-              error: (error, _) => Center(
-                child: IconButton(
-                  icon: const Icon(Icons.refresh),
-                  tooltip: 'Tentar novamente',
-                  onPressed: () =>
-                      ref.invalidate(serverDetailProvider(widget.serverId)),
-                ),
-              ),
-              data: (_) => ChannelList(
-                serverId: widget.serverId,
-                isOwner: isOwner,
-                selectedChannelId: _selectedChannelId,
-                onChannelSelected: (id) =>
-                    _onChannelSelected(id, channelList),
-              ),
-            ),
-          ),
-          const VerticalDivider(width: 1),
-          Expanded(child: _channelContent(context, selectedChannel)),
-        ],
+      error: (error, _) => Center(
+        child: IconButton(
+          icon: const Icon(Icons.refresh),
+          tooltip: 'Tentar novamente',
+          onPressed: () =>
+              ref.invalidate(serverDetailProvider(widget.serverId)),
+        ),
+      ),
+      data: (_) => ChannelList(
+        serverId: widget.serverId,
+        isOwner: isOwner,
+        selectedChannelId: _selectedChannelId,
+        onChannelSelected: (id) => _onChannelSelected(id, channelList),
       ),
     );
   }

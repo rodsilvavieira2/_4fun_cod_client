@@ -554,104 +554,220 @@ class _Controls extends StatelessWidget {
   final VoidCallback onOpenSettings;
   final VoidCallback onOpenQuality;
 
+  /// Abaixo desta largura a barra usa o padrão compacto (Discord mobile):
+  /// botões circulares + sair grande central + menu ⋮ para o restante.
+  static const double _compactBreakpoint = 520;
+
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final connected = state.status == VoiceSessionStatus.connected;
     final connecting = state.status == VoiceSessionStatus.connecting;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-      child: Row(
-        children: [
-          Expanded(
-            child: connected
-                ? FilledButton.tonalIcon(
-                    onPressed: connecting ? null : onLeave,
-                    icon: const Icon(Icons.call_end),
-                    label: const Text('Sair do canal de voz'),
-                  )
-                : FilledButton.icon(
-                    onPressed: connecting ? null : onJoin,
-                    icon: connecting
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.headset),
-                    label: Text(connecting ? 'Conectando…' : 'Entrar'),
-                  ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          if (!connected) {
+            return FilledButton.icon(
+              onPressed: connecting ? null : onJoin,
+              icon: connecting
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.headset),
+              label: Text(connecting ? 'Conectando…' : 'Entrar'),
+            );
+          }
+          if (constraints.maxWidth < _compactBreakpoint) {
+            return _buildCompactControls(context);
+          }
+          return _buildWideControls(context);
+        },
+      ),
+    );
+  }
+
+  /// Controles largos (≥520px, desktop/tablet): botão de sair expandido +
+  /// todos os ícones inline — visual original inalterado.
+  Widget _buildWideControls(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      children: [
+        Expanded(
+          child: FilledButton.tonalIcon(
+            onPressed: onLeave,
+            icon: const Icon(Icons.call_end),
+            label: const Text('Sair do canal de voz'),
           ),
-          if (connected) ...[
-            const SizedBox(width: 8),
-            IconButton.filledTonal(
-              onPressed: onToggleMicrophone,
-              tooltip: state.isMicrophoneEnabled
-                  ? 'Desativar microfone'
-                  : 'Ativar microfone',
-              icon: Icon(
-                state.isMicrophoneEnabled ? Icons.mic : Icons.mic_off,
-                color: state.isMicrophoneEnabled
-                    ? theme.colorScheme.primary
-                    : theme.colorScheme.onSurfaceVariant,
+        ),
+        const SizedBox(width: 8),
+        _mediaToggleButton(
+          theme: theme,
+          icon: state.isMicrophoneEnabled ? Icons.mic : Icons.mic_off,
+          active: state.isMicrophoneEnabled,
+          activeColor: theme.colorScheme.primary,
+          tooltip: state.isMicrophoneEnabled
+              ? 'Desativar microfone'
+              : 'Ativar microfone',
+          onPressed: onToggleMicrophone,
+        ),
+        const SizedBox(width: 8),
+        _mediaToggleButton(
+          theme: theme,
+          icon: state.isCameraEnabled ? Icons.videocam : Icons.videocam_off,
+          active: state.isCameraEnabled,
+          activeColor: theme.colorScheme.error,
+          tooltip: state.isCameraEnabled
+              ? 'Desativar câmera'
+              : 'Ativar câmera',
+          onPressed: onToggleCamera,
+        ),
+        const SizedBox(width: 8),
+        _mediaToggleButton(
+          theme: theme,
+          icon: Icons.present_to_all,
+          active: state.isScreenSharing,
+          activeColor: theme.colorScheme.error,
+          tooltip: state.isScreenSharing
+              ? 'Parar compartilhamento'
+              : 'Compartilhar tela',
+          onPressed: state.isReconnecting ? null : onToggleScreenShare,
+        ),
+        const SizedBox(width: 4),
+        // Qualidade de transmissão (Fase 7): abre o seletor de perfil
+        // (Auto/1080p/720p/...). Sempre habilitado — com a câmera OFF a
+        // escolha fica pendente para a próxima ligada.
+        IconButton(
+          onPressed: onOpenQuality,
+          tooltip: 'Qualidade de transmissão',
+          icon: Icon(
+            Icons.hd,
+            color: state.cameraQuality != RtcCameraQuality.auto
+                ? theme.colorScheme.primary
+                : theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(width: 4),
+        IconButton(
+          onPressed: onOpenSettings,
+          tooltip: 'Configurações de câmera',
+          icon: const Icon(Icons.settings),
+        ),
+      ],
+    );
+  }
+
+  /// Controles compactos (<520px, mobile): botões circulares de mídia +
+  /// botão de sair GRANDE central (padrão de call) + menu ⋮ com qualidade e
+  /// settings — nada estoura na largura de um celular.
+  Widget _buildCompactControls(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        _mediaToggleButton(
+          theme: theme,
+          icon: state.isMicrophoneEnabled ? Icons.mic : Icons.mic_off,
+          active: state.isMicrophoneEnabled,
+          activeColor: theme.colorScheme.primary,
+          tooltip: state.isMicrophoneEnabled
+              ? 'Desativar microfone'
+              : 'Ativar microfone',
+          onPressed: onToggleMicrophone,
+        ),
+        const SizedBox(width: 12),
+        _mediaToggleButton(
+          theme: theme,
+          icon: state.isCameraEnabled ? Icons.videocam : Icons.videocam_off,
+          active: state.isCameraEnabled,
+          activeColor: theme.colorScheme.error,
+          tooltip: state.isCameraEnabled
+              ? 'Desativar câmera'
+              : 'Ativar câmera',
+          onPressed: onToggleCamera,
+        ),
+        const SizedBox(width: 12),
+        IconButton(
+          onPressed: onLeave,
+          iconSize: 30,
+          padding: const EdgeInsets.all(16),
+          tooltip: 'Sair do canal de voz',
+          style: IconButton.styleFrom(
+            backgroundColor: theme.colorScheme.error,
+            foregroundColor: theme.colorScheme.onError,
+          ),
+          icon: const Icon(Icons.call_end),
+        ),
+        const SizedBox(width: 12),
+        _mediaToggleButton(
+          theme: theme,
+          icon: Icons.present_to_all,
+          active: state.isScreenSharing,
+          activeColor: theme.colorScheme.error,
+          tooltip: state.isScreenSharing
+              ? 'Parar compartilhamento'
+              : 'Compartilhar tela',
+          onPressed: state.isReconnecting ? null : onToggleScreenShare,
+        ),
+        const SizedBox(width: 12),
+        PopupMenuButton<String>(
+          tooltip: 'Mais opções',
+          icon: const Icon(Icons.more_vert),
+          onSelected: (value) {
+            switch (value) {
+              case 'quality':
+                onOpenQuality();
+                break;
+              case 'settings':
+                onOpenSettings();
+                break;
+            }
+          },
+          itemBuilder: (context) => const [
+            PopupMenuItem(
+              value: 'quality',
+              child: Row(
+                children: [
+                  Icon(Icons.hd),
+                  SizedBox(width: 12),
+                  Text('Qualidade de transmissão'),
+                ],
               ),
             ),
-            const SizedBox(width: 8),
-            // Câmera: vermelho (error) quando ativa — padrão de call de
-            // vídeo; diferente do mic que usa primary.
-            IconButton.filledTonal(
-              onPressed: onToggleCamera,
-              tooltip: state.isCameraEnabled
-                  ? 'Desativar câmera'
-                  : 'Ativar câmera',
-              icon: Icon(
-                state.isCameraEnabled ? Icons.videocam : Icons.videocam_off,
-                color: state.isCameraEnabled
-                    ? theme.colorScheme.error
-                    : theme.colorScheme.onSurfaceVariant,
+            PopupMenuItem(
+              value: 'settings',
+              child: Row(
+                children: [
+                  Icon(Icons.settings),
+                  SizedBox(width: 12),
+                  Text('Configurações de câmera'),
+                ],
               ),
-            ),
-            const SizedBox(width: 8),
-            // Compartilhar tela: vermelho (error) quando ativo — mesmo
-            // padrão visual da câmera; desabilitado durante a reconexão
-            // automática (o serviço está restabelecendo).
-            IconButton.filledTonal(
-              onPressed: !connected || state.isReconnecting
-                  ? null
-                  : onToggleScreenShare,
-              tooltip: state.isScreenSharing
-                  ? 'Parar compartilhamento'
-                  : 'Compartilhar tela',
-              icon: Icon(
-                Icons.present_to_all,
-                color: state.isScreenSharing
-                    ? theme.colorScheme.error
-                    : theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(width: 4),
-            // Qualidade de transmissão (Fase 7): abre o seletor de perfil
-            // (Auto/1080p/720p/...). Sempre habilitado — com a câmera OFF a
-            // escolha fica pendente para a próxima ligada.
-            IconButton(
-              onPressed: onOpenQuality,
-              tooltip: 'Qualidade de transmissão',
-              icon: Icon(
-                Icons.hd,
-                color: state.cameraQuality != RtcCameraQuality.auto
-                    ? theme.colorScheme.primary
-                    : theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(width: 4),
-            IconButton(
-              onPressed: onOpenSettings,
-              tooltip: 'Configurações de câmera',
-              icon: const Icon(Icons.settings),
             ),
           ],
-        ],
+        ),
+      ],
+    );
+  }
+
+  /// Botão circular de mídia (mic/câmera/tela): filledTonal com ícone na cor
+  /// ativa/inativa — mesmo padrão visual nos dois modos.
+  Widget _mediaToggleButton({
+    required ThemeData theme,
+    required IconData icon,
+    required bool active,
+    required Color activeColor,
+    required String tooltip,
+    required VoidCallback? onPressed,
+  }) {
+    return IconButton.filledTonal(
+      onPressed: onPressed,
+      tooltip: tooltip,
+      icon: Icon(
+        icon,
+        color: active ? activeColor : theme.colorScheme.onSurfaceVariant,
       ),
     );
   }
