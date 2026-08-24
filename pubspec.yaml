@@ -46,6 +46,18 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
 
+# Fork do livekit_client 2.11.0 com fix do gate de áudio web (autoplay):
+# startAllAudioElement reportava sucesso/falha por um AudioContext órfão
+# (_audioContext.state == 'running') em vez do play() real — no mobile o
+# contexto fica 'suspended' e o Room.startAudio() nunca reconhecia a
+# retomada, travando o banner de áudio. Branch fix/web-audio-playback-gate
+# em rodsilvavieira2/client-sdk-flutter. Revisitar em todo upgrade do SDK.
+dependency_overrides:
+  livekit_client:
+    git:
+      url: https://github.com/rodsilvavieira2/client-sdk-flutter.git
+      ref: fix/web-audio-playback-gate
+
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is
   # activated in the `analysis_options.yaml` file located at the root of your
@@ -66,6 +78,12 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  # CA do lab (autoassinada, "4fun Lab CA") — desktop confia nela para o
+  # wss:// do LiveKit e futuros https:// da API (dart:io NÃO lê o trust
+  # store do sistema; ver core/config/lab_ca_overrides.dart).
+  assets:
+    - assets/certs/ca.crt
 
   # To add assets to your application, add an assets section, like this:
   # assets:

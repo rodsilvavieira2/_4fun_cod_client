@@ -162,7 +162,7 @@ packages:
     source: hosted
     version: "1.0.9"
   custom_lint:
-    dependency: "direct dev"
+    dependency: "direct overridden"
     description:
       name: custom_lint
       sha256: "9656925637516c5cf0f5da018b33df94025af2088fe09c8ae2ca54c53f2d9a84"
@@ -226,7 +226,7 @@ packages:
     source: hosted
     version: "0.7.14"
   device_info_plus:
-    dependency: "direct dev"
+    dependency: "direct overridden"
     description:
       name: device_info_plus
       sha256: "0891702f96b2e465fe567b7ec448380e6b1c14f60af552a8536d9f583b6b8442"
@@ -367,7 +367,7 @@ packages:
     source: sdk
     version: "0.0.0"
   flutter_lints:
-    dependency: "direct dev"
+    dependency: "direct overridden"
     description:
       name: flutter_lints
       sha256: "3105dc8492f6183fb076ccf1f351ac3d60564bff92e20bfc4af9cc1651f4e7e1"
@@ -579,10 +579,11 @@ packages:
   livekit_client:
     dependency: "direct main"
     description:
-      name: livekit_client
-      sha256: "165d04b06d1d828ae85dc7ef5ffcbebf8d50f2cc7b02f3b8955fbeed96828c04"
-      url: "https://pub.dev"
-    source: hosted
+      path: "."
+      ref: "fix/web-audio-playback-gate"
+      resolved-ref: d81180403ab890779d7252e8e35884a97010e366
+      url: "https://github.com/rodsilvavieira2/client-sdk-flutter.git"
+    source: git
     version: "2.11.0"
   logger:
     dependency: transitive
@@ -801,7 +802,7 @@ packages:
     source: hosted
     version: "0.5.10"
   riverpod_lint:
-    dependency: "direct dev"
+    dependency: "direct overridden"
     description:
       name: riverpod_lint
       sha256: "89a52b7334210dbff8605c3edf26cfe69b15062beed5cbfeff2c3812c33c9e35"
