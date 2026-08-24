@@ -2,17 +2,23 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/theme/app_theme.dart';
 import '../../core/websocket/socket_service.dart';
 import '../../shared/models/servers.dart';
+import '../channels/channel_header.dart';
 import '../channels/channel_list.dart';
 import '../channels/channels_providers.dart';
 import '../chat/chat_screen.dart';
 import '../voice/voice_screen.dart';
+import 'members_panel.dart';
 import 'server_rail.dart';
 import 'servers_providers.dart';
+import 'user_panel.dart';
 
-/// Visão principal de um servidor: rail + lista de canais + conteúdo do
-/// canal selecionado (chat na Fase 3; voz chega na Fase 4).
+/// Visão principal de um servidor (wireframe v3): rail + sidebar (canais +
+/// user panel) + conteúdo do canal selecionado + painel de membros
+/// (desktop ≥800). Cores por coluna explícitas (`AppThemeColors`) — o tema
+/// default não expõe 3 fundos distintos.
 ///
 /// Ao abrir, faz `server:join` no socket (e `server:leave` ao sair); ao
 /// selecionar canal de TEXTO, `channel:join`/`channel:leave` — o join é
@@ -28,6 +34,9 @@ class ServerShellScreen extends ConsumerStatefulWidget {
 
 class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
   String? _selectedChannelId;
+
+  /// Painel de membros lateral (desktop): alternável pela ação do header.
+  bool _showMembers = true;
 
   @override
   void initState() {
@@ -66,7 +75,7 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
   }
 
   /// Abaixo desta largura o shell vira mobile (lista de canais full-width →
-  /// push do conteúdo com back); em ≥ ela mantém as 3 colunas do desktop.
+  /// push do conteúdo com back); em ≥ ela mantém as colunas do desktop.
   static const double _desktopBreakpoint = 800;
 
   @override
@@ -96,48 +105,30 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
       builder: (context, constraints) {
         final isNarrow = constraints.maxWidth < _desktopBreakpoint;
         // Mobile: com canal selecionado, o conteúdo ocupa a tela toda e o
-        // AppBar ganha o back para a lista de canais.
+        // header ganha o back para a lista de canais.
         final showContent = isNarrow && _selectedChannelId != null;
         return Scaffold(
-          appBar: AppBar(
-            leading: showContent
-                ? IconButton(
-                    icon: const Icon(Icons.arrow_back),
-                    tooltip: 'Voltar para canais',
-                    onPressed: () =>
-                        setState(() => _selectedChannelId = null),
-                  )
-                : null,
-            title: Text(detail.valueOrNull?.server.name ?? 'Servidor'),
-            actions: [
-              IconButton(
-                icon: const Icon(Icons.group_outlined),
-                tooltip: 'Membros',
-                onPressed: () =>
-                    context.push('/servers/${widget.serverId}/members'),
-              ),
-              IconButton(
-                icon: const Icon(Icons.link),
-                tooltip: 'Convites',
-                onPressed: () =>
-                    context.push('/servers/${widget.serverId}/invites'),
-              ),
-              IconButton(
-                icon: const Icon(Icons.settings_outlined),
-                tooltip: 'Configurações',
-                onPressed: () =>
-                    context.push('/servers/${widget.serverId}/settings'),
-              ),
-            ],
-          ),
           body: isNarrow
               ? (showContent
-                  ? _channelContent(context, selectedChannel)
-                  : _channelListPanel(
-                      context,
-                      detail: detail,
-                      isOwner: isOwner,
-                      channelList: channelList,
+                  ? _channelContent(context, selectedChannel, onBack: () {
+                      setState(() => _selectedChannelId = null);
+                    })
+                  : Row(
+                      children: [
+                        ServerRail(
+                          selectedServerId: widget.serverId,
+                          width: 56,
+                          compact: true,
+                        ),
+                        Expanded(
+                          child: _channelListPanel(
+                            context,
+                            detail: detail,
+                            isOwner: isOwner,
+                            channelList: channelList,
+                          ),
+                        ),
+                      ],
                     ))
               : _desktopBody(
                   context,
@@ -151,7 +142,7 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
     );
   }
 
-  /// Layout desktop (inalterado): rail + lista de canais fixa + conteúdo.
+  /// Layout desktop: rail + lista de canais fixa + conteúdo + membros.
   Widget _desktopBody(
     BuildContext context, {
     required AsyncValue<ServerDetail> detail,
@@ -175,72 +166,111 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
         ),
         const VerticalDivider(width: 1),
         Expanded(child: _channelContent(context, selectedChannel)),
+        if (_showMembers) ...[
+          const VerticalDivider(width: 1),
+          MembersPanel(serverId: widget.serverId),
+        ],
       ],
     );
   }
 
   /// Painel de canais: largura fixa no desktop, full-width no mobile.
+  /// Rodapé = [UserPanel] (avatar + status + mic/fones/⚙️).
   Widget _channelListPanel(
     BuildContext context, {
     required AsyncValue<ServerDetail> detail,
     required bool isOwner,
     required List<ServerChannel> channelList,
   }) {
-    return detail.when(
-      loading: () => const Center(
-        child: SizedBox(
-          width: 24,
-          height: 24,
-          child: CircularProgressIndicator(strokeWidth: 2),
-        ),
-      ),
-      error: (error, _) => Center(
-        child: IconButton(
-          icon: const Icon(Icons.refresh),
-          tooltip: 'Tentar novamente',
-          onPressed: () =>
-              ref.invalidate(serverDetailProvider(widget.serverId)),
-        ),
-      ),
-      data: (_) => ChannelList(
-        serverId: widget.serverId,
-        isOwner: isOwner,
-        selectedChannelId: _selectedChannelId,
-        onChannelSelected: (id) => _onChannelSelected(id, channelList),
+    return Container(
+      color: AppThemeColors.card,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            child: detail.when(
+              loading: () => const Center(
+                child: SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+              error: (error, _) => Center(
+                child: IconButton(
+                  icon: const Icon(Icons.refresh),
+                  tooltip: 'Tentar novamente',
+                  onPressed: () =>
+                      ref.invalidate(serverDetailProvider(widget.serverId)),
+                ),
+              ),
+              data: (_) => ChannelList(
+                serverId: widget.serverId,
+                isOwner: isOwner,
+                selectedChannelId: _selectedChannelId,
+                onChannelSelected: (id) => _onChannelSelected(id, channelList),
+              ),
+            ),
+          ),
+          UserPanel(onOpenSettings: () => _openSettings(context)),
+        ],
       ),
     );
   }
 
   Widget _channelContent(
     BuildContext context,
-    ServerChannel? selectedChannel,
-  ) {
+    ServerChannel? selectedChannel, {
+    VoidCallback? onBack,
+  }) {
     final channel = selectedChannel;
-    if (channel == null) {
-      return Center(
-        child: Text(
-          'Selecione um canal',
-          style: Theme.of(context).textTheme.bodyLarge,
-        ),
-      );
-    }
-    switch (channel.type) {
-      case ChannelType.text:
-        return ChatScreen(
-          key: ValueKey(channel.id),
-          serverId: widget.serverId,
-          channelId: channel.id,
-        );
-      case ChannelType.voice:
-        // Fase 4: view de voz embutida no shell (painel de participantes +
-        // controles). Composer de texto não aparece para VOICE (mensagens
-        // são rejeitadas pelo backend com 400).
-        return VoiceScreen(
-          key: ValueKey(channel.id),
-          serverId: widget.serverId,
-          channelId: channel.id,
-          channelName: channel.name,
-        );
-    }
+    return Container(
+      color: AppThemeColors.canvas,
+      child: Column(
+        children: [
+          if (channel != null)
+            ChannelHeader(
+              channelName: channel.name,
+              channelType: channel.type,
+              onBack: onBack,
+              onOpenMembers: () {
+                final isNarrow =
+                    MediaQuery.of(context).size.width < _desktopBreakpoint;
+                if (isNarrow) {
+                  context.push('/servers/${widget.serverId}/members');
+                } else {
+                  setState(() => _showMembers = !_showMembers);
+                }
+              },
+              onOpenInvites: () =>
+                  context.push('/servers/${widget.serverId}/invites'),
+              onOpenSettings: () => _openSettings(context),
+            ),
+          Expanded(
+            child: channel == null
+                ? const Center(
+                    child: Text('Selecione um canal'),
+                  )
+                : switch (channel.type) {
+                    ChannelType.text => ChatScreen(
+                        key: ValueKey(channel.id),
+                        serverId: widget.serverId,
+                        channelId: channel.id,
+                      ),
+                    ChannelType.voice => VoiceScreen(
+                        key: ValueKey(channel.id),
+                        serverId: widget.serverId,
+                        channelId: channel.id,
+                        channelName: channel.name,
+                      ),
+                  },
+          ),
+        ],
+      ),
+    );
   }
+
+  /// Gatilho do modal de configurações — cablagem da SPEC 2; a SPEC 3
+  /// substitui o corpo por `showSettingsModal(context)`.
+  void _openSettings(BuildContext context) {}
 }

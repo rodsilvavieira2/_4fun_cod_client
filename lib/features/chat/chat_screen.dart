@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/theme/app_theme.dart';
 import '../../shared/models/message.dart';
 import 'chat_providers.dart';
 
-/// Chat de um canal de texto: lista reversa (mais recente embaixo),
-/// paginação no topo, agrupamento por autor/tempo e composer.
+/// Chat de um canal de texto (wireframe v3 §4.3): lista reversa (mais
+/// recente embaixo), paginação no topo, agrupamento por autor/tempo e
+/// composer flutuante (#121212, radius 8, sem borda).
 class ChatScreen extends ConsumerWidget {
   const ChatScreen({
     super.key,
@@ -45,7 +47,6 @@ class ChatScreen extends ConsumerWidget {
             ),
           ),
         ),
-        const Divider(height: 1),
         _ChatComposer(serverId: serverId, channelId: channelId),
       ],
     );
@@ -169,64 +170,88 @@ class _MessageListState extends State<_MessageList> {
   }
 }
 
-class _MessageTile extends StatelessWidget {
+class _MessageTile extends StatefulWidget {
   const _MessageTile({required this.message, required this.showHeader});
 
   final ChatMessage message;
   final bool showHeader;
 
   @override
+  State<_MessageTile> createState() => _MessageTileState();
+}
+
+class _MessageTileState extends State<_MessageTile> {
+  bool _hovered = false;
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final author = message.author;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (showHeader) ...[
-            const SizedBox(height: 8),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                CircleAvatar(
-                  radius: 12,
-                  foregroundImage: author.avatarUrl != null
-                      ? NetworkImage(author.avatarUrl!)
-                      : null,
-                  child: author.avatarUrl == null
-                      ? Text(
-                          author.name.isEmpty
-                              ? '?'
-                              : author.name[0].toUpperCase(),
-                          style: const TextStyle(fontSize: 12),
-                        )
-                      : null,
-                ),
-                const SizedBox(width: 8),
-                Flexible(
-                  child: Text(
-                    author.name,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.labelLarge,
+    final author = widget.message.author;
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
+        color: _hovered ? AppThemeColors.messageHover : Colors.transparent,
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (widget.showHeader) ...[
+              const SizedBox(height: 8),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  // Avatar 40px (radius 20).
+                  CircleAvatar(
+                    radius: 20,
+                    foregroundImage: author.avatarUrl != null
+                        ? NetworkImage(author.avatarUrl!)
+                        : null,
+                    child: author.avatarUrl == null
+                        ? Text(
+                            author.name.isEmpty
+                                ? '?'
+                                : author.name[0].toUpperCase(),
+                            style: const TextStyle(fontSize: 12),
+                          )
+                        : null,
                   ),
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  _formatTime(message.createdAt),
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.outline,
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      author.name,
+                      overflow: TextOverflow.ellipsis,
+                      // 4 tons por hash do id do autor (decoração, não
+                      // identidade — wireframe v3).
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: AppThemeColors.authorColors[
+                            author.id.codeUnits
+                                .fold(0, (a, b) => a + b) %
+                                4],
+                      ),
+                    ),
                   ),
-                ),
-              ],
+                  const SizedBox(width: 6),
+                  Text(
+                    _formatTime(widget.message.createdAt),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: const Color(0xFFA1A1AA),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+            ],
+            // Corpo a 56px (40 avatar + 16 gap).
+            Padding(
+              padding: const EdgeInsets.only(left: 56),
+              child: Text(widget.message.content),
             ),
-            const SizedBox(height: 2),
           ],
-          Padding(
-            padding: const EdgeInsets.only(left: 32),
-            child: Text(message.content),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -298,30 +323,44 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
     return SafeArea(
       top: false,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Expanded(
-              child: TextField(
-                controller: _controller,
-                enabled: !_sending,
-                minLines: 1,
-                maxLines: 5,
-                decoration: const InputDecoration(
-                  hintText: 'Enviar mensagem',
-                  border: OutlineInputBorder(),
-                  isDense: true,
+        padding: const EdgeInsets.all(16),
+        child: Container(
+          decoration: BoxDecoration(
+            color: AppThemeColors.card,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _controller,
+                  enabled: !_sending,
+                  minLines: 1,
+                  maxLines: 5,
+                  decoration: const InputDecoration(
+                    hintText: 'Enviar mensagem',
+                    border: InputBorder.none,
+                    isDense: true,
+                    contentPadding:
+                        EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(width: 8),
-            IconButton.filled(
-              onPressed: _sending ? null : _handleSend,
-              icon: const Icon(Icons.send),
-              tooltip: 'Enviar',
-            ),
-          ],
+              const SizedBox(width: 4),
+              Padding(
+                padding: const EdgeInsets.only(right: 6, bottom: 4),
+                child: IconButton.filled(
+                  onPressed: _sending ? null : _handleSend,
+                  icon: const Icon(Icons.send, size: 18),
+                  tooltip: 'Enviar',
+                  style: IconButton.styleFrom(
+                    minimumSize: const Size(44, 44),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
