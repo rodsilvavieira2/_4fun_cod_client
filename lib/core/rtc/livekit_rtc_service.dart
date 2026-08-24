@@ -212,14 +212,27 @@ class LiveKitRtcService implements RtcService {
       await _cleanupRoom();
       rethrow;
     }
-    // O participante local entra no snapshot sem evento joined (quem chamou
-    // o connect já sabe que entrou).
-    _syncParticipant(localParticipant);
-    _emitSnapshot();
+    // Seed do snapshot: local + participantes REMOTOS já presentes (o SDK
+    // 2.11 NÃO emite eventos para eles no join response — ver
+    // [_seedParticipants]). Sem isso a UI mostraria a sala vazia até alguém
+    // publicar track/mutar.
+    _seedParticipants(room);
   }
 
   @override
   Future<void> disconnect() => _cleanupRoom();
+
+  @override
+  Future<void> resumeAudio() async {
+    final room = _room;
+    if (room == null || _disposed) return;
+    // startAudio nunca lança (try/catch interno — room.dart:1293-1305):
+    // no web retoma os `<audio>` da sala dentro do gesto do usuário que
+    // chamou este método; no desktop é no-op (startAllAudioElement → true).
+    // O resultado real chega via AudioPlaybackStatusChanged (que emite
+    // AudioPlaybackResumedEvent/AudioPlaybackBlockedEvent no _wire).
+    await room.startAudio();
+  }
 
   @override
   Future<void> enableMicrophone() async {
@@ -576,6 +589,22 @@ class LiveKitRtcService implements RtcService {
         _syncParticipant(e.participant);
         _emitSnapshot();
       }),
+      // Playback de áudio remoto (web: autoplay policy do browser — o vídeo
+      // renderiza, mas o `<audio>` remoto pode ser bloqueado até um gesto do
+      // usuário; desktop/nativo não emite). O SDK já faz a ponte per-track →
+      // evento público de room: `RemoteParticipant.addSubscribedMediaTrack`
+      // encaminha o `AudioPlaybackFailed` da track para `room.engine.events`
+      // (participant/remote.dart:223-232) e o Room chama
+      // `_handleAudioPlaybackFailed` (room.dart:671-673) → emite
+      // `AudioPlaybackStatusChanged`. Como `_audioEnabled` começa true
+      // (room.dart:107), a PRIMEIRA falha passa o guard e emite — não há
+      // bloqueio silencioso. O `isPlaying: true` sai de um `startAudio`
+      // bem-sucedido (retomada dentro do gesto do usuário).
+      room.events.on<AudioPlaybackStatusChanged>((e) {
+        _emitEvent(e.isPlaying
+            ? const AudioPlaybackResumedEvent()
+            : const AudioPlaybackBlockedEvent());
+      }),
       // Sala caiu: motivo não iniciado pelo app (servidor encerrou/rede) →
       // reconexão automática reason-gated (até 3 tentativas com token
       // fresco); clientInitiated/duplicateIdentity mantêm o comportamento
@@ -597,6 +626,31 @@ class LiveKitRtcService implements RtcService {
         }
       }),
     ]);
+  }
+
+  /// Seed do snapshot pós-connect: sincroniza o local e TODOS os
+  /// participantes REMOTOS já presentes na sala.
+  ///
+  /// Necessário porque o livekit_client 2.11 NÃO emite eventos para os
+  /// participantes do join response: `Room.connect` usa
+  /// `_getOrCreateRemoteParticipant` diretamente e DESCARTA o resultado
+  /// (core/room.dart:548-552) — `ParticipantConnectedEvent`/
+  /// `TrackPublishedEvent` só saem em updates AO VIVO (_onParticipantUpdateEvent,
+  /// room.dart:779-833). Sem este seed, quem entra numa sala ocupada vê o
+  /// painel vazio até alguém publicar track nova/mutar.
+  ///
+  /// NÃO emite `ParticipantJoinedEvent` sintético para os remotos (eles já
+  /// estavam lá — quem chamou o connect só precisa do snapshot); o loop é
+  /// síncrono (sem await), então nenhum evento ao vivo intercala no meio; e
+  /// `_syncParticipant` é idempotente por identity (Map), seguro mesmo se um
+  /// evento chegar logo depois com estado mais novo.
+  void _seedParticipants(Room room) {
+    final localParticipant = room.localParticipant;
+    if (localParticipant != null) _syncParticipant(localParticipant);
+    for (final remote in room.remoteParticipants.values) {
+      _syncParticipant(remote);
+    }
+    _emitSnapshot();
   }
 
   /// Re-deriva o [RtcParticipant] de um [Participant] do LiveKit e emite
@@ -754,10 +808,18 @@ class LiveKitRtcService implements RtcService {
         continue;
       }
 
-      // Participantes ANTIGOS saem do snapshot; o local re-entra sozinho.
+      // Participantes ANTIGOS saem do snapshot; o local re-entra junto com
+      // os REMOTOS já presentes na sala nova (mesmo furo do connect: o SDK
+      // não emite eventos para participantes do join response — ver
+      // [_seedParticipants]).
       _participantsById.clear();
-      _syncParticipant(localParticipant);
-      _emitSnapshot();
+      _seedParticipants(room);
+      // Sem startAudio explícito aqui (decisão): o Room novo nasce com
+      // `_audioEnabled = true` (room.dart:107) e, se o autoplay do browser
+      // ainda bloquear o áudio remoto, a ponte track→room do SDK reemite
+      // AudioPlaybackStatusChanged(false) — o banner reaparece sozinho e o
+      // gesto do usuário (toque) chama resumeAudio. Forçar startAudio sem
+      // gesto não desbloquearia o autoplay de qualquer forma.
       _emitEvent(const ReconnectedEvent());
       return;
     }

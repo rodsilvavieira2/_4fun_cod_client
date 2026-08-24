@@ -166,6 +166,20 @@ class ReconnectedEvent extends RtcEvent {
   const ReconnectedEvent();
 }
 
+/// O playback de áudio remoto está BLOQUEADO pelo browser (política de
+/// autoplay — `NotAllowedError` no web). A UI deve mostrar um affordance e
+/// chamar [RtcService.resumeAudio] num gesto do usuário. Desktop/nativo não
+/// emite (sem autoplay policy).
+class AudioPlaybackBlockedEvent extends RtcEvent {
+  const AudioPlaybackBlockedEvent();
+}
+
+/// O playback de áudio remoto foi RETOMADO ([RtcService.resumeAudio]
+/// bem-sucedido — o gesto do usuário desbloqueou o áudio no web).
+class AudioPlaybackResumedEvent extends RtcEvent {
+  const AudioPlaybackResumedEvent();
+}
+
 /// Qualidade de recepção de vídeo remoto (Fase 5).
 ///
 /// SEM `off`: "desligar" um tile é decisão da UI (não montar o RtcVideoView).
@@ -284,6 +298,13 @@ abstract class RtcService {
 
   /// Perfil de câmera atualmente configurado (default: [RtcCameraQuality.auto]).
   RtcCameraQuality get cameraQuality;
+
+  /// Retoma o playback de áudio remoto. Necessário no web quando a política
+  /// de autoplay do browser bloqueou o áudio ([AudioPlaybackBlockedEvent]) —
+  /// DEVE ser chamada dentro de um gesto do usuário (toque no banner/UI).
+  /// Desktop/nativo: no-op seguro. Best-effort: o estado real chega via
+  /// [AudioPlaybackBlockedEvent]/[AudioPlaybackResumedEvent].
+  Future<void> resumeAudio();
 
   /// Referência renderizável da câmera de [participantId], ou null quando a
   /// câmera está OFF/ausente (track inexistente ou publicação mutada).

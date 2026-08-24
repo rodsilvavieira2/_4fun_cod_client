@@ -168,6 +168,12 @@ class FakeRtcService implements RtcService {
   @override
   RtcVideoTrackRef? screenTrackOf(String participantId) => screenTrackRef;
 
+  // Contrato de playback de áudio (fix autoplay web) — mesmo padrão do mic.
+  int resumeAudioCalls = 0;
+
+  @override
+  Future<void> resumeAudio() async => resumeAudioCalls++;
+
   void pushParticipants(List<RtcParticipant> list) =>
       participantsController.add(list);
 
@@ -472,6 +478,105 @@ void main() {
 
       expect(state().isMicrophoneEnabled, isTrue,
           reason: 'evento de remoto não toca o botão local (mic segue ativo)');
+    });
+
+    // ── Fix autoplay web: playback de áudio remoto bloqueado/retomado ──────
+
+    test('AudioPlaybackBlockedEvent liga o banner de áudio bloqueado',
+        () async {
+      repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
+      final notifier = buildVoice();
+      await notifier.join();
+      await settle();
+      expect(state().isAudioBlocked, isFalse);
+
+      rtc.pushEvent(const AudioPlaybackBlockedEvent());
+      await settle();
+
+      expect(state().isAudioBlocked, isTrue);
+    });
+
+    test('AudioPlaybackResumedEvent desliga o banner de áudio bloqueado',
+        () async {
+      repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
+      final notifier = buildVoice();
+      await notifier.join();
+      await settle();
+      rtc.pushEvent(const AudioPlaybackBlockedEvent());
+      await settle();
+      expect(state().isAudioBlocked, isTrue);
+
+      rtc.pushEvent(const AudioPlaybackResumedEvent());
+      await settle();
+
+      expect(state().isAudioBlocked, isFalse);
+    });
+
+    test('resumeAudio conectado chama o serviço (1 chamada)', () async {
+      repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
+      final notifier = buildVoice();
+      await notifier.join();
+      await settle();
+
+      await notifier.resumeAudio();
+
+      expect(rtc.resumeAudioCalls, 1);
+    });
+
+    test('resumeAudio fora da sala (idle) não chama o serviço', () async {
+      final notifier = buildVoice();
+      expect(state().status, VoiceSessionStatus.idle);
+
+      await notifier.resumeAudio();
+
+      expect(rtc.resumeAudioCalls, 0);
+    });
+
+    test('leave reseta o estado de áudio bloqueado', () async {
+      repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
+      final notifier = buildVoice();
+      await notifier.join();
+      await settle();
+      rtc.pushEvent(const AudioPlaybackBlockedEvent());
+      await settle();
+      expect(state().isAudioBlocked, isTrue);
+
+      await notifier.leave();
+
+      expect(state().isAudioBlocked, isFalse);
+    });
+
+    test('DisconnectedEvent (queda) reseta o estado de áudio bloqueado',
+        () async {
+      repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
+      final notifier = buildVoice();
+      await notifier.join();
+      await settle();
+      rtc.pushEvent(const AudioPlaybackBlockedEvent());
+      await settle();
+      expect(state().isAudioBlocked, isTrue);
+
+      rtc.pushEvent(const DisconnectedEvent());
+      await settle();
+
+      expect(state().isAudioBlocked, isFalse);
+    });
+
+    test('ReconnectedEvent (sala nova) reseta o estado de áudio bloqueado',
+        () async {
+      repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
+      final notifier = buildVoice();
+      await notifier.join();
+      await settle();
+      rtc.pushEvent(const AudioPlaybackBlockedEvent());
+      await settle();
+      expect(state().isAudioBlocked, isTrue);
+
+      rtc.pushEvent(const ReconnectingEvent());
+      rtc.pushEvent(const ReconnectedEvent());
+      await settle();
+
+      expect(state().isAudioBlocked, isFalse);
     });
 
     // ── Fase 5 (Prompt 2): câmera, spotlight, devices e qualidade ──────────

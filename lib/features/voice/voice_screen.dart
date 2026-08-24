@@ -55,6 +55,11 @@ class VoiceScreen extends ConsumerWidget {
         if (state.isReconnecting &&
             state.status == VoiceSessionStatus.connected)
           const _ReconnectingBanner(),
+        // Áudio remoto bloqueado pelo browser (autoplay policy no web):
+        // banner tocável que chama resumeAudio num gesto do usuário.
+        if (state.isAudioBlocked &&
+            state.status == VoiceSessionStatus.connected)
+          _AudioBlockedBanner(onTap: notifier.resumeAudio),
         Expanded(
           child: _ParticipantsPanel(
             state: state,
@@ -201,6 +206,51 @@ class _ReconnectingBanner extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Banner de áudio BLOQUEADO pelo browser (autoplay policy no web): o
+/// playback remoto não toca até um gesto do usuário. O toque no banner
+/// chama [VoiceController.resumeAudio] (que pede ao serviço `startAudio`).
+/// Só aparece no web; desktop nunca emite [AudioPlaybackBlockedEvent].
+class _AudioBlockedBanner extends StatelessWidget {
+  const _AudioBlockedBanner({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Material(
+      color: theme.colorScheme.errorContainer,
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.volume_off,
+                size: 18,
+                color: theme.colorScheme.onErrorContainer,
+              ),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  'Áudio bloqueado pelo navegador — toque para ativar',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onErrorContainer,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

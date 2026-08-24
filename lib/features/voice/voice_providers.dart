@@ -32,6 +32,7 @@ class VoiceState {
     this.isCameraEnabled = false,
     this.isScreenSharing = false,
     this.isReconnecting = false,
+    this.isAudioBlocked = false,
     this.autoSpotlightActive = false,
     this.savedSpotlightParticipantId,
     this.spotlightParticipantId,
@@ -65,6 +66,12 @@ class VoiceState {
   /// ([ReconnectingEvent] → [ReconnectedEvent]). A sessão continua
   /// `connected` — o banner é o ÚNICO efeito visível durante a reconexão.
   final bool isReconnecting;
+
+  /// Playback de áudio remoto BLOQUEADO pelo browser (autoplay policy no
+  /// web — [AudioPlaybackBlockedEvent]/[AudioPlaybackResumedEvent]). A UI
+  /// mostra o banner tocável \"Áudio bloqueado — toque para ativar\" que
+  /// chama [VoiceController.resumeAudio]. Desktop nunca liga.
+  final bool isAudioBlocked;
 
   /// Destaque automático do share em vigor (PRD §25): o 1º sharer vira
   /// spotlight e o estado anterior fica salvo em
@@ -101,6 +108,7 @@ class VoiceState {
     bool? isCameraEnabled,
     bool? isScreenSharing,
     bool? isReconnecting,
+    bool? isAudioBlocked,
     bool? autoSpotlightActive,
     Object? savedSpotlightParticipantId = _unset,
     Object? spotlightParticipantId = _unset,
@@ -121,6 +129,7 @@ class VoiceState {
       isCameraEnabled: isCameraEnabled ?? this.isCameraEnabled,
       isScreenSharing: isScreenSharing ?? this.isScreenSharing,
       isReconnecting: isReconnecting ?? this.isReconnecting,
+      isAudioBlocked: isAudioBlocked ?? this.isAudioBlocked,
       autoSpotlightActive: autoSpotlightActive ?? this.autoSpotlightActive,
       // Sentinel: savedSpotlightParticipantId é LIMPÁVEL — restaurar para
       // grid (null) deve funcionar; o padrão `??` manteria o id salvo.
@@ -235,11 +244,23 @@ class VoiceController
       isCameraEnabled: false,
       isScreenSharing: false,
       isReconnecting: false,
+      isAudioBlocked: false,
       autoSpotlightActive: false,
       savedSpotlightParticipantId: null,
       spotlightParticipantId: null,
       errorMessage: null,
     );
+  }
+
+  /// Retoma o playback de áudio remoto (web: gesto do usuário desbloqueia a
+  /// autoplay policy — chamado pelo toque no banner \"Áudio bloqueado\").
+  /// Sem estado otimista: o resultado real chega via
+  /// [AudioPlaybackBlockedEvent]/[AudioPlaybackResumedEvent] (o banner só
+  /// some quando o serviço confirma). Falha silenciosa = banner permanece.
+  Future<void> resumeAudio() async {
+    final current = state;
+    if (current.status != VoiceSessionStatus.connected) return;
+    await ref.read(rtcServiceProvider).resumeAudio();
   }
 
   /// Liga/desliga o microfone local (botão da barra de controles).
@@ -609,11 +630,19 @@ class VoiceController
           isCameraEnabled: false,
           isScreenSharing: false,
           isReconnecting: false,
+          isAudioBlocked: false,
           autoSpotlightActive: false,
           savedSpotlightParticipantId: null,
           spotlightParticipantId: null,
           errorMessage: null,
         );
+      case AudioPlaybackBlockedEvent():
+        // Autoplay policy do browser bloqueou o áudio remoto: liga o banner
+        // tocável (o gesto chama [resumeAudio]). Só no web; desktop nunca.
+        state = state.copyWith(isAudioBlocked: true);
+      case AudioPlaybackResumedEvent():
+        // startAudio bem-sucedido dentro do gesto: o banner pode sumir.
+        state = state.copyWith(isAudioBlocked: false);
       case MicEnabledChangedEvent(
           :final participantId,
           :final isMicrophoneEnabled,
@@ -659,6 +688,7 @@ class VoiceController
           isMicrophoneEnabled: false,
           isCameraEnabled: false,
           isScreenSharing: false,
+          isAudioBlocked: false,
           autoSpotlightActive: false,
           savedSpotlightParticipantId: null,
           spotlightParticipantId: null,
