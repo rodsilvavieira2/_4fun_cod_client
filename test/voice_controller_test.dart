@@ -56,6 +56,12 @@ class FakeRtcService implements RtcService {
   final List<String> startScreenShareSources = [];
   RtcVideoTrackRef? screenTrackRef;
 
+  // Contrato de áudio de sistema (Fase 6.1): registra o flag recebido em
+  // cada startScreenShare; failSystemAudioTimes lança
+  // SystemAudioPublishException (uma falha consumida por chamada).
+  final List<bool> startScreenShareSystemAudioFlags = [];
+  int failSystemAudioTimes = 0;
+
   // Flag de falha de share (Prompt 2) — mesmo padrão do failEnableCameraTimes:
   // uma falha consumida não conta como chamada efetiva.
   int failStartScreenShareTimes = 0;
@@ -150,13 +156,25 @@ class FakeRtcService implements RtcService {
   RtcVideoTrackRef? videoTrackOf(String participantId) => cameraTrackRef;
 
   @override
-  Future<void> startScreenShare(String sourceId) async {
+  Future<void> startScreenShare(
+    String sourceId, {
+    bool includeSystemAudio = false,
+  }) async {
     if (failStartScreenShareTimes > 0) {
       failStartScreenShareTimes--;
       throw startScreenShareError;
     }
+    // O VÍDEO sai SEMPRE (espelho da ordem do serviço real: vídeo primeiro,
+    // áudio depois). Falha de áudio NÃO desfaz o share.
     startScreenShareCalls++;
     startScreenShareSources.add(sourceId);
+    startScreenShareSystemAudioFlags.add(includeSystemAudio);
+    if (includeSystemAudio && failSystemAudioTimes > 0) {
+      failSystemAudioTimes--;
+      throw const SystemAudioPublishException(
+        'Nenhum dispositivo de áudio de sistema encontrado (monitor/loopback).',
+      );
+    }
   }
 
   @override
@@ -217,6 +235,7 @@ RtcParticipant _participant(
   bool mic = true,
   bool camera = false,
   bool screenShare = false,
+  bool systemAudio = false,
   bool speaking = false,
 }) =>
     RtcParticipant(
@@ -225,6 +244,7 @@ RtcParticipant _participant(
       isMicrophoneEnabled: mic,
       isCameraEnabled: camera,
       isScreenSharing: screenShare,
+      isSystemAudioEnabled: systemAudio,
       isSpeaking: speaking,
     );
 
@@ -968,6 +988,126 @@ void main() {
           reason: 'sem otimismo: flag não desliga quando o serviço falha');
       expect(state().errorMessage, 'Não foi possível encerrar o compartilhamento.');
       expect(rtc.disconnectCalls, 0);
+    });
+
+    // ── Fase 6.1: áudio de sistema no screen share ────────────────────────
+
+    test('startScreenShare repassa includeSystemAudio para o serviço', () async {
+      repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
+      rtc.localId = 'user_u1';
+      final notifier = buildVoice();
+      await notifier.join();
+      await settle();
+
+      await notifier.startScreenShare('src-1', includeSystemAudio: true);
+      await settle();
+      expect(rtc.startScreenShareCalls, 1);
+      expect(rtc.startScreenShareSystemAudioFlags, [true]);
+
+      // Default (sem flag) continua false — um share sem áudio não ativa o
+      // flag do próximo.
+      await notifier.stopScreenShare();
+      await settle();
+      await notifier.startScreenShare('src-2');
+      await settle();
+      expect(rtc.startScreenShareSystemAudioFlags, [true, false]);
+    });
+
+    test('toggleIncludeSystemAudio alterna a preferência (só conectado e sem share)',
+        () async {
+      final notifier = buildVoice();
+      // Fora da sessão: no-op.
+      notifier.toggleIncludeSystemAudio();
+      expect(state().includeSystemAudio, isFalse);
+
+      repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
+      rtc.localId = 'user_u1';
+      await notifier.join();
+      await settle();
+
+      notifier.toggleIncludeSystemAudio();
+      expect(state().includeSystemAudio, isTrue);
+      notifier.toggleIncludeSystemAudio();
+      expect(state().includeSystemAudio, isFalse);
+
+      // Com share ativo: no-op (a decisão é lida apenas no start).
+      await notifier.startScreenShare('src-1', includeSystemAudio: true);
+      await settle();
+      expect(state().isScreenSharing, isTrue);
+      notifier.toggleIncludeSystemAudio();
+      expect(state().includeSystemAudio, isFalse,
+          reason: 'share ativo → preferência travada no start');
+    });
+
+    test('falha do áudio de sistema NÃO bloqueia o share (share inicia + aviso)',
+        () async {
+      repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
+      rtc.localId = 'user_u1';
+      final notifier = buildVoice();
+      await notifier.join();
+      await settle();
+
+      rtc.failSystemAudioTimes = 1;
+      await notifier.startScreenShare('src-1', includeSystemAudio: true);
+      await settle();
+
+      expect(rtc.startScreenShareCalls, 1, reason: 'o vídeo publicou');
+      expect(state().status, VoiceSessionStatus.connected);
+      expect(state().isScreenSharing, isTrue,
+          reason: 'o vídeo saiu — só o áudio de sistema falhou');
+      expect(
+        state().errorMessage,
+        'Compartilhamento iniciado sem áudio de sistema.',
+      );
+      expect(rtc.disconnectCalls, 0);
+    });
+
+    test('SystemAudioEnabledChangedEvent do local reconcilia; de remoto não toca',
+        () async {
+      repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
+      rtc.localId = 'user_u1';
+      final notifier = buildVoice();
+      await notifier.join();
+      await settle();
+      expect(state().isSystemAudioEnabled, isFalse);
+
+      // Remoto: não toca o espelho local.
+      rtc.eventsController.add(SystemAudioEnabledChangedEvent(
+        participantId: 'user_u2',
+        isSystemAudioEnabled: true,
+      ));
+      await settle();
+      expect(state().isSystemAudioEnabled, isFalse);
+
+      // Local: reconcilia.
+      rtc.eventsController.add(SystemAudioEnabledChangedEvent(
+        participantId: 'user_u1',
+        isSystemAudioEnabled: true,
+      ));
+      await settle();
+      expect(state().isSystemAudioEnabled, isTrue);
+    });
+
+    test('leave reseta a preferência e o espelho de áudio de sistema', () async {
+      repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
+      rtc.localId = 'user_u1';
+      final notifier = buildVoice();
+      await notifier.join();
+      await settle();
+
+      notifier.toggleIncludeSystemAudio();
+      rtc.eventsController.add(SystemAudioEnabledChangedEvent(
+        participantId: 'user_u1',
+        isSystemAudioEnabled: true,
+      ));
+      await settle();
+      expect(state().includeSystemAudio, isTrue);
+      expect(state().isSystemAudioEnabled, isTrue);
+
+      await notifier.leave();
+      await settle();
+      expect(state().includeSystemAudio, isFalse);
+      expect(state().isSystemAudioEnabled, isFalse);
     });
 
     test('ScreenShareEnabledChangedEvent do local reconcilia; de remoto não toca',
