@@ -22,9 +22,12 @@ class UserPanel extends ConsumerWidget {
     final avatarUrl = user?.avatarUrl;
 
     return Container(
-      color: AppThemeColors.card,
+      // color + decoration simultâneos disparam a assert do Flutter
+      // ("color is just a shorthand for decoration") — cor vai no
+      // BoxDecoration.
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       decoration: const BoxDecoration(
+        color: AppThemeColors.card,
         border: Border(top: BorderSide(color: AppThemeColors.hairline)),
       ),
       child: Row(
