@@ -24,6 +24,7 @@ class RtcParticipant {
     required this.isMicrophoneEnabled,
     required this.isCameraEnabled,
     required this.isScreenSharing,
+    required this.isSystemAudioEnabled,
     required this.isSpeaking,
   });
 
@@ -47,6 +48,11 @@ class RtcParticipant {
   /// obtida via [RtcService.screenTrackOf].
   final bool isScreenSharing;
 
+  /// Se está publicando o ÁUDIO DE SISTEMA (track de screenShareAudio —
+  /// som de jogos/vídeos/música junto com o share de tela). Espelho de
+  /// [isScreenSharing]; o áudio em si não trafega por aqui.
+  final bool isSystemAudioEnabled;
+
   /// Se o participante está falando agora (ActiveSpeakersChangedEvent).
   final bool isSpeaking;
 
@@ -55,6 +61,7 @@ class RtcParticipant {
     bool? isMicrophoneEnabled,
     bool? isCameraEnabled,
     bool? isScreenSharing,
+    bool? isSystemAudioEnabled,
     bool? isSpeaking,
   }) {
     return RtcParticipant(
@@ -63,6 +70,8 @@ class RtcParticipant {
       isMicrophoneEnabled: isMicrophoneEnabled ?? this.isMicrophoneEnabled,
       isCameraEnabled: isCameraEnabled ?? this.isCameraEnabled,
       isScreenSharing: isScreenSharing ?? this.isScreenSharing,
+      isSystemAudioEnabled:
+          isSystemAudioEnabled ?? this.isSystemAudioEnabled,
       isSpeaking: isSpeaking ?? this.isSpeaking,
     );
   }
@@ -130,6 +139,19 @@ class ScreenShareEnabledChangedEvent extends RtcEvent {
 
   final String participantId;
   final bool isScreenSharing;
+}
+
+/// Um participante começou/parou de transmitir o ÁUDIO DE SISTEMA junto
+/// com o screen share (publicação/despublicação da track de
+/// screenShareAudio — Fase 6.1). Espelho do [ScreenShareEnabledChangedEvent].
+class SystemAudioEnabledChangedEvent extends RtcEvent {
+  const SystemAudioEnabledChangedEvent({
+    required this.participantId,
+    required this.isSystemAudioEnabled,
+  });
+
+  final String participantId;
+  final bool isSystemAudioEnabled;
 }
 
 /// Um participante começou/parou de falar.
@@ -215,6 +237,21 @@ abstract class RtcVideoTrackRef {
   const RtcVideoTrackRef();
 }
 
+/// Falha ao publicar o ÁUDIO DE SISTEMA durante o screen share (nenhum
+/// device monitor/loopback no SO, permissão negada, etc.).
+///
+/// O share de VÍDEO NÃO é afetado — a track de tela já foi publicada quando
+/// esta exceção é lançada. O controller decide a mensagem; a sessão nunca
+/// cai (mesmo invariante de falha de captura do share).
+class SystemAudioPublishException implements Exception {
+  const SystemAudioPublishException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
 /// Abstração de voz em tempo real (Fase 4 — LiveKit por baixo).
 ///
 /// Escopo voz: mic (Fase 4), câmera (Fase 5) e screen share (Fase 6). A UI
@@ -259,9 +296,18 @@ abstract class RtcService {
   /// `RtcScreenSharePicker`). No-op quando o share já está ativo. A câmera
   /// NÃO é afetada — share e câmera coexistem.
   ///
+  /// Com [includeSystemAudio] true, publica TAMBÉM o áudio de sistema
+  /// (track de screenShareAudio — som de jogos/vídeos/música) capturando o
+  /// device monitor/loopback do SO. A falha do áudio NUNCA bloqueia o share:
+  /// o vídeo sai primeiro e, sem device disponível, lança
+  /// [SystemAudioPublishException] (o controller decide a mensagem).
+  ///
   /// Erros de captura propagam para o controller decidir a mensagem — falha
   /// de share NUNCA derruba a sessão.
-  Future<void> startScreenShare(String sourceId);
+  Future<void> startScreenShare(
+    String sourceId, {
+    bool includeSystemAudio = false,
+  });
 
   /// Encerra o compartilhamento de tela local. DIFERENTE da câmera, DESPUBLICA
   /// a track (o SDK remove a publicação em setScreenShareEnabled(false)).

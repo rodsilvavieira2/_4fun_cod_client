@@ -355,7 +355,10 @@ class LiveKitRtcService implements RtcService {
   }
 
   @override
-  Future<void> startScreenShare(String sourceId) async {
+  Future<void> startScreenShare(
+    String sourceId, {
+    bool includeSystemAudio = false,
+  }) async {
     final room = _room;
     if (room == null || _disposed) return;
     final localParticipant = room.localParticipant;
@@ -378,6 +381,12 @@ class LiveKitRtcService implements RtcService {
         params: VideoParametersPresets.screenShareH1080FPS30,
       ),
     );
+    // Áudio de sistema (opcional): SEMPRE depois do vídeo — falha de áudio
+    // NUNCA bloqueia o share (SystemAudioPublishException cai no controller,
+    // que decide a mensagem; a sessão fica intacta).
+    if (includeSystemAudio) {
+      await _publishSystemAudio();
+    }
   }
 
   @override
@@ -392,6 +401,79 @@ class LiveKitRtcService implements RtcService {
     // chamar removePublishedTrack manualmente — o SDK faz. Com o share já
     // inativo é no-op natural do SDK.
     await localParticipant.setScreenShareEnabled(false);
+  }
+
+  /// Publica o ÁUDIO DE SISTEMA (track de screenShareAudio) capturando o
+  /// device monitor/loopback do SO. Chamado por [startScreenShare] quando
+  /// [includeSystemAudio] é true.
+  ///
+  /// Rota desktop (diagnóstico 24/08): o SDK NÃO captura áudio de sistema
+  /// nativamente (`captureScreenAudio` é browser-only — participant/local.dart:
+  /// 834-848 usa getDisplayMedia); a track é montada MANUALMENTE com o MESMO
+  /// padrão que o SDK usa no browser (track/local/video.dart:263-272).
+  ///
+  /// Falhas propagam como [SystemAudioPublishException] (sem device) ou como
+  /// erro do SDK (permissão/captura) — em ambos os casos a track de VÍDEO já
+  /// foi publicada quando esta exceção sai.
+  Future<void> _publishSystemAudio() async {
+    final room = _room;
+    if (room == null || _disposed) return;
+    final localParticipant = room.localParticipant;
+    if (localParticipant == null) return;
+    // 1. Enumera os devices de áudio (Hardware.instance é API pública
+    //    exportada — hardware.dart) e acha o monitor/loopback por heurística
+    //    de label (função pura testável).
+    final List<MediaDevice> devices;
+    try {
+      devices = await Hardware.instance.audioInputs();
+    } catch (_) {
+      throw const SystemAudioPublishException(
+        'Não foi possível listar os dispositivos de áudio.',
+      );
+    }
+    final monitorId = findSystemAudioMonitorDevice(devices);
+    if (monitorId == null) {
+      throw const SystemAudioPublishException(
+        'Nenhum dispositivo de áudio de sistema encontrado '
+        '(monitor/loopback).',
+      );
+    }
+    // 2. Captura do monitor com processamento de áudio DESLIGADO — AGC/NS/EC
+    //    corrompem música/SFX (options.dart:335-351 — "attempt if supported").
+    //    Construtor + createStream são @internal na 2.11.0 (track/local/
+    //    audio.dart:162, local.dart:245): aceitos como dependência conhecida,
+    //    documentada — o próprio SDK usa o padrão para o browser.
+    final captureOptions = AudioCaptureOptions(
+      deviceId: monitorId,
+      echoCancellation: false,
+      noiseSuppression: false,
+      autoGainControl: false,
+    );
+    // ignore: invalid_use_of_internal_member
+    final stream = await LocalTrack.createStream(captureOptions);
+    // ignore: invalid_use_of_internal_member
+    final track = LocalAudioTrack(
+      TrackSource.screenShareAudio,
+      stream,
+      stream.getAudioTracks().first,
+      captureOptions,
+    );
+    // 3. Publica como screenShareAudio (o source vem da track). Options:
+    //    - name 'system-audio' (default seria 'microphone' — local.dart:183);
+    //    - 128 kbps = presetMusicHighQualityStereo (audio_encoding.dart:64-69);
+    //    - dtx:false (DTX faz gating em música — options.dart:510-513);
+    //    - red:false HABILITA RED (bug do SDK: disableRed SEM negação —
+    //      local.dart:189 — red:true desligaria).
+    // Erros de captura/publish PROPAGAM — a track de vídeo já saiu.
+    await localParticipant.publishAudioTrack(
+      track,
+      publishOptions: AudioPublishOptions(
+        name: 'system-audio',
+        encoding: AudioEncoding(maxBitrate: 128000),
+        dtx: false,
+        red: false,
+      ),
+    );
   }
 
   @override
@@ -655,8 +737,9 @@ class LiveKitRtcService implements RtcService {
 
   /// Re-deriva o [RtcParticipant] de um [Participant] do LiveKit e emite
   /// [MicEnabledChangedEvent]/[CameraEnabledChangedEvent]/
-  /// [ScreenShareEnabledChangedEvent] se o estado mudou. O participante
-  /// entra no mapa mesmo se ainda não tinha evento joined (robustez).
+  /// [ScreenShareEnabledChangedEvent]/[SystemAudioEnabledChangedEvent] se o
+  /// estado mudou. O participante entra no mapa mesmo se ainda não tinha
+  /// evento joined (robustez).
   ///
   /// Os eventos já ouvidos em [_wire] (TrackPublished/Unpublished, local e
   /// remoto, TrackMuted/Unmuted) cobrem câmera, mic E screen share — basta
@@ -670,6 +753,9 @@ class LiveKitRtcService implements RtcService {
       isMicrophoneEnabled: participant.isMicrophoneEnabled(),
       isCameraEnabled: participant.isCameraEnabled(),
       isScreenSharing: participant.isScreenShareEnabled(),
+      // Espelho do screen share: o SDK JÁ expõe o estado da track de
+      // screenShareAudio (participant.dart:325-327 — éScreenShareAudioEnabled).
+      isSystemAudioEnabled: participant.isScreenShareAudioEnabled(),
       isSpeaking: previous?.isSpeaking ?? false,
     );
     _participantsById[id] = updated;
@@ -698,6 +784,15 @@ class LiveKitRtcService implements RtcService {
         ScreenShareEnabledChangedEvent(
           participantId: id,
           isScreenSharing: updated.isScreenSharing,
+        ),
+      );
+    }
+    if (previous != null &&
+        previous.isSystemAudioEnabled != updated.isSystemAudioEnabled) {
+      _emitEvent(
+        SystemAudioEnabledChangedEvent(
+          participantId: id,
+          isSystemAudioEnabled: updated.isSystemAudioEnabled,
         ),
       );
     }
@@ -869,6 +964,23 @@ class LiveKitRtcService implements RtcService {
     }
     _emitSnapshot();
   }
+}
+
+/// Acha o device de "monitor"/loopback (áudio de sistema) na lista de
+/// devices de áudio do SO — função PURA (testável isoladamente).
+///
+/// Heurística de label (case-insensitive): contém 'monitor' (PipeWire
+/// `alsa_output.*.monitor`, PulseAudio "Monitor of …") ou 'cable' (VB-Cable
+/// "CABLE Output", Windows). Retorna o PRIMEIRO match (ordem do enumerate —
+/// suficiente na V1, sem picker) ou null quando não há nenhum.
+String? findSystemAudioMonitorDevice(Iterable<MediaDevice> devices) {
+  for (final device in devices) {
+    final label = device.label.toLowerCase();
+    if (label.contains('monitor') || label.contains('cable')) {
+      return device.deviceId;
+    }
+  }
+  return null;
 }
 
 /// Decisão PURA (testável isoladamente) de quando [LiveKitRtcService.enableCamera]
