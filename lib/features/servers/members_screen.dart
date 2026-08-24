@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/auth/auth_controller.dart';
 import '../../core/auth/auth_state.dart';
-import '../../core/theme/app_theme.dart';
+import '../../core/ui/presence_dot.dart';
 import '../../shared/models/servers.dart';
 import 'servers_providers.dart';
 
@@ -63,7 +63,7 @@ class MembersScreen extends ConsumerWidget {
                       ),
                     ),
                     const SizedBox(width: 6),
-                    _PresenceDot(online: online.contains(member.userId)),
+                    PresenceDot(online: online.contains(member.userId)),
                   ],
                 ),
                 subtitle: Text('@${member.user.username}'),
@@ -127,26 +127,6 @@ class _RoleChip extends StatelessWidget {
       label: Text(role == 'OWNER' ? 'Dono' : 'Membro'),
       visualDensity: VisualDensity.compact,
       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-    );
-  }
-}
-
-/// Indicador visual de presença ao lado do nome (dot verde = online,
-/// cinza = offline).
-class _PresenceDot extends StatelessWidget {
-  const _PresenceDot({required this.online});
-
-  final bool online;
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: online ? 'Online' : 'Offline',
-      child: Icon(
-        Icons.circle,
-        size: 10,
-        color: online ? AppStatusColors.online : AppStatusColors.offline,
-      ),
     );
   }
 }
