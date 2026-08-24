@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/api/api_exception.dart';
 import '../../core/auth/auth_controller.dart';
+import '../../core/ui/web_input.dart';
 
 /// Tela de login (e-mail/senha → sessão no backend).
 ///
@@ -99,7 +100,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         border: OutlineInputBorder(),
                       ),
                       keyboardType: TextInputType.emailAddress,
-                      autofillHints: const [AutofillHints.email],
+                      autofillHints: webAutofillHints(const [AutofillHints.email]),
                       validator: _validateEmail,
                     ),
                     const SizedBox(height: 16),
@@ -110,7 +111,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         border: OutlineInputBorder(),
                       ),
                       obscureText: true,
-                      autofillHints: const [AutofillHints.password],
+                      autofillHints: webAutofillHints(const [AutofillHints.password]),
                       validator: (value) =>
                           (value == null || value.isEmpty) ? 'Informe sua senha.' : null,
                       onFieldSubmitted: (_) => _submit(),

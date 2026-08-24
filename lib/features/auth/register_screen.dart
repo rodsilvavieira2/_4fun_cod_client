@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/api/api_exception.dart';
 import '../../core/auth/auth_controller.dart';
+import '../../core/ui/web_input.dart';
 
 /// Tela de cadastro: cria a conta no backend (`POST /auth/register`) com
 /// e-mail/senha local (bcrypt no servidor).
@@ -111,7 +112,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                         border: OutlineInputBorder(),
                       ),
                       keyboardType: TextInputType.emailAddress,
-                      autofillHints: const [AutofillHints.email],
+                      autofillHints: webAutofillHints(const [AutofillHints.email]),
                       validator: (value) {
                         final email = value?.trim() ?? '';
                         if (email.isEmpty) return 'Informe seu e-mail.';
@@ -129,7 +130,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                         border: OutlineInputBorder(),
                       ),
                       obscureText: true,
-                      autofillHints: const [AutofillHints.newPassword],
+                      autofillHints: webAutofillHints(const [AutofillHints.newPassword]),
                       validator: (value) =>
                           (value == null || value.length < 8) ? 'A senha deve ter pelo menos 8 caracteres.' : null,
                     ),

@@ -2,9 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'app.dart';
+import 'core/config/lab_ca_overrides.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Desktop: confia na CA do lab para o wss:// do LiveKit (dart:io não lê
+  // o trust store do sistema; ver lab_ca_overrides.dart). Web = no-op.
+  await trustLabCa();
 
   runApp(const ProviderScope(child: App()));
   // O bootstrap de sessão acontece no AuthController.build() (disparado pelo

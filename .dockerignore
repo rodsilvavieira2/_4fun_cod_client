@@ -1,0 +1,19 @@
+# Contexto do build docker (client web) — manter enxuto
+.dart_tool/
+build/
+.git/
+.gitignore
+.idea/
+*.iml
+custom_lint.log
+
+# Targets de outras plataformas não entram no build web
+android/
+ios/
+linux/
+macos/
+windows/
+
+# Não necessários para o release web
+docs/
+test/
