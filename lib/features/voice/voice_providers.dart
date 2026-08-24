@@ -31,6 +31,8 @@ class VoiceState {
     this.isMicrophoneEnabled = false,
     this.isCameraEnabled = false,
     this.isScreenSharing = false,
+    this.includeSystemAudio = false,
+    this.isSystemAudioEnabled = false,
     this.isReconnecting = false,
     this.isAudioBlocked = false,
     this.autoSpotlightActive = false,
@@ -61,6 +63,16 @@ class VoiceState {
   /// Se a tela LOCAL está sendo compartilhada (espelho do botão de share; o
   /// [ScreenShareEnabledChangedEvent] do participante local reconcilia).
   final bool isScreenSharing;
+
+  /// Preferência do PRÓXIMO compartilhamento: incluir o ÁUDIO DE SISTEMA
+  /// (som de jogos/vídeos/música — track de screenShareAudio). Só é lida no
+  /// START do share (toggle desabilitado com share ativo); por sessão,
+  /// resetada no join (padrão de [cameraQuality]).
+  final bool includeSystemAudio;
+
+  /// Se o áudio de sistema LOCAL está sendo transmitido agora (espelho do
+  /// [SystemAudioEnabledChangedEvent] do participante local reconcilia).
+  final bool isSystemAudioEnabled;
 
   /// Banner \"Reconectando…\": reconexão automática do serviço em andamento
   /// ([ReconnectingEvent] → [ReconnectedEvent]). A sessão continua
@@ -107,6 +119,8 @@ class VoiceState {
     bool? isMicrophoneEnabled,
     bool? isCameraEnabled,
     bool? isScreenSharing,
+    bool? includeSystemAudio,
+    bool? isSystemAudioEnabled,
     bool? isReconnecting,
     bool? isAudioBlocked,
     bool? autoSpotlightActive,
@@ -128,6 +142,9 @@ class VoiceState {
       isMicrophoneEnabled: isMicrophoneEnabled ?? this.isMicrophoneEnabled,
       isCameraEnabled: isCameraEnabled ?? this.isCameraEnabled,
       isScreenSharing: isScreenSharing ?? this.isScreenSharing,
+      includeSystemAudio: includeSystemAudio ?? this.includeSystemAudio,
+      isSystemAudioEnabled:
+          isSystemAudioEnabled ?? this.isSystemAudioEnabled,
       isReconnecting: isReconnecting ?? this.isReconnecting,
       isAudioBlocked: isAudioBlocked ?? this.isAudioBlocked,
       autoSpotlightActive: autoSpotlightActive ?? this.autoSpotlightActive,
@@ -215,6 +232,9 @@ class VoiceController
       errorMessage: null,
       // Sessão nova = perfil de câmera default (decisão: por sessão).
       cameraQuality: RtcCameraQuality.auto,
+      // Preferência de áudio de sistema também é por sessão (padrão do
+      // projeto: selectedCameraId idem).
+      includeSystemAudio: false,
     );
     try {
       final info = await _freshJoinInfo();
@@ -243,6 +263,8 @@ class VoiceController
       isMicrophoneEnabled: false,
       isCameraEnabled: false,
       isScreenSharing: false,
+      includeSystemAudio: false,
+      isSystemAudioEnabled: false,
       isReconnecting: false,
       isAudioBlocked: false,
       autoSpotlightActive: false,
@@ -329,13 +351,35 @@ class VoiceController
   /// RtcScreenSharePicker de core/rtc). Espelho do [toggleCamera]: sem
   /// otimismo antes do await, erro de captura NUNCA derruba a sessão e o
   /// [ScreenShareEnabledChangedEvent] local reconcilia.
-  Future<void> startScreenShare(String sourceId) async {
+  ///
+  /// Com [includeSystemAudio] true, pede o áudio de sistema junto. Falha do
+  /// áudio (sem device monitor no SO) NÃO bloqueia o share: o vídeo já saiu
+  /// e o [SystemAudioPublishException] só troca a mensagem — o
+  /// [ScreenShareEnabledChangedEvent] confirma o share na sequência.
+  Future<void> startScreenShare(
+    String sourceId, {
+    bool includeSystemAudio = false,
+  }) async {
     final current = state;
     if (current.status != VoiceSessionStatus.connected) return;
     if (current.isScreenSharing) return; // já compartilhando (o serviço também no-op)
     final rtc = ref.read(rtcServiceProvider);
     try {
-      await rtc.startScreenShare(sourceId);
+      await rtc.startScreenShare(
+        sourceId,
+        includeSystemAudio: includeSystemAudio,
+      );
+    } on SystemAudioPublishException {
+      // O VÍDEO saiu; só o áudio de sistema falhou (sem device monitor no
+      // SO, permissão negada...). Mensagem específica — a sessão fica
+      // intacta e o evento de share reconcilia o estado.
+      if (_disposed) return;
+      state = state.copyWith(
+        status: VoiceSessionStatus.connected,
+        isScreenSharing: true,
+        errorMessage: 'Compartilhamento iniciado sem áudio de sistema.',
+      );
+      return;
     } catch (_) {
       // Falha de captura (TrackCreateException/DesktopCapturerSource):
       // volta ao estado anterior (sem otimismo) e avisa — a sessão fica
@@ -351,6 +395,19 @@ class VoiceController
     if (_disposed) return;
     state = state.copyWith(
       isScreenSharing: true,
+      errorMessage: null,
+    );
+  }
+
+  /// Alterna a preferência de incluir o ÁUDIO DE SISTEMA no PRÓXIMO
+  /// compartilhamento (botão da barra de controles). No-op com share ativo:
+  /// a decisão é lida apenas no start — mudar ao vivo exigiria
+  /// despublicar/republicar (fora do escopo V1).
+  void toggleIncludeSystemAudio() {
+    if (state.status != VoiceSessionStatus.connected) return;
+    if (state.isScreenSharing) return;
+    state = state.copyWith(
+      includeSystemAudio: !state.includeSystemAudio,
       errorMessage: null,
     );
   }
@@ -629,6 +686,8 @@ class VoiceController
           isMicrophoneEnabled: false,
           isCameraEnabled: false,
           isScreenSharing: false,
+          includeSystemAudio: false,
+          isSystemAudioEnabled: false,
           isReconnecting: false,
           isAudioBlocked: false,
           autoSpotlightActive: false,
@@ -674,6 +733,17 @@ class VoiceController
             state.isScreenSharing != isScreenSharing) {
           state = state.copyWith(isScreenSharing: isScreenSharing);
         }
+      case SystemAudioEnabledChangedEvent(
+          :final participantId,
+          :final isSystemAudioEnabled,
+        ):
+        // Espelho exato do share: só o evento do participante LOCAL toca o
+        // estado; remotos aparecem via snapshot de participants.
+        final localId = ref.read(rtcServiceProvider).localParticipantId;
+        if (participantId == localId &&
+            state.isSystemAudioEnabled != isSystemAudioEnabled) {
+          state = state.copyWith(isSystemAudioEnabled: isSystemAudioEnabled);
+        }
       case ReconnectingEvent():
         // Só o banner: a sessão continua connected — o serviço está tentando
         // restabelecer; NADA aqui pode derrubar para idle/error.
@@ -688,6 +758,8 @@ class VoiceController
           isMicrophoneEnabled: false,
           isCameraEnabled: false,
           isScreenSharing: false,
+          includeSystemAudio: false,
+          isSystemAudioEnabled: false,
           isAudioBlocked: false,
           autoSpotlightActive: false,
           savedSpotlightParticipantId: null,
