@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/router/app_router.dart';
+import 'core/theme/app_theme.dart';
 
 /// Widget raiz da aplicação.
 ///
@@ -16,9 +17,8 @@ class App extends ConsumerWidget {
     final router = ref.watch(routerProvider);
     return MaterialApp.router(
       title: '4fun Cod',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
-      ),
+      // Design system dark-only (Discord + Vercel dark/Geist).
+      theme: theme4funCod,
       routerConfig: router,
     );
   }

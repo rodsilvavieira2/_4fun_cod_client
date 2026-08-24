@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/auth/auth_controller.dart';
 import '../../core/auth/auth_state.dart';
+import '../../core/theme/app_theme.dart';
 import '../../shared/models/servers.dart';
 import 'servers_providers.dart';
 
@@ -144,7 +145,7 @@ class _PresenceDot extends StatelessWidget {
       child: Icon(
         Icons.circle,
         size: 10,
-        color: online ? Colors.green : Colors.grey,
+        color: online ? AppStatusColors.online : AppStatusColors.offline,
       ),
     );
   }
