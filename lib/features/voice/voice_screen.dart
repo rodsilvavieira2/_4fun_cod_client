@@ -694,14 +694,26 @@ class _Controls extends StatelessWidget {
         const SizedBox(width: 8),
         // Áudio de sistema (Fase 6.1): preferência do PRÓXIMO share.
         // Desabilitado com share ativo — a decisão é lida apenas no start.
+        // Com share ativo o ícone reflete o estado REAL (isSystemAudioEnabled
+        // — pode ter falhado a publicação); sem share, a preferência.
         _mediaToggleButton(
           theme: theme,
-          icon: state.includeSystemAudio ? Icons.volume_up : Icons.volume_off,
-          active: state.includeSystemAudio,
+          icon: (state.isScreenSharing
+                  ? state.isSystemAudioEnabled
+                  : state.includeSystemAudio)
+              ? Icons.volume_up
+              : Icons.volume_off,
+          active: state.isScreenSharing
+              ? state.isSystemAudioEnabled
+              : state.includeSystemAudio,
           activeColor: theme.colorScheme.primary,
-          tooltip: state.includeSystemAudio
-              ? 'Áudio de sistema no próximo compartilhamento'
-              : 'Incluir áudio de sistema no compartilhamento',
+          tooltip: state.isScreenSharing
+              ? (state.isSystemAudioEnabled
+                  ? 'Transmitindo áudio de sistema'
+                  : 'Sem áudio de sistema neste compartilhamento')
+              : (state.includeSystemAudio
+                  ? 'Áudio de sistema no próximo compartilhamento'
+                  : 'Incluir áudio de sistema no compartilhamento'),
           onPressed: state.isScreenSharing || state.isReconnecting
               ? null
               : onToggleSystemAudio,
@@ -824,18 +836,27 @@ class _Controls extends StatelessWidget {
             ),
             PopupMenuItem(
               value: 'systemAudio',
+              // Mesmas condições do botão wide: desabilitado com share ativo
+              // ou reconexão (a decisão é lida apenas no start).
+              enabled: !state.isScreenSharing && !state.isReconnecting,
               child: Row(
                 children: [
                   Icon(
-                    state.includeSystemAudio
+                    (state.isScreenSharing
+                            ? state.isSystemAudioEnabled
+                            : state.includeSystemAudio)
                         ? Icons.volume_up
                         : Icons.volume_off,
                   ),
                   const SizedBox(width: 12),
                   Text(
-                    state.includeSystemAudio
-                        ? 'Áudio de sistema: ligado'
-                        : 'Áudio de sistema: desligado',
+                    state.isScreenSharing
+                        ? (state.isSystemAudioEnabled
+                            ? 'Áudio de sistema: transmitindo'
+                            : 'Áudio de sistema: sem áudio')
+                        : (state.includeSystemAudio
+                            ? 'Áudio de sistema: ligado'
+                            : 'Áudio de sistema: desligado'),
                   ),
                 ],
               ),

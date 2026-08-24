@@ -136,6 +136,11 @@ class LiveKitRtcService implements RtcService {
   /// [setCameraQuality]. Resetado no [_cleanupRoom] (sessão nova = auto).
   RtcCameraQuality _cameraQuality = RtcCameraQuality.auto;
 
+  /// Guarda de reentrância da publicação de áudio de sistema (ver
+  /// [_publishSystemAudio]): evita que duas chamadas concorrentes de
+  /// [startScreenShare] publiquem duas tracks de screenShareAudio.
+  bool _publishingSystemAudio = false;
+
   /// Perfil da ÚLTIMA publicação de câmera BEM-SUCEDIDA. Comparado com
   /// [_cameraQuality] no [enableCamera] para detectar perfil pendente com
   /// publicação existente (desligou→trocou perfil→religou): se divergirem,
@@ -377,7 +382,9 @@ class LiveKitRtcService implements RtcService {
         sourceId: sourceId,
         // Plano: máx 1080p30 — preset h1080FPS30 EXISTE na 2.11.0
         // (video_parameters.dart:298-304). captureScreenAudio fica FALSE:
-        // browser-only (options.dart:143); V1 sem áudio de sistema (OUT).
+        // browser-only (options.dart:143) — o áudio de sistema no desktop é
+        // publicado MANUALMENTE como track screenShareAudio quando
+        // includeSystemAudio é true (ver [_publishSystemAudio]).
         params: VideoParametersPresets.screenShareH1080FPS30,
       ),
     );
@@ -412,14 +419,40 @@ class LiveKitRtcService implements RtcService {
   /// 834-848 usa getDisplayMedia); a track é montada MANUALMENTE com o MESMO
   /// padrão que o SDK usa no browser (track/local/video.dart:263-272).
   ///
-  /// Falhas propagam como [SystemAudioPublishException] (sem device) ou como
-  /// erro do SDK (permissão/captura) — em ambos os casos a track de VÍDEO já
-  /// foi publicada quando esta exceção sai.
+  /// QUALQUER falha pós-publicação do vídeo vira [SystemAudioPublishException]
+  /// (inclusive erros genéricos de captura/publish) — o controller distingue
+  /// "share ativo sem áudio" de "share falhou"; nunca deixa a UI divergir do
+  /// share real.
   Future<void> _publishSystemAudio() async {
     final room = _room;
     if (room == null || _disposed) return;
     final localParticipant = room.localParticipant;
     if (localParticipant == null) return;
+    // Guarda de reentrância: duas chamadas concorrentes de startScreenShare
+    // podem passar o check de share inativo antes da 1ª publicar o vídeo —
+    // a 2ª chamada que chegasse aqui publicaria OUTRA track de áudio (o SDK
+    // só serializa o vídeo via _publishRunner). Flag no serviço = no-op.
+    if (_publishingSystemAudio) return;
+    _publishingSystemAudio = true;
+    try {
+      await _publishSystemAudioInner(localParticipant);
+    } on SystemAudioPublishException {
+      rethrow;
+    } catch (error) {
+      // Falha GENÉRICA (createStream, getAudioTracks, addTrack/negotiate...):
+      // o vídeo já saiu — converte para a exceção tipada para o controller
+      // não tratá-la como "share falhou" (UI divergente do share real).
+      throw SystemAudioPublishException(
+        'Não foi possível publicar o áudio de sistema ($error).',
+      );
+    } finally {
+      _publishingSystemAudio = false;
+    }
+  }
+
+  Future<void> _publishSystemAudioInner(
+    LocalParticipant localParticipant,
+  ) async {
     // 1. Enumera os devices de áudio (Hardware.instance é API pública
     //    exportada — hardware.dart) e acha o monitor/loopback por heurística
     //    de label (função pura testável).
@@ -464,7 +497,9 @@ class LiveKitRtcService implements RtcService {
     //    - dtx:false (DTX faz gating em música — options.dart:510-513);
     //    - red:false HABILITA RED (bug do SDK: disableRed SEM negação —
     //      local.dart:189 — red:true desligaria).
-    // Erros de captura/publish PROPAGAM — a track de vídeo já saiu.
+    // Erros de captura/publish PROPAGAM — a track de vídeo já saiu (o SDK
+    // faz track.stop() em falha de publish: shouldStopOnFailure lido antes
+    // do start — local.dart:177-179).
     await localParticipant.publishAudioTrack(
       track,
       publishOptions: AudioPublishOptions(
