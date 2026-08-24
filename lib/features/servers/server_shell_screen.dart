@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/theme/app_theme.dart';
+import '../../core/ui/settings_modal.dart';
 import '../../core/websocket/socket_service.dart';
 import '../../shared/models/servers.dart';
 import '../channels/channel_header.dart';
@@ -270,7 +271,9 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
     );
   }
 
-  /// Gatilho do modal de configurações — cablagem da SPEC 2; a SPEC 3
-  /// substitui o corpo por `showSettingsModal(context)`.
-  void _openSettings(BuildContext context) {}
+  /// Gatilho do modal de configurações (SPEC 3): abre via
+  /// [showSettingsModal] com o servidor ativo (seção "Servidor" do modal).
+  void _openSettings(BuildContext context) {
+    showSettingsModal(context, serverId: widget.serverId);
+  }
 }
