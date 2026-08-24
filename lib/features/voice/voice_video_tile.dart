@@ -202,6 +202,12 @@ class _TileOverlay extends StatelessWidget {
               const SizedBox(width: 6),
               const Icon(Icons.present_to_all, size: 14, color: Colors.white),
             ],
+            // Badge de áudio de sistema (Fase 6.1): quem transmite som de
+            // jogos/vídeos/música junto com a tela.
+            if (participant.isSystemAudioEnabled) ...[
+              const SizedBox(width: 6),
+              const Icon(Icons.volume_up, size: 14, color: Colors.white),
+            ],
             const SizedBox(width: 6),
             Icon(
               participant.isMicrophoneEnabled ? Icons.mic : Icons.mic_off,

@@ -75,6 +75,7 @@ class VoiceScreen extends ConsumerWidget {
           onToggleMicrophone: notifier.toggleMicrophone,
           onToggleCamera: notifier.toggleCamera,
           onToggleScreenShare: () => _toggleScreenShare(context, ref),
+          onToggleSystemAudio: notifier.toggleIncludeSystemAudio,
           onOpenSettings: () => _openCameraSettings(context, ref, arg),
           onOpenQuality: () => _openCameraQuality(context, ref, arg),
         ),
@@ -100,7 +101,10 @@ class VoiceScreen extends ConsumerWidget {
     }
     final sourceId = await RtcScreenSharePicker.show(context);
     if (sourceId == null) return; // usuário cancelou o picker
-    await notifier.startScreenShare(sourceId);
+    await notifier.startScreenShare(
+      sourceId,
+      includeSystemAudio: current.includeSystemAudio,
+    );
   }
 
   /// Abre o sheet de settings de câmera; ao abrir, atualiza a lista de
@@ -591,6 +595,7 @@ class _Controls extends StatelessWidget {
     required this.onToggleMicrophone,
     required this.onToggleCamera,
     required this.onToggleScreenShare,
+    required this.onToggleSystemAudio,
     required this.onOpenSettings,
     required this.onOpenQuality,
   });
@@ -601,6 +606,7 @@ class _Controls extends StatelessWidget {
   final VoidCallback onToggleMicrophone;
   final VoidCallback onToggleCamera;
   final VoidCallback onToggleScreenShare;
+  final VoidCallback onToggleSystemAudio;
   final VoidCallback onOpenSettings;
   final VoidCallback onOpenQuality;
 
@@ -684,6 +690,21 @@ class _Controls extends StatelessWidget {
               ? 'Parar compartilhamento'
               : 'Compartilhar tela',
           onPressed: state.isReconnecting ? null : onToggleScreenShare,
+        ),
+        const SizedBox(width: 8),
+        // Áudio de sistema (Fase 6.1): preferência do PRÓXIMO share.
+        // Desabilitado com share ativo — a decisão é lida apenas no start.
+        _mediaToggleButton(
+          theme: theme,
+          icon: state.includeSystemAudio ? Icons.volume_up : Icons.volume_off,
+          active: state.includeSystemAudio,
+          activeColor: theme.colorScheme.primary,
+          tooltip: state.includeSystemAudio
+              ? 'Áudio de sistema no próximo compartilhamento'
+              : 'Incluir áudio de sistema no compartilhamento',
+          onPressed: state.isScreenSharing || state.isReconnecting
+              ? null
+              : onToggleSystemAudio,
         ),
         const SizedBox(width: 4),
         // Qualidade de transmissão (Fase 7): abre o seletor de perfil
@@ -773,13 +794,18 @@ class _Controls extends StatelessWidget {
               case 'settings':
                 onOpenSettings();
                 break;
+              case 'systemAudio':
+                onToggleSystemAudio();
+                break;
             }
           },
-          itemBuilder: (context) => const [
+          // Lista NÃO const: o item de áudio de sistema depende do estado
+          // (os itens individuais continuam const).
+          itemBuilder: (context) => [
             PopupMenuItem(
               value: 'quality',
               child: Row(
-                children: [
+                children: const [
                   Icon(Icons.hd),
                   SizedBox(width: 12),
                   Text('Qualidade de transmissão'),
@@ -789,10 +815,28 @@ class _Controls extends StatelessWidget {
             PopupMenuItem(
               value: 'settings',
               child: Row(
-                children: [
+                children: const [
                   Icon(Icons.settings),
                   SizedBox(width: 12),
                   Text('Configurações de câmera'),
+                ],
+              ),
+            ),
+            PopupMenuItem(
+              value: 'systemAudio',
+              child: Row(
+                children: [
+                  Icon(
+                    state.includeSystemAudio
+                        ? Icons.volume_up
+                        : Icons.volume_off,
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    state.includeSystemAudio
+                        ? 'Áudio de sistema: ligado'
+                        : 'Áudio de sistema: desligado',
+                  ),
                 ],
               ),
             ),
