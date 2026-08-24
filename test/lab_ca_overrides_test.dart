@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:_4fun_cod_client/core/config/lab_ca_overrides.dart';
+import 'package:fourfun_cod_client/core/config/lab_ca_overrides.dart';
 
 /// Não faz rede (o flutter_test mocka HTTP e o WebSocket.connect usa um
 /// HttpClient estático por isolate — ver dart:io websocket_impl.dart).

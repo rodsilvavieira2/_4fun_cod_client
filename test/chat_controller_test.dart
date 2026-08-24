@@ -3,14 +3,14 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:_4fun_cod_client/core/websocket/realtime_event.dart';
-import 'package:_4fun_cod_client/core/websocket/socket_service.dart';
-import 'package:_4fun_cod_client/features/chat/chat_providers.dart';
-import 'package:_4fun_cod_client/features/servers/servers_providers.dart';
-import 'package:_4fun_cod_client/features/servers/servers_repository.dart';
-import 'package:_4fun_cod_client/shared/models/message.dart';
-import 'package:_4fun_cod_client/shared/models/servers.dart';
-import 'package:_4fun_cod_client/shared/models/user.dart';
+import 'package:fourfun_cod_client/core/websocket/realtime_event.dart';
+import 'package:fourfun_cod_client/core/websocket/socket_service.dart';
+import 'package:fourfun_cod_client/features/chat/chat_providers.dart';
+import 'package:fourfun_cod_client/features/servers/servers_providers.dart';
+import 'package:fourfun_cod_client/features/servers/servers_repository.dart';
+import 'package:fourfun_cod_client/shared/models/message.dart';
+import 'package:fourfun_cod_client/shared/models/servers.dart';
+import 'package:fourfun_cod_client/shared/models/user.dart';
 
 /// Socket fake: expõe streams injetáveis para simular eventos do servidor
 /// e reconexão.

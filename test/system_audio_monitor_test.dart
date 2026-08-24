@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:livekit_client/livekit_client.dart' show MediaDevice;
 
-import 'package:_4fun_cod_client/core/rtc/livekit_rtc_service.dart';
+import 'package:fourfun_cod_client/core/rtc/livekit_rtc_service.dart';
 
 /// Testes da função PURA [findSystemAudioMonitorDevice] (Fase 6.1):
 /// heurística de detecção do device monitor/loopback (áudio de sistema).

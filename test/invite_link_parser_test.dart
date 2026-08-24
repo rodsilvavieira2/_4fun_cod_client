@@ -1,4 +1,4 @@
-import 'package:_4fun_cod_client/features/servers/invite_link_parser.dart';
+import 'package:fourfun_cod_client/features/servers/invite_link_parser.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

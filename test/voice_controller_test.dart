@@ -3,13 +3,13 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:_4fun_cod_client/core/api/api_exception.dart';
-import 'package:_4fun_cod_client/core/rtc/rtc_providers.dart';
-import 'package:_4fun_cod_client/core/rtc/rtc_service.dart';
-import 'package:_4fun_cod_client/features/servers/servers_providers.dart';
-import 'package:_4fun_cod_client/features/servers/servers_repository.dart';
-import 'package:_4fun_cod_client/features/voice/voice_providers.dart';
-import 'package:_4fun_cod_client/shared/models/voice.dart';
+import 'package:fourfun_cod_client/core/api/api_exception.dart';
+import 'package:fourfun_cod_client/core/rtc/rtc_providers.dart';
+import 'package:fourfun_cod_client/core/rtc/rtc_service.dart';
+import 'package:fourfun_cod_client/features/servers/servers_providers.dart';
+import 'package:fourfun_cod_client/features/servers/servers_repository.dart';
+import 'package:fourfun_cod_client/features/voice/voice_providers.dart';
+import 'package:fourfun_cod_client/shared/models/voice.dart';
 
 /// RtcService fake: registra chamadas e expõe streams injetáveis para
 /// simular eventos/participantes do LiveKit sem o SDK.

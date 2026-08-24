@@ -2,14 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:_4fun_cod_client/app.dart';
-import 'package:_4fun_cod_client/core/auth/auth_controller.dart';
-import 'package:_4fun_cod_client/core/auth/auth_state.dart';
-import 'package:_4fun_cod_client/features/servers/create_server_screen.dart';
-import 'package:_4fun_cod_client/features/servers/server_rail.dart';
-import 'package:_4fun_cod_client/features/servers/servers_providers.dart';
-import 'package:_4fun_cod_client/shared/models/servers.dart';
-import 'package:_4fun_cod_client/shared/models/user.dart';
+import 'package:fourfun_cod_client/app.dart';
+import 'package:fourfun_cod_client/core/auth/auth_controller.dart';
+import 'package:fourfun_cod_client/core/auth/auth_state.dart';
+import 'package:fourfun_cod_client/features/servers/create_server_screen.dart';
+import 'package:fourfun_cod_client/features/servers/server_rail.dart';
+import 'package:fourfun_cod_client/features/servers/servers_providers.dart';
+import 'package:fourfun_cod_client/shared/models/servers.dart';
+import 'package:fourfun_cod_client/shared/models/user.dart';
 
 /// Fake do AuthController: nunca toca em backend/storage/dio.
 class _FakeAuthController extends AuthController {
