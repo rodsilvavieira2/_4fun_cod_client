@@ -3,6 +3,7 @@
 
 #include <atomic>
 #include <condition_variable>
+#include <functional>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -28,6 +29,13 @@ public:
 
   void
   SetVideoSource(libwebrtc::scoped_refptr<libwebrtc::RTCVideoSource> source);
+
+  using SetupCallback = std::function<void(bool success)>;
+
+  // Starts the portal flow without waiting on the Flutter platform thread.
+  // The callback runs after the portal session and PipeWire pipeline are ready
+  // (or after setup fails).
+  bool StartCaptureAsync(SetupCallback callback);
 
   bool StartCapture() override;
   bool CaptureStarted() override;
@@ -55,7 +63,7 @@ private:
                   int *pipewire_fd);
   bool StartPipeline(uint32_t node_id, int pipewire_fd);
   void CaptureLoop();
-  void Run();
+  void Run(SetupCallback setup_callback);
   void FinishSetup(bool success, const std::string &error = std::string());
   void SetError(const std::string &error);
 

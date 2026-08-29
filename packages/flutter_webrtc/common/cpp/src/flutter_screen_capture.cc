@@ -7,6 +7,7 @@
 
 #ifdef __linux__
 #include "portal_video_capturer.h"
+#include "task_runner.h"
 #endif
 
 namespace flutter_webrtc_plugin {
@@ -360,14 +361,73 @@ void FlutterScreenCapture::GetDisplayMedia(
   // session whose PipeWire frames feed a custom WebRTC source directly.
   if (source_id == "0") {
     auto* portal_impl = new RefCountedObject<PortalVideoCapturer>();
-    scoped_refptr<RTCVideoCapturer> portal_capturer = portal_impl;
+    scoped_refptr<PortalVideoCapturer> portal_keepalive = portal_impl;
+    scoped_refptr<RTCVideoCapturer> portal_capturer = portal_keepalive;
     scoped_refptr<RTCVideoSource> video_source =
         base_->factory_->CreateCustomVideoSource(
             "linux_portal_screen_capture",
             base_->ParseMediaConstraints(video_constraints));
-    portal_impl->SetVideoSource(video_source);
+    portal_keepalive->SetVideoSource(video_source);
 
-    if (!portal_impl->StartCapture()) {
+    auto result_ptr = std::shared_ptr<MethodResultProxy>(result.release());
+    auto finish_capture =
+        [this, base = base_, portal_keepalive, portal_capturer, video_source,
+         stream, uuid, params = std::move(params), result_ptr](
+            bool success) mutable {
+          auto finish_on_platform_thread =
+              [this, base, portal_keepalive, portal_capturer, video_source,
+               stream, uuid, params = std::move(params), result_ptr,
+               success]() mutable {
+                if (!success) {
+                  if (loopback_capturer_) {
+                    loopback_capturer_->Stop();
+                    loopback_capturer_.reset();
+                    loopback_audio_source_ = nullptr;
+                  }
+                  for (auto audio_track : stream->audio_tracks().std_vector()) {
+                    stream->RemoveTrack(audio_track);
+                    base->local_tracks_.erase(audio_track->id().std_string());
+                  }
+                  result_ptr->Error(
+                      "GetDisplayMedia",
+                      "Linux portal capture failed: " +
+                          portal_keepalive->last_error());
+                  return;
+                }
+
+                scoped_refptr<RTCVideoTrack> track =
+                    base->factory_->CreateVideoTrack(video_source, uuid.c_str());
+
+                EncodableList video_tracks;
+                EncodableMap info;
+                info[EncodableValue("id")] =
+                    EncodableValue(track->id().std_string());
+                info[EncodableValue("label")] =
+                    EncodableValue(track->id().std_string());
+                info[EncodableValue("kind")] =
+                    EncodableValue(track->kind().std_string());
+                info[EncodableValue("enabled")] =
+                    EncodableValue(track->enabled());
+                video_tracks.push_back(EncodableValue(info));
+                params[EncodableValue("videoTracks")] =
+                    EncodableValue(video_tracks);
+
+                stream->AddTrack(track);
+                base->local_tracks_[track->id().std_string()] = track;
+                base->local_streams_[uuid] = stream;
+                base->video_capturers_[track->id().std_string()] =
+                    portal_capturer;
+                result_ptr->Success(EncodableValue(params));
+              };
+
+          if (base->task_runner_ != nullptr) {
+            base->task_runner_->EnqueueTask(std::move(finish_on_platform_thread));
+          } else {
+            finish_on_platform_thread();
+          }
+        };
+
+    if (!portal_keepalive->StartCaptureAsync(std::move(finish_capture))) {
       if (loopback_capturer_) {
         loopback_capturer_->Stop();
         loopback_capturer_.reset();
@@ -377,29 +437,10 @@ void FlutterScreenCapture::GetDisplayMedia(
         stream->RemoveTrack(audio_track);
         base_->local_tracks_.erase(audio_track->id().std_string());
       }
-      result->Error("GetDisplayMedia",
-                    "Linux portal capture failed: " +
-                        portal_impl->last_error());
-      return;
+      result_ptr->Error("GetDisplayMedia",
+                        "Linux portal capture failed: " +
+                            portal_keepalive->last_error());
     }
-
-    scoped_refptr<RTCVideoTrack> track =
-        base_->factory_->CreateVideoTrack(video_source, uuid.c_str());
-
-    EncodableList video_tracks;
-    EncodableMap info;
-    info[EncodableValue("id")] = EncodableValue(track->id().std_string());
-    info[EncodableValue("label")] = EncodableValue(track->id().std_string());
-    info[EncodableValue("kind")] = EncodableValue(track->kind().std_string());
-    info[EncodableValue("enabled")] = EncodableValue(track->enabled());
-    video_tracks.push_back(EncodableValue(info));
-    params[EncodableValue("videoTracks")] = EncodableValue(video_tracks);
-
-    stream->AddTrack(track);
-    base_->local_tracks_[track->id().std_string()] = track;
-    base_->local_streams_[uuid] = stream;
-    base_->video_capturers_[track->id().std_string()] = portal_capturer;
-    result->Success(EncodableValue(params));
     return;
   }
 #endif

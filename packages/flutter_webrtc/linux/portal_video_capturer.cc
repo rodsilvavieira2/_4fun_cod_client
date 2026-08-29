@@ -78,7 +78,23 @@ void PortalVideoCapturer::SetVideoSource(
 }
 
 bool PortalVideoCapturer::StartCapture() {
+  if (!StartCaptureAsync(SetupCallback())) {
+    return false;
+  }
+
   std::unique_lock<std::mutex> lock(mutex_);
+  setup_condition_.wait(lock, [this] { return setup_finished_; });
+  const bool success = setup_succeeded_;
+  lock.unlock();
+
+  if (!success && worker_.joinable()) {
+    worker_.join();
+  }
+  return success;
+}
+
+bool PortalVideoCapturer::StartCaptureAsync(SetupCallback callback) {
+  std::lock_guard<std::mutex> lock(mutex_);
   if (capture_started_) {
     return true;
   }
@@ -94,15 +110,8 @@ bool PortalVideoCapturer::StartCapture() {
   setup_finished_ = false;
   setup_succeeded_ = false;
   last_error_.clear();
-  worker_ = std::thread(&PortalVideoCapturer::Run, this);
-  setup_condition_.wait(lock, [this] { return setup_finished_; });
-  const bool success = setup_succeeded_;
-  lock.unlock();
-
-  if (!success && worker_.joinable()) {
-    worker_.join();
-  }
-  return success;
+  worker_ = std::thread(&PortalVideoCapturer::Run, this, std::move(callback));
+  return true;
 }
 
 bool PortalVideoCapturer::CaptureStarted() { return capture_started_.load(); }
@@ -445,7 +454,7 @@ void PortalVideoCapturer::CaptureLoop() {
   }
 }
 
-void PortalVideoCapturer::Run() {
+void PortalVideoCapturer::Run(SetupCallback setup_callback) {
   GMainContext *context = g_main_context_new();
   g_main_context_push_thread_default(context);
 
@@ -459,6 +468,9 @@ void PortalVideoCapturer::Run() {
       g_bus_get_sync(G_BUS_TYPE_SESSION, cancellable_, &error);
   if (connection == nullptr) {
     FinishSetup(false, GErrorMessage("Connect to session bus", error));
+    if (setup_callback) {
+      setup_callback(false);
+    }
     g_clear_error(&error);
     goto cleanup_context;
   }
@@ -470,12 +482,21 @@ void PortalVideoCapturer::Run() {
     if (!OpenPortal(connection, context, &session_handle, &node_id,
                     &pipewire_fd)) {
       FinishSetup(false, last_error());
+      if (setup_callback) {
+        setup_callback(false);
+      }
     } else if (!StartPipeline(node_id, pipewire_fd)) {
       close(pipewire_fd);
       FinishSetup(false, last_error());
+      if (setup_callback) {
+        setup_callback(false);
+      }
     } else {
       capture_started_ = true;
       FinishSetup(true);
+      if (setup_callback) {
+        setup_callback(true);
+      }
       CaptureLoop();
       capture_started_ = false;
 
