@@ -40,7 +40,7 @@ class VoiceState {
     this.spotlightParticipantId,
     this.cameraDevices = const [],
     this.selectedCameraId,
-    this.cameraQuality = RtcCameraQuality.auto,
+    this.screenShareQuality = RtcScreenShareQuality.auto,
   });
 
   final VoiceSessionStatus status;
@@ -67,7 +67,7 @@ class VoiceState {
   /// Preferência do PRÓXIMO compartilhamento: incluir o ÁUDIO DE SISTEMA
   /// (som de jogos/vídeos/música — track de screenShareAudio). Só é lida no
   /// START do share (toggle desabilitado com share ativo); por sessão,
-  /// resetada no join (padrão de [cameraQuality]).
+  /// resetada no join (padrão de [screenShareQuality]).
   final bool includeSystemAudio;
 
   /// Se o áudio de sistema LOCAL está sendo transmitido agora (espelho do
@@ -107,10 +107,9 @@ class VoiceState {
   /// não guarda deviceId pendente com a câmera desligada).
   final String? selectedCameraId;
 
-  /// Perfil de qualidade de PUBLICAÇÃO da câmera local (Fase 7; default
-  /// `auto`). Persistido só na sessão — resetado a cada join (padrão do
-  /// projeto: selectedCameraId idem).
-  final RtcCameraQuality cameraQuality;
+  /// Perfil de qualidade de PUBLICAÇÃO do compartilhamento local (default
+  /// `auto`). Persistido só na sessão — resetado a cada join.
+  final RtcScreenShareQuality screenShareQuality;
 
   VoiceState copyWith({
     VoiceSessionStatus? status,
@@ -128,7 +127,7 @@ class VoiceState {
     Object? spotlightParticipantId = _unset,
     List<RtcVideoDevice>? cameraDevices,
     Object? selectedCameraId = _unset,
-    RtcCameraQuality? cameraQuality,
+    RtcScreenShareQuality? screenShareQuality,
   }) {
     return VoiceState(
       status: status ?? this.status,
@@ -160,7 +159,7 @@ class VoiceState {
       selectedCameraId: identical(selectedCameraId, _unset)
           ? this.selectedCameraId
           : selectedCameraId as String?,
-      cameraQuality: cameraQuality ?? this.cameraQuality,
+      screenShareQuality: screenShareQuality ?? this.screenShareQuality,
     );
   }
 }
@@ -232,8 +231,8 @@ class VoiceController
     state = current.copyWith(
       status: VoiceSessionStatus.connecting,
       errorMessage: null,
-      // Sessão nova = perfil de câmera default (decisão: por sessão).
-      cameraQuality: RtcCameraQuality.auto,
+      // Sessão nova = perfil de screen share default (decisão: por sessão).
+      screenShareQuality: RtcScreenShareQuality.auto,
       // Preferência de áudio de sistema também é por sessão (padrão do
       // projeto: selectedCameraId idem).
       includeSystemAudio: false,
@@ -253,6 +252,8 @@ class VoiceController
   /// Sai do canal de voz e volta para `idle`.
   Future<void> leave() async {
     await ref.read(rtcServiceProvider).disconnect();
+    if (_disposed) return;
+    state = state.copyWith(screenShareQuality: RtcScreenShareQuality.auto);
     if (_disposed) return;
     // A sala morreu: câmera/share pararam junto e o destaque não faz mais
     // sentido. `_lastQuality` e o rastreio de sharers também são resetados
@@ -382,6 +383,7 @@ class VoiceController
       state = state.copyWith(
         status: VoiceSessionStatus.connected,
         isScreenSharing: true,
+        screenShareQuality: rtc.screenShareQuality,
         errorMessage: 'Compartilhamento iniciado sem áudio de sistema.',
       );
       return;
@@ -398,7 +400,14 @@ class VoiceController
       return;
     }
     if (_disposed) return;
-    state = state.copyWith(isScreenSharing: true, errorMessage: null);
+    final effectiveQuality = rtc.screenShareQuality;
+    state = state.copyWith(
+      isScreenSharing: true,
+      screenShareQuality: effectiveQuality,
+      errorMessage: effectiveQuality == current.screenShareQuality
+          ? null
+          : 'Não foi possível aplicar a qualidade escolhida; transmissão mantida em Auto.',
+    );
   }
 
   /// Alterna a preferência de incluir o ÁUDIO DE SISTEMA no PRÓXIMO
@@ -511,27 +520,31 @@ class VoiceController
     }
   }
 
-  /// Define o perfil de qualidade de PUBLICAÇÃO da câmera local (Fase 7).
-  /// Com a câmera LIGADA aplica ao vivo (despublica+republica — blip visual
-  /// breve, igual Zoom/Meet); com a câmera DESLIGADA o perfil fica pendente
-  /// para a próxima [toggleCamera]/[enableCamera]. Erro de captura NUNCA
-  /// derruba a sessão (mesmo padrão de [toggleCamera]).
-  Future<void> setCameraQuality(RtcCameraQuality quality) async {
+  /// Define o perfil de qualidade do compartilhamento de tela/janela.
+  /// Sem share ativo, fica pendente para o próximo início; com share ativo,
+  /// aplica no mesmo sender sem interromper a transmissão.
+  Future<void> setScreenShareQuality(RtcScreenShareQuality quality) async {
     final current = state;
     if (current.status != VoiceSessionStatus.connected) return;
     final rtc = ref.read(rtcServiceProvider);
     try {
-      await rtc.setCameraQuality(quality);
+      await rtc.setScreenShareQuality(quality);
     } catch (_) {
       if (_disposed) return;
       state = state.copyWith(
         status: VoiceSessionStatus.connected,
-        errorMessage: 'Não foi possível ajustar a qualidade da câmera.',
+        errorMessage: 'Não foi possível ajustar a qualidade da transmissão.',
       );
       return;
     }
     if (_disposed) return;
-    state = state.copyWith(cameraQuality: quality, errorMessage: null);
+    final effectiveQuality = rtc.screenShareQuality;
+    state = state.copyWith(
+      screenShareQuality: effectiveQuality,
+      errorMessage: effectiveQuality == quality
+          ? null
+          : 'Não foi possível aplicar a qualidade escolhida; transmissão mantida em Auto.',
+    );
   }
 
   /// Aplica a qualidade de recepção de um tile REMOTO conforme o papel
@@ -684,6 +697,7 @@ class VoiceController
           isMicrophoneEnabled: false,
           isCameraEnabled: false,
           isScreenSharing: false,
+          screenShareQuality: RtcScreenShareQuality.auto,
           includeSystemAudio: false,
           isSystemAudioEnabled: false,
           isReconnecting: false,
@@ -756,6 +770,7 @@ class VoiceController
           isMicrophoneEnabled: false,
           isCameraEnabled: false,
           isScreenSharing: false,
+          screenShareQuality: RtcScreenShareQuality.auto,
           includeSystemAudio: false,
           isSystemAudioEnabled: false,
           isAudioBlocked: false,

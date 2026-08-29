@@ -73,7 +73,7 @@ class VoiceScreen extends ConsumerWidget {
           onToggleScreenShare: () => _toggleScreenShare(context, ref),
           onToggleSystemAudio: notifier.toggleIncludeSystemAudio,
           onOpenSettings: () => _openCameraSettings(context, ref, arg),
-          onOpenQuality: () => _openCameraQuality(context, ref, arg),
+          onOpenQuality: () => _openScreenShareQuality(context, ref, arg),
         ),
         // Corrige o tom da barra inferior sobre o surface do tema.
         const SizedBox(height: 4),
@@ -116,16 +116,16 @@ class VoiceScreen extends ConsumerWidget {
     );
   }
 
-  /// Abre o sheet de qualidade de transmissão (Fase 7). Não precisa de
+  /// Abre o sheet de qualidade do screen share. Não precisa de
   /// refresh — o estado do perfil já vive no controller.
-  void _openCameraQuality(
+  void _openScreenShareQuality(
     BuildContext context,
     WidgetRef ref,
     ({String serverId, String channelId}) arg,
   ) {
     showModalBottomSheet<void>(
       context: context,
-      builder: (_) => _CameraQualitySheet(arg: arg),
+      builder: (_) => _ScreenShareQualitySheet(arg: arg),
     );
   }
 }
@@ -704,15 +704,14 @@ class _Controls extends StatelessWidget {
               : onToggleSystemAudio,
         ),
         const SizedBox(width: 4),
-        // Qualidade de transmissão (Fase 7): abre o seletor de perfil
-        // (Auto/1080p/720p/...). Sempre habilitado — com a câmera OFF a
-        // escolha fica pendente para a próxima ligada.
+        // Qualidade do screen share: botão sempre visível; sem share a
+        // escolha fica pendente para o próximo compartilhamento.
         IconButton(
           onPressed: onOpenQuality,
           tooltip: 'Qualidade de transmissão',
           icon: Icon(
             Icons.hd,
-            color: state.cameraQuality != RtcCameraQuality.auto
+            color: state.screenShareQuality != RtcScreenShareQuality.auto
                 ? theme.colorScheme.primary
                 : theme.colorScheme.onSurfaceVariant,
           ),
@@ -778,6 +777,17 @@ class _Controls extends StatelessWidget {
           onPressed: state.isReconnecting ? null : onToggleScreenShare,
         ),
         const SizedBox(width: 12),
+        IconButton(
+          onPressed: onOpenQuality,
+          tooltip: 'Qualidade de transmissão',
+          icon: Icon(
+            Icons.hd,
+            color: state.screenShareQuality != RtcScreenShareQuality.auto
+                ? theme.colorScheme.primary
+                : theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(width: 4),
         PopupMenuButton<String>(
           tooltip: 'Mais opções',
           icon: const Icon(Icons.more_vert),
@@ -797,16 +807,6 @@ class _Controls extends StatelessWidget {
           // Lista NÃO const: o item de áudio de sistema depende do estado
           // (os itens individuais continuam const).
           itemBuilder: (context) => [
-            PopupMenuItem(
-              value: 'quality',
-              child: Row(
-                children: const [
-                  Icon(Icons.hd),
-                  SizedBox(width: 12),
-                  Text('Qualidade de transmissão'),
-                ],
-              ),
-            ),
             PopupMenuItem(
               value: 'settings',
               child: Row(
@@ -973,24 +973,21 @@ class _CameraSettingsSheet extends ConsumerWidget {
   }
 }
 
-/// Rótulo PT-BR de cada perfil de transmissão (Fase 7) — espelho das
-/// opções do print de referência, com `Auto` no topo.
-const Map<RtcCameraQuality, String> _cameraQualityLabels = {
-  RtcCameraQuality.auto: 'Auto',
-  RtcCameraQuality.q1080: '1080p HD',
-  RtcCameraQuality.q720: '720p',
-  RtcCameraQuality.q480: '480p',
-  RtcCameraQuality.q360: '360p',
-  RtcCameraQuality.q240: '240p',
-  RtcCameraQuality.q144: '144p',
+/// Rótulo PT-BR de cada perfil de screen share, com `Auto` no topo.
+const Map<RtcScreenShareQuality, String> _screenShareQualityLabels = {
+  RtcScreenShareQuality.auto: 'Auto',
+  RtcScreenShareQuality.q1080p60: '1080p60',
+  RtcScreenShareQuality.q1080p30: '1080p30',
+  RtcScreenShareQuality.q1080p15: '1080p15',
+  RtcScreenShareQuality.q720p15: '720p15',
+  RtcScreenShareQuality.q360p3: '360p3',
 };
 
-/// Sheet de qualidade de TRANSMISSÃO (Fase 7): lista vertical de perfis de
-/// publicação (estilo YouTube), `Auto` no topo com ✓ no ativo. O estado vem
-/// do [voiceControllerProvider] — o sheet apenas lê e aplica via
-/// [VoiceController.setCameraQuality] (ao vivo se a câmera estiver ligada).
-class _CameraQualitySheet extends ConsumerWidget {
-  const _CameraQualitySheet({required this.arg});
+/// Sheet de qualidade de screen share: lista vertical de perfis de publicação
+/// com `Auto` no topo. A escolha é pendente ou aplicada ao vivo conforme o
+/// estado do compartilhamento atual.
+class _ScreenShareQualitySheet extends ConsumerWidget {
+  const _ScreenShareQualitySheet({required this.arg});
 
   final ({String serverId, String channelId}) arg;
 
@@ -1013,23 +1010,23 @@ class _CameraQualitySheet extends ConsumerWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              state.isCameraEnabled
-                  ? 'Aplica ao vivo na câmera ativa.'
-                  : 'Aplica quando a câmera for ligada.',
+              state.isScreenSharing
+                  ? 'Aplica ao vivo no compartilhamento atual.'
+                  : 'Aplica no próximo compartilhamento.',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.outline,
               ),
             ),
             const SizedBox(height: 8),
-            RadioGroup<RtcCameraQuality>(
-              groupValue: state.cameraQuality,
+            RadioGroup<RtcScreenShareQuality>(
+              groupValue: state.screenShareQuality,
               onChanged: (quality) {
-                if (quality != null) notifier.setCameraQuality(quality);
+                if (quality != null) notifier.setScreenShareQuality(quality);
               },
               child: Column(
                 children: [
-                  for (final entry in _cameraQualityLabels.entries)
-                    RadioListTile<RtcCameraQuality>(
+                  for (final entry in _screenShareQualityLabels.entries)
+                    RadioListTile<RtcScreenShareQuality>(
                       value: entry.key,
                       title: Text(entry.value),
                       dense: true,

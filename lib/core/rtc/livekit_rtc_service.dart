@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter_webrtc/flutter_webrtc.dart' as rtc;
 
 // `SpeakingChangedEvent` e `ReconnectingEvent` (mixin, events.dart:71)
 // existem TAMBÉM no livekit_client (colisão de nome com eventos do contrato);
@@ -63,12 +64,10 @@ class LiveKitRtcService implements RtcService {
   /// Vídeo (Fase 5/7):
   /// - `adaptiveStream`/`dynacast` ligados no CLIENT (defaults false —
   ///   options.dart:298-299); dynacast requer simulcast (options.dart:264);
-  /// - `defaultCameraCaptureOptions` h1080_60 (Fase 7): a 1ª publicação de
-  ///   câmera usa estes params (o SDK clampa às dimensões reais do device);
-  ///   o modo `auto` do seletor equivale a estes defaults;
-  /// - `videoSimulcastLayers` h180/h540/h1080_60: `simulcast` já é default
-  ///   true, mas fica explícito; `videoEncoding` fica null de propósito —
-  ///   o SDK sugere os encodings a partir dos layers (options.dart:461-469).
+  /// - câmera sem opções customizadas: captura e publicação seguem os
+  ///   defaults do SDK/dispositivo;
+  /// - screen share usa um teto de captura 1080p60 e publica inicialmente no
+  ///   perfil Auto (1080p15), com simulcast calculado pelo SDK.
   static final RoomOptions defaultRoomOptions = RoomOptions(
     defaultAudioCaptureOptions: const AudioCaptureOptions(
       echoCancellation: true,
@@ -80,42 +79,18 @@ class LiveKitRtcService implements RtcService {
     ),
     adaptiveStream: true,
     dynacast: true,
-    defaultCameraCaptureOptions: const CameraCaptureOptions(params: h1080_60),
     defaultVideoPublishOptions: const VideoPublishOptions(
       simulcast: true,
-      videoSimulcastLayers: [
-        VideoParametersPresets.h180_169,
-        VideoParametersPresets.h540_169,
-        h1080_60,
-      ],
+      screenShareEncoding: VideoEncoding(maxBitrate: 2500000, maxFramerate: 15),
     ),
   );
 
-  /// 1080p@60 CUSTOM — NENHUM preset do SDK tem 60fps (máx 30 em
-  /// `video_parameters.dart`). Teto da Fase 7 (decisão: parar em 1080p60;
-  /// o h1440_169 existente é 1440p@30/5Mbps e ficou fora de escopo).
-  /// Bitrate ~6 Mbps (referência de encoders para 1080p60 H.264/VP8).
-  static const VideoParameters h1080_60 = VideoParameters(
+  /// Teto de captura do screen share. A fonte nasce em 1080p60 para que o
+  /// sender possa subir de 15/30 para 60 FPS sem recriar a track ou reabrir
+  /// o picker.
+  static const VideoParameters screenShareH1080FPS60 = VideoParameters(
     dimensions: VideoDimensions(1920, 1080),
-    encoding: VideoEncoding(maxBitrate: 6000000, maxFramerate: 60),
-  );
-
-  /// 480p 16:9 custom — o SDK só tem `h480_43` (4:3); o seletor usa 16:9.
-  static const VideoParameters h480_169 = VideoParameters(
-    dimensions: VideoDimensions(854, 480),
-    encoding: VideoEncoding(maxBitrate: 800000, maxFramerate: 30),
-  );
-
-  /// 240p 16:9 custom — SDK não tem preset 240p 16:9.
-  static const VideoParameters h240_169 = VideoParameters(
-    dimensions: VideoDimensions(426, 240),
-    encoding: VideoEncoding(maxBitrate: 200000, maxFramerate: 30),
-  );
-
-  /// 144p 16:9 custom — SDK não tem preset 144p 16:9.
-  static const VideoParameters h144_169 = VideoParameters(
-    dimensions: VideoDimensions(256, 144),
-    encoding: VideoEncoding(maxBitrate: 100000, maxFramerate: 15),
+    encoding: VideoEncoding(maxBitrate: 8000000, maxFramerate: 60),
   );
 
   /// Opções da sala (mic publicado ATIVO por padrão desde a Fase 7).
@@ -129,10 +104,14 @@ class LiveKitRtcService implements RtcService {
   String? _livekitUrl;
   bool _disposed = false;
 
-  /// Perfil de qualidade de PUBLICAÇÃO da câmera local (default: auto).
-  /// Aplicado na 1ª [enableCamera] e reaplicado ao vivo por
-  /// [setCameraQuality]. Resetado no [_cleanupRoom] (sessão nova = auto).
-  RtcCameraQuality _cameraQuality = RtcCameraQuality.auto;
+  /// Perfil escolhido para o screen share. Fica pendente entre shares e é
+  /// resetado no [_cleanupRoom] (sessão nova = auto).
+  RtcScreenShareQuality _screenShareQuality = RtcScreenShareQuality.auto;
+
+  /// Cópia dos encodings originais do sender do screen share, capturados logo
+  /// após a publicação em Auto. A cópia evita que uma alteração posterior
+  /// mutile o baseline usado para calcular as demais qualidades.
+  List<rtc.RTCRtpEncoding>? _screenShareEncodingBaseline;
 
   /// Época da publicação de áudio de sistema: incrementado a cada
   /// [_teardownRoom] para INVALIDAR publicações pendentes de salas antigas
@@ -144,15 +123,8 @@ class LiveKitRtcService implements RtcService {
   /// concorrentes na MESMA sala). Null quando ocioso — ver [_publishSystemAudio].
   Future<void>? _pendingSystemAudioPublish;
 
-  /// Perfil da ÚLTIMA publicação de câmera BEM-SUCEDIDA. Comparado com
-  /// [_cameraQuality] no [enableCamera] para detectar perfil pendente com
-  /// publicação existente (desligou→trocou perfil→religou): se divergirem,
-  /// republica em vez de só desmutar. Atualizado só APÓS publish/republish
-  /// bem-sucedido (rollback natural em falha).
-  RtcCameraQuality _appliedCameraQuality = RtcCameraQuality.auto;
-
   @override
-  RtcCameraQuality get cameraQuality => _cameraQuality;
+  RtcScreenShareQuality get screenShareQuality => _screenShareQuality;
 
   /// identity → participante atual da sala.
   final Map<String, RtcParticipant> _participantsById = {};
@@ -268,44 +240,10 @@ class LiveKitRtcService implements RtcService {
     if (room == null || _disposed) return;
     final localParticipant = room.localParticipant;
     if (localParticipant == null) return;
-    final publication = localParticipant.getTrackPublicationBySource(
-      TrackSource.camera,
-    );
-    // Publicação existente COM o perfil já aplicado: apenas desmuta
-    // (participant/local.dart:795-821). Se o perfil PENDENTE diverge do
-    // aplicado (desligou→trocou perfil→religou), republica — senão o perfil
-    // escolhido seria descartado silenciosamente (fix CRÍTICO do review).
-    // Decisão extraída em [cameraNeedsRepublish] (função pura testável).
-    if (!cameraNeedsRepublish(
-      hasPublication: publication != null,
-      pending: _cameraQuality,
-      applied: _appliedCameraQuality,
-    )) {
-      // Erros de permissão/hardware (TrackCreateException, exceptions.dart:81)
-      // PROPAGAM — o controller decide a mensagem; falha de câmera NUNCA
-      // derruba a sessão (nada de _cleanupRoom aqui).
-      await localParticipant.setCameraEnabled(true);
-      return;
-    }
-    if (publication != null) {
-      // Perfil pendente diferente do aplicado: despublica para republicar
-      // com as novas options. DIFERENTE do setCameraQuality (que cria a
-      // track antes de remover), aqui o usuário já está religando a câmera
-      // — se o create falhar, a câmera simplesmente não liga (estado
-      // visível e esperado, sem publicação órfã).
-      await localParticipant.removePublishedTrack(publication.sid);
-    }
-    // 1ª publicação OU re-publicação com perfil novo: nasce no perfil
-    // selecionado (Fase 7 — o `auto` equivale aos defaults do RoomOptions).
-    final (captureOptions, publishOptions) = _optionsFor(_cameraQuality);
-    final track = await LocalVideoTrack.createCameraTrack(captureOptions);
-    await localParticipant.publishVideoTrack(
-      track,
-      publishOptions: publishOptions,
-    );
-    // Só após o sucesso: o perfil aplicado agora é o corrente (rollback
-    // natural se o create/publish falhar — _appliedCameraQuality intacto).
-    _appliedCameraQuality = _cameraQuality;
+    // A câmera segue integralmente os defaults de captura/publicação do SDK e
+    // do dispositivo. O controle de qualidade pertence apenas ao screen
+    // share e nunca recria nem republica esta track.
+    await localParticipant.setCameraEnabled(true);
   }
 
   @override
@@ -321,51 +259,59 @@ class LiveKitRtcService implements RtcService {
   }
 
   @override
-  Future<void> setCameraQuality(RtcCameraQuality quality) async {
+  Future<void> setScreenShareQuality(RtcScreenShareQuality quality) async {
     final room = _room;
     if (room == null || _disposed) return;
+    if (quality == _screenShareQuality) return;
     final localParticipant = room.localParticipant;
     if (localParticipant == null) return;
-    // Câmera OFF: perfil fica PENDENTE — a próxima enableCamera() aplica
-    // (e o enableCamera detecta divergência com o aplicado). Grava já o
-    // pendente; nada foi publicado ainda, então não há estado inconsistente.
-    if (!localParticipant.isCameraEnabled()) {
-      _cameraQuality = quality;
+    final publication = localParticipant.getTrackPublicationBySource(
+      TrackSource.screenShareVideo,
+    );
+    if (publication == null || publication.track is! LocalVideoTrack) {
+      // Sem share ativo, a escolha fica pendente para o próximo início.
+      _screenShareQuality = quality;
       return;
     }
 
-    // Câmera LIGADA: troca ao vivo sem sair da sala. restartTrack recria a
-    // captura no MESMO sender mas NÃO renegocia os publish options
-    // (bitrate/simulcast layers ficam os do publish original — local.dart:289
-    // + _publishVideoTrack usa lastPublishOptions/defaults). Para mudar o
-    // teto de publicação é preciso despublicar + republicar com as novas
-    // options (padrão real validado no commetchat/commet via MCP grep).
-    //
-    // Ordem defensiva: CRIA a track nova ANTES de remover a antiga — se o
-    // create falhar (hardware não suporta o perfil), a publicação atual
-    // permanece intacta e _cameraQuality NÃO muda (rollback natural; o
-    // controller também não atualiza o estado em erro — sem divergência).
-    // Se o PUBLISH falhar após o remove, o LocalTrackUnpublishedEvent já
-    // reconcilia isCameraEnabled para false (câmera cai como "off", nunca
-    // em estado zumbi) — fail-safe pelo padrão de eventos do serviço.
-    final (captureOptions, publishOptions) = _optionsFor(quality);
-    final track = await LocalVideoTrack.createCameraTrack(captureOptions);
-    final publication = localParticipant.getTrackPublicationBySource(
-      TrackSource.camera,
-    );
-    if (publication != null) {
-      await localParticipant.removePublishedTrack(publication.sid);
+    final track = publication.track as LocalVideoTrack;
+    final sender = track.sender;
+    if (sender == null) {
+      throw StateError('Sender do screen share indisponível.');
     }
-    // Erros de captura/publish (TrackCreateException) PROPAGAM — o
-    // controller decide a mensagem; falha NUNCA derruba a sessão.
-    await localParticipant.publishVideoTrack(
-      track,
-      publishOptions: publishOptions,
-    );
-    // Só após o sucesso: perfil pendente E aplicado passam a ser o novo
-    // (em falha, _cameraQuality continua o antigo = estado do controller).
-    _cameraQuality = quality;
-    _appliedCameraQuality = quality;
+    final baseline =
+        _screenShareEncodingBaseline ??
+        _cloneScreenShareEncodings(sender.parameters.encodings ?? const []);
+    if (baseline.isEmpty) {
+      throw StateError('Screen share sem encodings configurados.');
+    }
+    _screenShareEncodingBaseline ??= baseline;
+    final previousQuality = _screenShareQuality;
+
+    try {
+      await _applyScreenShareQuality(sender, baseline, quality);
+      _screenShareQuality = quality;
+    } catch (_) {
+      if (quality == RtcScreenShareQuality.auto) rethrow;
+      try {
+        await _applyScreenShareQuality(
+          sender,
+          baseline,
+          RtcScreenShareQuality.auto,
+        );
+        _screenShareQuality = RtcScreenShareQuality.auto;
+      } catch (_) {
+        // Se o fallback também for recusado, tente restaurar o último perfil
+        // confirmado sem trocar track, sender ou estado do compartilhamento.
+        try {
+          await _applyScreenShareQuality(sender, baseline, previousQuality);
+        } catch (_) {
+          // O sender continua sob controle do SDK; a transmissão permanece
+          // ativa e o getter conserva o último perfil confirmado.
+        }
+        rethrow;
+      }
+    }
   }
 
   @override
@@ -392,15 +338,48 @@ class LiveKitRtcService implements RtcService {
       // sink padrão (PipeWire/PulseAudio), ou seja, qualquer áudio tocando no
       // computador, sem depender de enumerateDevices expor ".monitor".
       captureScreenAudio: includeSystemAudio,
-      screenShareCaptureOptions: ScreenShareCaptureOptions(
-        sourceId: sourceId,
-        // Plano: máx 1080p30 — preset h1080FPS30 EXISTE na 2.11.0
-        // (video_parameters.dart:298-304). Quando includeSystemAudio=true,
-        // o áudio é tentado primeiro pelo getDisplayMedia nativo do SDK; se
-        // ele não publicar screenShareAudio, caímos no fallback manual abaixo.
-        params: VideoParametersPresets.screenShareH1080FPS30,
-      ),
+      // A fonte é capturada uma vez em 1080p60; o perfil do sender começa em
+      // Auto (15 FPS) e pode subir para 60 ao vivo. O helper também explicita
+      // maxFrameRate, campo lido pelo capturador desktop do Linux.
+      screenShareCaptureOptions: screenShareCaptureOptionsFor(sourceId),
     );
+    final publication = localParticipant.getTrackPublicationBySource(
+      TrackSource.screenShareVideo,
+    );
+    if (publication?.track case final LocalVideoTrack track) {
+      final sender = track.sender;
+      if (sender != null) {
+        final baseline = _cloneScreenShareEncodings(
+          sender.parameters.encodings ?? const [],
+        );
+        _screenShareEncodingBaseline = baseline;
+        if (baseline.isEmpty) {
+          _screenShareQuality = RtcScreenShareQuality.auto;
+        }
+        if (_screenShareQuality != RtcScreenShareQuality.auto &&
+            baseline.isNotEmpty) {
+          try {
+            await _applyScreenShareQuality(
+              sender,
+              baseline,
+              _screenShareQuality,
+            );
+          } catch (_) {
+            try {
+              await _applyScreenShareQuality(
+                sender,
+                baseline,
+                RtcScreenShareQuality.auto,
+              );
+            } catch (_) {
+              // O share já está publicado no baseline Auto. A falha de
+              // ambos os ajustes não pode encerrar nem reiniciar a captura.
+            }
+            _screenShareQuality = RtcScreenShareQuality.auto;
+          }
+        }
+      }
+    }
     // Áudio de sistema (opcional): SEMPRE depois do vídeo — falha de áudio
     // NUNCA bloqueia o share (SystemAudioPublishException cai no controller,
     // que decide a mensagem; a sessão fica intacta).
@@ -425,6 +404,7 @@ class LiveKitRtcService implements RtcService {
     // chamar removePublishedTrack manualmente — o SDK faz. Com o share já
     // inativo é no-op natural do SDK.
     await localParticipant.setScreenShareEnabled(false);
+    _screenShareEncodingBaseline = null;
   }
 
   /// Publica o ÁUDIO DE SISTEMA (track de screenShareAudio) capturando o
@@ -663,15 +643,21 @@ class LiveKitRtcService implements RtcService {
   // Internals
   // ---------------------------------------------------------------------
 
-  /// Perfil de qualidade → opções de captura e publicação da câmera local.
-  /// `auto` devolve EXATAMENTE os defaults do [defaultRoomOptions] (Fase 7:
-  /// simulcast h180/h540/h1080_60 + dynacast). Perfis fixos escalonam 3
-  /// camadas simulcast até o teto escolhido (LiveKit aceita máx 3) — o
-  /// dynacast continua protegendo assinantes com banda ruim; abaixo de
-  /// 480p o simulcast perde o valor e cai para 1 camada.
-  (CameraCaptureOptions, VideoPublishOptions) _optionsFor(
-    RtcCameraQuality quality,
-  ) => cameraQualityOptions(quality);
+  Future<void> _applyScreenShareQuality(
+    rtc.RTCRtpSender sender,
+    List<rtc.RTCRtpEncoding> baseline,
+    RtcScreenShareQuality quality,
+  ) async {
+    final parameters = sender.parameters;
+    parameters.encodings = screenShareQualityEncodings(
+      baseline: baseline,
+      quality: quality,
+    );
+    final applied = await sender.setParameters(parameters);
+    if (!applied) {
+      throw StateError('Sender recusou os parâmetros do screen share.');
+    }
+  }
 
   void _wire(Room room) {
     _roomListeners.addAll([
@@ -1004,14 +990,14 @@ class LiveKitRtcService implements RtcService {
 
   /// Encerramento definitivo da sessão: zera o token generator e a URL (a
   /// reconexão automática não pode mais acontecer), volta o perfil de
-  /// câmera para `auto` (sessão nova = padrão) e descarta o [Room].
+  /// screen share para `auto` (sessão nova = padrão) e descarta o [Room].
   /// Idempotente (chamado pelo próprio disconnect e pelo
   /// [RoomDisconnectedEvent] sem reconexão).
   Future<void> _cleanupRoom() async {
     _tokenGenerator = null;
     _livekitUrl = null;
-    _cameraQuality = RtcCameraQuality.auto;
-    _appliedCameraQuality = RtcCameraQuality.auto;
+    _screenShareQuality = RtcScreenShareQuality.auto;
+    _screenShareEncodingBaseline = null;
     await _teardownRoom();
   }
 
@@ -1073,100 +1059,120 @@ String? findSystemAudioMonitorDevice(Iterable<MediaDevice> devices) {
   return null;
 }
 
-/// Decisão PURA (testável isoladamente) de quando [LiveKitRtcService.enableCamera]
-/// deve REPUBLICAR a track de câmera em vez de apenas desmutar a publicação
-/// existente:
-/// - sem publicação → precisa republicar (1ª ligada);
-/// - publicação existe e perfil pendente == perfil aplicado → só unmute;
-/// - publicação existe e perfil pendente != aplicado → precisa republicar
-///   (usuário trocou o perfil com a câmera DESLIGADA — fix CRÍTICO do review
-///   de SPEC Fase 7; sem esta regra o perfil escolhido era descartado).
-bool cameraNeedsRepublish({
-  required bool hasPublication,
-  required RtcCameraQuality pending,
-  required RtcCameraQuality applied,
-}) => !hasPublication || pending != applied;
+/// Teto de publicação de um perfil de screen share.
+class ScreenShareQualityProfile {
+  const ScreenShareQualityProfile({
+    required this.scaleResolutionDownBy,
+    required this.maxFramerate,
+    required this.maxBitrate,
+  });
 
-/// Função PURA (testável isoladamente) que mapeia um perfil de qualidade
-/// de publicação para as opções de captura/publicação da câmera local.
-///
-/// `auto` e `q1080` compartilham o teto 1080p60 com simulcast h180/h540/
-/// h1080_60 (diferença conceitual: `auto` deixa o dynacast decidir por
-/// banda; `q1080` é a escolha explícita do mesmo teto — opções idênticas
-/// por design). Perfis abaixo de 480p caem para 1 camada (simulcast perde
-/// o valor em resoluções pequenas).
-///
-/// As constantes de vídeo ([LiveKitRtcService.h1080_60] etc.) são públicas
-/// da classe para os testes conferirem os valores esperados.
-(CameraCaptureOptions, VideoPublishOptions) cameraQualityOptions(
-  RtcCameraQuality quality,
-) {
-  switch (quality) {
-    case RtcCameraQuality.auto:
-    case RtcCameraQuality.q1080:
-      return (
-        const CameraCaptureOptions(params: LiveKitRtcService.h1080_60),
-        const VideoPublishOptions(
-          simulcast: true,
-          videoSimulcastLayers: [
-            VideoParametersPresets.h180_169,
-            VideoParametersPresets.h540_169,
-            LiveKitRtcService.h1080_60,
-          ],
-        ),
-      );
-    case RtcCameraQuality.q720:
-      return (
-        const CameraCaptureOptions(params: VideoParametersPresets.h720_169),
-        const VideoPublishOptions(
-          simulcast: true,
-          videoSimulcastLayers: [
-            VideoParametersPresets.h180_169,
-            VideoParametersPresets.h360_169,
-            VideoParametersPresets.h720_169,
-          ],
-        ),
-      );
-    case RtcCameraQuality.q480:
-      // Camadas 16:9 escalonadas até 480p (h120/h240 16:9 não existem no
-      // SDK — h180/h360/h480 preservam o padrão do projeto).
-      return (
-        const CameraCaptureOptions(params: LiveKitRtcService.h480_169),
-        const VideoPublishOptions(
-          simulcast: true,
-          videoSimulcastLayers: [
-            VideoParametersPresets.h180_169,
-            VideoParametersPresets.h360_169,
-            LiveKitRtcService.h480_169,
-          ],
-        ),
-      );
-    case RtcCameraQuality.q360:
-      return (
-        const CameraCaptureOptions(params: VideoParametersPresets.h360_169),
-        VideoPublishOptions(
-          simulcast: false,
-          videoEncoding: VideoParametersPresets.h360_169.encoding,
-        ),
-      );
-    case RtcCameraQuality.q240:
-      return (
-        const CameraCaptureOptions(params: LiveKitRtcService.h240_169),
-        VideoPublishOptions(
-          simulcast: false,
-          videoEncoding: LiveKitRtcService.h240_169.encoding,
-        ),
-      );
-    case RtcCameraQuality.q144:
-      return (
-        const CameraCaptureOptions(params: LiveKitRtcService.h144_169),
-        VideoPublishOptions(
-          simulcast: false,
-          videoEncoding: LiveKitRtcService.h144_169.encoding,
-        ),
-      );
-  }
+  final double scaleResolutionDownBy;
+  final int maxFramerate;
+  final int maxBitrate;
 }
+
+/// Mapeamento exato dos perfis públicos para os limites enviados ao WebRTC.
+ScreenShareQualityProfile screenShareQualityProfile(
+  RtcScreenShareQuality quality,
+) => switch (quality) {
+  RtcScreenShareQuality.auto => const ScreenShareQualityProfile(
+    scaleResolutionDownBy: 1,
+    maxFramerate: 15,
+    maxBitrate: 2500000,
+  ),
+  RtcScreenShareQuality.q1080p60 => const ScreenShareQualityProfile(
+    scaleResolutionDownBy: 1,
+    maxFramerate: 60,
+    maxBitrate: 8000000,
+  ),
+  RtcScreenShareQuality.q1080p30 => const ScreenShareQualityProfile(
+    scaleResolutionDownBy: 1,
+    maxFramerate: 30,
+    maxBitrate: 5000000,
+  ),
+  RtcScreenShareQuality.q1080p15 => const ScreenShareQualityProfile(
+    scaleResolutionDownBy: 1,
+    maxFramerate: 15,
+    maxBitrate: 2500000,
+  ),
+  RtcScreenShareQuality.q720p15 => const ScreenShareQualityProfile(
+    scaleResolutionDownBy: 1.5,
+    maxFramerate: 15,
+    maxBitrate: 1500000,
+  ),
+  RtcScreenShareQuality.q360p3 => const ScreenShareQualityProfile(
+    scaleResolutionDownBy: 3,
+    maxFramerate: 3,
+    maxBitrate: 200000,
+  ),
+};
+
+/// Opções fixas da captura: uma fonte 1080p60 permite alterar apenas os
+/// parâmetros do sender enquanto o compartilhamento permanece ativo.
+ScreenShareCaptureOptions screenShareCaptureOptionsFor(String? sourceId) =>
+    ScreenShareCaptureOptions(
+      sourceId: sourceId,
+      maxFrameRate: 60,
+      params: LiveKitRtcService.screenShareH1080FPS60,
+    );
+
+/// Transforma cada camada a partir do baseline do sender, preservando RID,
+/// SSRC, active e as prioridades. A proporção de bitrate/resolução entre as
+/// camadas simulcast também é preservada.
+List<rtc.RTCRtpEncoding> screenShareQualityEncodings({
+  required List<rtc.RTCRtpEncoding> baseline,
+  required RtcScreenShareQuality quality,
+}) {
+  final profile = screenShareQualityProfile(quality);
+  final reference = baseline.reduce((a, b) {
+    final aScale = a.scaleResolutionDownBy ?? 1;
+    final bScale = b.scaleResolutionDownBy ?? 1;
+    return aScale <= bScale ? a : b;
+  });
+  final referenceScale = reference.scaleResolutionDownBy ?? 1;
+  final referenceBitrate = reference.maxBitrate ?? profile.maxBitrate;
+
+  return baseline.map((encoding) {
+    final scale = encoding.scaleResolutionDownBy ?? 1;
+    final bitrate = encoding.maxBitrate ?? referenceBitrate;
+    final bitrateRatio = referenceBitrate == 0 ? 1 : bitrate / referenceBitrate;
+    return rtc.RTCRtpEncoding(
+      rid: encoding.rid,
+      active: encoding.active,
+      maxBitrate: (profile.maxBitrate * bitrateRatio).round(),
+      maxFramerate: profile.maxFramerate,
+      scaleResolutionDownBy:
+          profile.scaleResolutionDownBy * scale / referenceScale,
+      minBitrate: encoding.minBitrate,
+      numTemporalLayers: encoding.numTemporalLayers,
+      ssrc: encoding.ssrc,
+      scalabilityMode: encoding.scalabilityMode,
+      priority: encoding.priority,
+      networkPriority: encoding.networkPriority,
+    );
+  }).toList();
+}
+
+List<rtc.RTCRtpEncoding> _cloneScreenShareEncodings(
+  List<rtc.RTCRtpEncoding> encodings,
+) => encodings
+    .map(
+      (encoding) => rtc.RTCRtpEncoding(
+        rid: encoding.rid,
+        active: encoding.active,
+        maxBitrate: encoding.maxBitrate,
+        maxFramerate: encoding.maxFramerate,
+        scaleResolutionDownBy: encoding.scaleResolutionDownBy,
+        minBitrate: encoding.minBitrate,
+        numTemporalLayers: encoding.numTemporalLayers,
+        ssrc: encoding.ssrc,
+        scalabilityMode: encoding.scalabilityMode,
+        priority: encoding.priority,
+        networkPriority: encoding.networkPriority,
+      ),
+    )
+    .toList();
 
 /// Ref opaco concreto de track de vídeo (Fase 5).
 ///

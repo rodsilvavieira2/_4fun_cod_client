@@ -45,10 +45,12 @@ class FakeRtcService implements RtcService {
   List<RtcVideoDevice> cameraDevices = const [];
   RtcVideoTrackRef? cameraTrackRef;
 
-  // Contrato de qualidade de PUBLICAÇÃO (Fase 7) — mesmo padrão dos demais.
-  RtcCameraQuality cameraQualityValue = RtcCameraQuality.auto;
-  final List<RtcCameraQuality> setCameraQualityCalls = [];
-  bool failSetCameraQuality = false;
+  // Contrato de qualidade do screen share — registra escolhas pendentes e
+  // aplicações ao vivo, sem qualquer vínculo com a câmera.
+  RtcScreenShareQuality screenShareQualityValue = RtcScreenShareQuality.auto;
+  final List<RtcScreenShareQuality> setScreenShareQualityCalls = [];
+  bool failSetScreenShareQuality = false;
+  bool fallbackToAutoOnScreenShareQualityFailure = false;
 
   // Contadores do contrato de screen share (Fase 6) — mesmo padrão do mic.
   int startScreenShareCalls = 0;
@@ -141,13 +143,21 @@ class FakeRtcService implements RtcService {
   }
 
   @override
-  RtcCameraQuality get cameraQuality => cameraQualityValue;
+  RtcScreenShareQuality get screenShareQuality => screenShareQualityValue;
 
   @override
-  Future<void> setCameraQuality(RtcCameraQuality quality) async {
-    if (failSetCameraQuality) throw Exception('qualidade indisponível');
-    cameraQualityValue = quality;
-    setCameraQualityCalls.add(quality);
+  Future<void> setScreenShareQuality(RtcScreenShareQuality quality) async {
+    if (failSetScreenShareQuality) {
+      if (fallbackToAutoOnScreenShareQualityFailure &&
+          quality != RtcScreenShareQuality.auto) {
+        screenShareQualityValue = RtcScreenShareQuality.auto;
+        setScreenShareQualityCalls.add(RtcScreenShareQuality.auto);
+        return;
+      }
+      throw Exception('qualidade indisponível');
+    }
+    screenShareQualityValue = quality;
+    setScreenShareQualityCalls.add(quality);
   }
 
   @override
@@ -304,9 +314,9 @@ void main() {
           reason: 'mic entra ativo por padrão (decisão Fase 7)',
         );
         expect(
-          state().cameraQuality,
-          RtcCameraQuality.auto,
-          reason: 'perfil de transmissão começa em Auto (Fase 7)',
+          state().screenShareQuality,
+          RtcScreenShareQuality.auto,
+          reason: 'perfil de screen share começa em Auto',
         );
       },
     );
@@ -846,58 +856,60 @@ void main() {
     // ── Fase 7: qualidade de transmissão (publicação) ────────────────
 
     test(
-      'setCameraQuality conectado chama o serviço e atualiza o estado',
+      'setScreenShareQuality conectado chama o serviço e atualiza o estado',
       () async {
         repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
         final notifier = buildVoice();
         await notifier.join();
         await settle();
-        expect(state().cameraQuality, RtcCameraQuality.auto);
+        expect(state().screenShareQuality, RtcScreenShareQuality.auto);
 
-        await notifier.setCameraQuality(RtcCameraQuality.q1080);
+        await notifier.setScreenShareQuality(RtcScreenShareQuality.q1080p60);
         await settle();
-        expect(rtc.setCameraQualityCalls, [RtcCameraQuality.q1080]);
-        expect(state().cameraQuality, RtcCameraQuality.q1080);
-
-        await notifier.setCameraQuality(RtcCameraQuality.q720);
-        await settle();
-        expect(rtc.setCameraQualityCalls, [
-          RtcCameraQuality.q1080,
-          RtcCameraQuality.q720,
+        expect(rtc.setScreenShareQualityCalls, [
+          RtcScreenShareQuality.q1080p60,
         ]);
-        expect(state().cameraQuality, RtcCameraQuality.q720);
+        expect(state().screenShareQuality, RtcScreenShareQuality.q1080p60);
+
+        await notifier.setScreenShareQuality(RtcScreenShareQuality.q720p15);
+        await settle();
+        expect(rtc.setScreenShareQualityCalls, [
+          RtcScreenShareQuality.q1080p60,
+          RtcScreenShareQuality.q720p15,
+        ]);
+        expect(state().screenShareQuality, RtcScreenShareQuality.q720p15);
       },
     );
 
-    test('setCameraQuality fora da sessão é ignorado', () async {
+    test('setScreenShareQuality fora da sessão é ignorado', () async {
       final notifier = buildVoice();
 
-      await notifier.setCameraQuality(RtcCameraQuality.q1080);
+      await notifier.setScreenShareQuality(RtcScreenShareQuality.q1080p30);
       await settle();
 
-      expect(rtc.setCameraQualityCalls, isEmpty);
-      expect(state().cameraQuality, RtcCameraQuality.auto);
+      expect(rtc.setScreenShareQualityCalls, isEmpty);
+      expect(state().screenShareQuality, RtcScreenShareQuality.auto);
     });
 
-    test('falha de setCameraQuality não derruba a sessão', () async {
+    test('falha de setScreenShareQuality não derruba a sessão', () async {
       repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
       final notifier = buildVoice();
       await notifier.join();
       await settle();
 
-      rtc.failSetCameraQuality = true;
-      await notifier.setCameraQuality(RtcCameraQuality.q1080);
+      rtc.failSetScreenShareQuality = true;
+      await notifier.setScreenShareQuality(RtcScreenShareQuality.q1080p30);
       await settle();
 
       expect(state().status, VoiceSessionStatus.connected);
       expect(
-        state().cameraQuality,
-        RtcCameraQuality.auto,
+        state().screenShareQuality,
+        RtcScreenShareQuality.auto,
         reason: 'sem otimismo: perfil não muda quando o serviço falha',
       );
       expect(
         state().errorMessage,
-        'Não foi possível ajustar a qualidade da câmera.',
+        'Não foi possível ajustar a qualidade da transmissão.',
       );
       expect(
         rtc.disconnectCalls,
@@ -906,23 +918,44 @@ void main() {
       );
     });
 
+    test('falha do perfil solicitado mantém a transmissão em Auto', () async {
+      repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
+      final notifier = buildVoice();
+      await notifier.join();
+      await settle();
+
+      rtc.failSetScreenShareQuality = true;
+      rtc.fallbackToAutoOnScreenShareQualityFailure = true;
+      await notifier.setScreenShareQuality(RtcScreenShareQuality.q360p3);
+      await settle();
+
+      expect(state().status, VoiceSessionStatus.connected);
+      expect(state().screenShareQuality, RtcScreenShareQuality.auto);
+      expect(
+        state().errorMessage,
+        'Não foi possível aplicar a qualidade escolhida; transmissão mantida em Auto.',
+      );
+      expect(rtc.setScreenShareQualityCalls, [RtcScreenShareQuality.auto]);
+      expect(rtc.disconnectCalls, 0);
+    });
+
     test('join reseta o perfil de transmissão para Auto', () async {
       repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
       final notifier = buildVoice();
       await notifier.join();
       await settle();
 
-      await notifier.setCameraQuality(RtcCameraQuality.q720);
+      await notifier.setScreenShareQuality(RtcScreenShareQuality.q720p15);
       await settle();
-      expect(state().cameraQuality, RtcCameraQuality.q720);
+      expect(state().screenShareQuality, RtcScreenShareQuality.q720p15);
 
       await notifier.leave();
       await settle();
       await notifier.join();
       await settle();
       expect(
-        state().cameraQuality,
-        RtcCameraQuality.auto,
+        state().screenShareQuality,
+        RtcScreenShareQuality.auto,
         reason: 'sessão nova = perfil default (decisão: por sessão)',
       );
     });
@@ -1022,6 +1055,25 @@ void main() {
         expect(state().isScreenSharing, isFalse);
       },
     );
+
+    test('qualidade escolhida antes do share persiste entre shares', () async {
+      repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
+      final notifier = buildVoice();
+      await notifier.join();
+      await settle();
+
+      await notifier.setScreenShareQuality(RtcScreenShareQuality.q720p15);
+      await notifier.startScreenShare('src-1');
+      await settle();
+      expect(state().screenShareQuality, RtcScreenShareQuality.q720p15);
+
+      await notifier.stopScreenShare();
+      await settle();
+      await notifier.startScreenShare('src-2');
+      await settle();
+      expect(state().screenShareQuality, RtcScreenShareQuality.q720p15);
+      expect(rtc.startScreenShareSources, ['src-1', 'src-2']);
+    });
 
     test(
       'startScreenShare fora da sessão é ignorado; com share ativo é no-op',

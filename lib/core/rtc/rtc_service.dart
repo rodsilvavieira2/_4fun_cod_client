@@ -209,12 +209,18 @@ class AudioPlaybackResumedEvent extends RtcEvent {
 enum RtcVideoQuality { low, medium, high }
 
 /// Qualidade de PUBLICAÇÃO da câmera local (Fase 7) — o "teto" de
-/// resolução/fps/bitrate que EU transmito.
+/// resolução/fps/bitrate da tela ou janela transmitida.
 ///
-/// DISTINTO de [RtcVideoQuality] (recepção remota): este enum governa a
-/// captura/publicação local. `auto` = comportamento adaptativo (simulcast
-/// h180/h540/h1080_60 + dynacast), default da feature.
-enum RtcCameraQuality { auto, q1080, q720, q480, q360, q240, q144 }
+/// A câmera não usa este controle: permanece nos defaults de captura e
+/// publicação do LiveKit/dispositivo.
+enum RtcScreenShareQuality {
+  auto,
+  q1080p60,
+  q1080p30,
+  q1080p15,
+  q720p15,
+  q360p3,
+}
 
 /// Dispositivo de captura de vídeo (câmera).
 class RtcVideoDevice {
@@ -332,17 +338,15 @@ abstract class RtcService {
   /// device default.
   Future<void> switchCamera(String deviceId);
 
-  /// Define o perfil de qualidade de PUBLICAÇÃO da câmera local (o "teto"
-  /// de resolução/fps/bitrate). `auto` mantém o comportamento adaptativo
-  /// (simulcast + dynacast). Pode ser chamado com a câmera OFF (fica
-  /// pendente para a próxima [enableCamera]) ou LIGADA (aplica ao vivo,
-  /// despublicando+republicando a track — blip visual breve). Erros de
-  /// captura propagam para o controller decidir a mensagem — uma falha
-  /// NÃO derruba a sessão.
-  Future<void> setCameraQuality(RtcCameraQuality quality);
+  /// Define o teto de qualidade do compartilhamento de tela/janela.
+  /// Antes do share, a escolha fica pendente para a próxima publicação; com
+  /// share ativo, é aplicada no mesmo sender, sem trocar a track ou reabrir
+  /// o seletor do sistema. Falhas não encerram a sessão.
+  Future<void> setScreenShareQuality(RtcScreenShareQuality quality);
 
-  /// Perfil de câmera atualmente configurado (default: [RtcCameraQuality.auto]).
-  RtcCameraQuality get cameraQuality;
+  /// Perfil de screen share atualmente configurado. Reseta para [auto] ao
+  /// sair da sala ou desconectar.
+  RtcScreenShareQuality get screenShareQuality;
 
   /// Retoma o playback de áudio remoto. Necessário no web quando a política
   /// de autoplay do browser bloqueou o áudio ([AudioPlaybackBlockedEvent]) —
