@@ -70,8 +70,7 @@ class RtcParticipant {
       isMicrophoneEnabled: isMicrophoneEnabled ?? this.isMicrophoneEnabled,
       isCameraEnabled: isCameraEnabled ?? this.isCameraEnabled,
       isScreenSharing: isScreenSharing ?? this.isScreenSharing,
-      isSystemAudioEnabled:
-          isSystemAudioEnabled ?? this.isSystemAudioEnabled,
+      isSystemAudioEnabled: isSystemAudioEnabled ?? this.isSystemAudioEnabled,
       isSpeaking: isSpeaking ?? this.isSpeaking,
     );
   }
@@ -291,10 +290,10 @@ abstract class RtcService {
   /// publicada, como o mic).
   Future<void> disableCamera();
 
-  /// Publica a tela local (track de screenShareVideo) capturando a fonte
-  /// [sourceId] (id do DesktopCapturerSource obtido via
-  /// `RtcScreenSharePicker`). No-op quando o share já está ativo. A câmera
-  /// NÃO é afetada — share e câmera coexistem.
+  /// Publica a tela local (track de screenShareVideo). Quando [sourceId] é
+  /// nulo, o SDK delega a escolha de janela/display ao portal nativo do SO.
+  /// No-op quando o share já está ativo. A câmera NÃO é afetada — share e
+  /// câmera coexistem.
   ///
   /// Com [includeSystemAudio] true, publica TAMBÉM o áudio de sistema
   /// (track de screenShareAudio — som de jogos/vídeos/música) capturando o
@@ -305,7 +304,7 @@ abstract class RtcService {
   /// Erros de captura propagam para o controller decidir a mensagem — falha
   /// de share NUNCA derruba a sessão.
   Future<void> startScreenShare(
-    String sourceId, {
+    String? sourceId, {
     bool includeSystemAudio = false,
   });
 

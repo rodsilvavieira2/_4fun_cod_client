@@ -44,13 +44,12 @@ import 'rtc_service.dart';
 /// - `setScreenShareEnabled(false)` DESPUBLICA a track de screenShareVideo
 ///   (e a screenShareAudio se existir) — diferente da câmera, que muta e
 ///   mantém a publicação (participant/local.dart:805-810);
-/// - `ScreenShareCaptureOptions.sourceId` é o id do DesktopCapturerSource
-///   (mapeado para `deviceId` do super — track/options.dart:156-159);
-/// - o seletor de fonte `ScreenSelectDialog` é `@experimental` (2.11.0) —
-///   isolado no wrapper `RtcScreenSharePicker` (screen_share_picker.dart).
+/// - `ScreenShareCaptureOptions.sourceId` é opcional; sem sourceId, o SDK
+///   delega a seleção de janela/display ao portal nativo do SO via
+///   `navigator.mediaDevices.getDisplayMedia`;
 class LiveKitRtcService implements RtcService {
   LiveKitRtcService({RoomOptions? roomOptions})
-      : _roomOptions = roomOptions ?? defaultRoomOptions;
+    : _roomOptions = roomOptions ?? defaultRoomOptions;
 
   /// Configuração de áudio da Fase 4 (default do serviço — a UI nunca
   /// configura isso): echo cancellation + noise suppression + AGC na
@@ -81,9 +80,7 @@ class LiveKitRtcService implements RtcService {
     ),
     adaptiveStream: true,
     dynacast: true,
-    defaultCameraCaptureOptions: const CameraCaptureOptions(
-      params: h1080_60,
-    ),
+    defaultCameraCaptureOptions: const CameraCaptureOptions(params: h1080_60),
     defaultVideoPublishOptions: const VideoPublishOptions(
       simulcast: true,
       videoSimulcastLayers: [
@@ -126,6 +123,7 @@ class LiveKitRtcService implements RtcService {
 
   Room? _room;
   RtcTokenGenerator? _tokenGenerator;
+
   /// URL da sala do último [connect] — preservada pelo loop de reconexão
   /// automática (zerada no [_cleanupRoom], junto com o [_tokenGenerator]).
   String? _livekitUrl;
@@ -270,8 +268,9 @@ class LiveKitRtcService implements RtcService {
     if (room == null || _disposed) return;
     final localParticipant = room.localParticipant;
     if (localParticipant == null) return;
-    final publication =
-        localParticipant.getTrackPublicationBySource(TrackSource.camera);
+    final publication = localParticipant.getTrackPublicationBySource(
+      TrackSource.camera,
+    );
     // Publicação existente COM o perfil já aplicado: apenas desmuta
     // (participant/local.dart:795-821). Se o perfil PENDENTE diverge do
     // aplicado (desligou→trocou perfil→religou), republica — senão o perfil
@@ -300,8 +299,10 @@ class LiveKitRtcService implements RtcService {
     // selecionado (Fase 7 — o `auto` equivale aos defaults do RoomOptions).
     final (captureOptions, publishOptions) = _optionsFor(_cameraQuality);
     final track = await LocalVideoTrack.createCameraTrack(captureOptions);
-    await localParticipant
-        .publishVideoTrack(track, publishOptions: publishOptions);
+    await localParticipant.publishVideoTrack(
+      track,
+      publishOptions: publishOptions,
+    );
     // Só após o sucesso: o perfil aplicado agora é o corrente (rollback
     // natural se o create/publish falhar — _appliedCameraQuality intacto).
     _appliedCameraQuality = _cameraQuality;
@@ -349,15 +350,18 @@ class LiveKitRtcService implements RtcService {
     // em estado zumbi) — fail-safe pelo padrão de eventos do serviço.
     final (captureOptions, publishOptions) = _optionsFor(quality);
     final track = await LocalVideoTrack.createCameraTrack(captureOptions);
-    final publication =
-        localParticipant.getTrackPublicationBySource(TrackSource.camera);
+    final publication = localParticipant.getTrackPublicationBySource(
+      TrackSource.camera,
+    );
     if (publication != null) {
       await localParticipant.removePublishedTrack(publication.sid);
     }
     // Erros de captura/publish (TrackCreateException) PROPAGAM — o
     // controller decide a mensagem; falha NUNCA derruba a sessão.
-    await localParticipant
-        .publishVideoTrack(track, publishOptions: publishOptions);
+    await localParticipant.publishVideoTrack(
+      track,
+      publishOptions: publishOptions,
+    );
     // Só após o sucesso: perfil pendente E aplicado passam a ser o novo
     // (em falha, _cameraQuality continua o antigo = estado do controller).
     _cameraQuality = quality;
@@ -366,7 +370,7 @@ class LiveKitRtcService implements RtcService {
 
   @override
   Future<void> startScreenShare(
-    String sourceId, {
+    String? sourceId, {
     bool includeSystemAudio = false,
   }) async {
     final room = _room;
@@ -376,27 +380,35 @@ class LiveKitRtcService implements RtcService {
     // No-op quando o share já está ativo (isScreenShareEnabled é MÉTODO na
     // 2.11.0 — participant.dart:319-321).
     if (localParticipant.isScreenShareEnabled()) return;
-    // Publica a track de screenShareVideo (participant/local.dart:774-779).
+    // Publica a track de screenShareVideo (participant/local.dart:791-877).
     // A câmera NÃO é afetada — share e câmera coexistem. Erros de captura
     // (TrackCreateException — ex. permissão negada; mobile nem chega a rodar,
     // local.dart:789-791) PROPAGAM para o controller: falha de share NUNCA
     // derruba a sessão (nada de _cleanupRoom aqui).
     await localParticipant.setScreenShareEnabled(
       true,
+      // flutter_webrtc 1.6.0 já tem loopback nativo no Linux via libpulse
+      // para getDisplayMedia({audio:true}). Esse caminho captura o monitor do
+      // sink padrão (PipeWire/PulseAudio), ou seja, qualquer áudio tocando no
+      // computador, sem depender de enumerateDevices expor ".monitor".
+      captureScreenAudio: includeSystemAudio,
       screenShareCaptureOptions: ScreenShareCaptureOptions(
         sourceId: sourceId,
         // Plano: máx 1080p30 — preset h1080FPS30 EXISTE na 2.11.0
-        // (video_parameters.dart:298-304). captureScreenAudio fica FALSE:
-        // browser-only (options.dart:143) — o áudio de sistema no desktop é
-        // publicado MANUALMENTE como track screenShareAudio quando
-        // includeSystemAudio é true (ver [_publishSystemAudio]).
+        // (video_parameters.dart:298-304). Quando includeSystemAudio=true,
+        // o áudio é tentado primeiro pelo getDisplayMedia nativo do SDK; se
+        // ele não publicar screenShareAudio, caímos no fallback manual abaixo.
         params: VideoParametersPresets.screenShareH1080FPS30,
       ),
     );
     // Áudio de sistema (opcional): SEMPRE depois do vídeo — falha de áudio
     // NUNCA bloqueia o share (SystemAudioPublishException cai no controller,
     // que decide a mensagem; a sessão fica intacta).
-    if (includeSystemAudio) {
+    if (includeSystemAudio &&
+        localParticipant.getTrackPublicationBySource(
+              TrackSource.screenShareAudio,
+            ) ==
+            null) {
       await _publishSystemAudio();
     }
   }
@@ -419,10 +431,9 @@ class LiveKitRtcService implements RtcService {
   /// device monitor/loopback do SO. Chamado por [startScreenShare] quando
   /// [includeSystemAudio] é true.
   ///
-  /// Rota desktop (diagnóstico 24/08): o SDK NÃO captura áudio de sistema
-  /// nativamente (`captureScreenAudio` é browser-only — participant/local.dart:
-  /// 834-848 usa getDisplayMedia); a track é montada MANUALMENTE com o MESMO
-  /// padrão que o SDK usa no browser (track/local/video.dart:263-272).
+  /// Rota desktop: tentamos primeiro o caminho nativo do SDK via
+  /// `captureScreenAudio`; se ele não publicar `screenShareAudio`, este método
+  /// monta MANUALMENTE a track a partir de um device monitor/loopback.
   ///
   /// QUALQUER falha pós-publicação do vídeo vira [SystemAudioPublishException]
   /// (inclusive erros genéricos de captura/publish) — o controller distingue
@@ -436,8 +447,9 @@ class LiveKitRtcService implements RtcService {
     // No-op quando a track JÁ está publicada — check POR SALA (cobre
     // chamadas concorrentes que chegam depois da 1ª publicar; não há estado
     // global que vaze entre salas — o _teardownRoom invalida a fila).
-    if (localParticipant
-            .getTrackPublicationBySource(TrackSource.screenShareAudio) !=
+    if (localParticipant.getTrackPublicationBySource(
+          TrackSource.screenShareAudio,
+        ) !=
         null) {
       return;
     }
@@ -541,8 +553,9 @@ class LiveKitRtcService implements RtcService {
     final localParticipant = room.localParticipant;
     final TrackPublication? publication;
     if (localParticipant?.identity == participantId) {
-      publication = localParticipant
-          ?.getTrackPublicationBySource(TrackSource.screenShareVideo);
+      publication = localParticipant?.getTrackPublicationBySource(
+        TrackSource.screenShareVideo,
+      );
     } else {
       publication = room.remoteParticipants[participantId]
           ?.getTrackPublicationBySource(TrackSource.screenShareVideo);
@@ -561,9 +574,9 @@ class LiveKitRtcService implements RtcService {
     if (room == null || _disposed) return;
     final localParticipant = room.localParticipant;
     if (localParticipant == null) return;
-    final track = localParticipant
-        .getTrackPublicationBySource(TrackSource.camera)
-        ?.track as LocalVideoTrack?;
+    final track =
+        localParticipant.getTrackPublicationBySource(TrackSource.camera)?.track
+            as LocalVideoTrack?;
     if (track == null) {
       // Câmera OFF: sem track local para trocar — no-op. switchCamera só
       // tem efeito com a câmera ligada; a 1ª enableCamera() usa o device
@@ -580,8 +593,9 @@ class LiveKitRtcService implements RtcService {
     // Hardware.instance.enumerateDevices(type: 'videoinput') → List<MediaDevice>
     // com deviceId/label/kind/groupId (hardware/hardware.dart:100-107) — a
     // mesma API usada pelo exemplo oficial do SDK.
-    final devices =
-        await Hardware.instance.enumerateDevices(type: 'videoinput');
+    final devices = await Hardware.instance.enumerateDevices(
+      type: 'videoinput',
+    );
     return [
       for (final device in devices)
         RtcVideoDevice(id: device.deviceId, label: device.label),
@@ -589,17 +603,15 @@ class LiveKitRtcService implements RtcService {
   }
 
   @override
-  Future<void> setQuality(
-    String participantId,
-    RtcVideoQuality quality,
-  ) async {
+  Future<void> setQuality(String participantId, RtcVideoQuality quality) async {
     final room = _room;
     if (room == null || _disposed) return;
     // Qualidade se aplica apenas à RECEPÇÃO remota: local/desconhecido → no-op.
     final remoteParticipant = room.remoteParticipants[participantId];
     if (remoteParticipant == null) return;
-    final publication = remoteParticipant
-        .getTrackPublicationBySource(TrackSource.camera);
+    final publication = remoteParticipant.getTrackPublicationBySource(
+      TrackSource.camera,
+    );
     if (publication == null) return; // câmera remota OFF/ausente → no-op
     final videoQuality = switch (quality) {
       RtcVideoQuality.low => VideoQuality.LOW,
@@ -620,8 +632,9 @@ class LiveKitRtcService implements RtcService {
     final localParticipant = room.localParticipant;
     final TrackPublication? publication;
     if (localParticipant?.identity == participantId) {
-      publication = localParticipant
-          ?.getTrackPublicationBySource(TrackSource.camera);
+      publication = localParticipant?.getTrackPublicationBySource(
+        TrackSource.camera,
+      );
     } else {
       publication = room.remoteParticipants[participantId]
           ?.getTrackPublicationBySource(TrackSource.camera);
@@ -658,18 +671,22 @@ class LiveKitRtcService implements RtcService {
   /// 480p o simulcast perde o valor e cai para 1 camada.
   (CameraCaptureOptions, VideoPublishOptions) _optionsFor(
     RtcCameraQuality quality,
-  ) =>
-      cameraQualityOptions(quality);
+  ) => cameraQualityOptions(quality);
 
   void _wire(Room room) {
     _roomListeners.addAll([
       room.events.on<ParticipantConnectedEvent>((e) {
-        final isLocal = e.participant.identity == room.localParticipant?.identity;
+        final isLocal =
+            e.participant.identity == room.localParticipant?.identity;
         _syncParticipant(e.participant);
         // Participantes REMOTOS emitem joined (o local entra no snapshot sem
         // evento — quem chamou o connect já sabe que entrou).
         if (!isLocal) {
-          _emitEvent(ParticipantJoinedEvent(participant: _participantsById[e.participant.identity]!));
+          _emitEvent(
+            ParticipantJoinedEvent(
+              participant: _participantsById[e.participant.identity]!,
+            ),
+          );
         }
         _emitSnapshot();
       }),
@@ -740,9 +757,11 @@ class LiveKitRtcService implements RtcService {
       // bloqueio silencioso. O `isPlaying: true` sai de um `startAudio`
       // bem-sucedido (retomada dentro do gesto do usuário).
       room.events.on<AudioPlaybackStatusChanged>((e) {
-        _emitEvent(e.isPlaying
-            ? const AudioPlaybackResumedEvent()
-            : const AudioPlaybackBlockedEvent());
+        _emitEvent(
+          e.isPlaying
+              ? const AudioPlaybackResumedEvent()
+              : const AudioPlaybackBlockedEvent(),
+        );
       }),
       // Sala caiu: motivo não iniciado pelo app (servidor encerrou/rede) →
       // reconexão automática reason-gated (até 3 tentativas com token
@@ -865,8 +884,9 @@ class LiveKitRtcService implements RtcService {
     for (final entry in _participantsById.entries.toList()) {
       final nowSpeaking = speakingIds.contains(entry.key);
       if (entry.value.isSpeaking != nowSpeaking) {
-        _participantsById[entry.key] =
-            entry.value.copyWith(isSpeaking: nowSpeaking);
+        _participantsById[entry.key] = entry.value.copyWith(
+          isSpeaking: nowSpeaking,
+        );
         _emitEvent(
           SpeakingChangedEvent(
             participantId: entry.key,
@@ -879,8 +899,9 @@ class LiveKitRtcService implements RtcService {
 
   void _emitSnapshot() {
     if (_disposed) return;
-    _participantsController
-        .add(_participantsById.values.toList(growable: false));
+    _participantsController.add(
+      _participantsById.values.toList(growable: false),
+    );
   }
 
   void _emitEvent(RtcEvent event) {
@@ -1064,8 +1085,7 @@ bool cameraNeedsRepublish({
   required bool hasPublication,
   required RtcCameraQuality pending,
   required RtcCameraQuality applied,
-}) =>
-    !hasPublication || pending != applied;
+}) => !hasPublication || pending != applied;
 
 /// Função PURA (testável isoladamente) que mapeia um perfil de qualidade
 /// de publicação para as opções de captura/publicação da câmera local.
@@ -1097,9 +1117,7 @@ bool cameraNeedsRepublish({
       );
     case RtcCameraQuality.q720:
       return (
-        const CameraCaptureOptions(
-          params: VideoParametersPresets.h720_169,
-        ),
+        const CameraCaptureOptions(params: VideoParametersPresets.h720_169),
         const VideoPublishOptions(
           simulcast: true,
           videoSimulcastLayers: [
@@ -1125,9 +1143,7 @@ bool cameraNeedsRepublish({
       );
     case RtcCameraQuality.q360:
       return (
-        const CameraCaptureOptions(
-          params: VideoParametersPresets.h360_169,
-        ),
+        const CameraCaptureOptions(params: VideoParametersPresets.h360_169),
         VideoPublishOptions(
           simulcast: false,
           videoEncoding: VideoParametersPresets.h360_169.encoding,

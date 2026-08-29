@@ -39,6 +39,7 @@ dependencies:
   dio: ^5.11.0
   socket_io_client: ^3.1.6
   livekit_client: ^2.11.0
+  flutter_webrtc: 1.6.0
   flutter_secure_storage: ^11.0.0
   file_selector: ^1.1.0
 
@@ -57,6 +58,8 @@ dependency_overrides:
     git:
       url: https://github.com/rodsilvavieira2/client-sdk-flutter.git
       ref: fix/web-audio-playback-gate
+  flutter_webrtc:
+    path: packages/flutter_webrtc
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is

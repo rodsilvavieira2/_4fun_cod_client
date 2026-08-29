@@ -35,6 +35,7 @@ ARG LIVEKIT_URL=wss://192.168.0.217:7443
 
 # Dependências primeiro (cache de camada do docker)
 COPY pubspec.yaml pubspec.lock ./
+COPY packages/flutter_webrtc ./packages/flutter_webrtc
 RUN flutter pub get
 
 COPY . .

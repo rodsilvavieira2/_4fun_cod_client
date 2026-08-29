@@ -40,7 +40,7 @@ class FakeRtcService implements RtcService {
   int disableCameraCalls = 0;
   final List<String> switchCameraCalls = [];
   final List<({String participantId, RtcVideoQuality quality})>
-      setQualityCalls = [];
+  setQualityCalls = [];
   int listCameraDevicesCalls = 0;
   List<RtcVideoDevice> cameraDevices = const [];
   RtcVideoTrackRef? cameraTrackRef;
@@ -53,7 +53,7 @@ class FakeRtcService implements RtcService {
   // Contadores do contrato de screen share (Fase 6) — mesmo padrão do mic.
   int startScreenShareCalls = 0;
   int stopScreenShareCalls = 0;
-  final List<String> startScreenShareSources = [];
+  final List<String?> startScreenShareSources = [];
   RtcVideoTrackRef? screenTrackRef;
 
   // Contrato de áudio de sistema (Fase 6.1): registra o flag recebido em
@@ -81,7 +81,8 @@ class FakeRtcService implements RtcService {
   RtcTokenGenerator? lastTokenGenerator;
 
   @override
-  Stream<List<RtcParticipant>> get participants => participantsController.stream;
+  Stream<List<RtcParticipant>> get participants =>
+      participantsController.stream;
 
   @override
   Stream<RtcEvent> get events => eventsController.stream;
@@ -122,10 +123,7 @@ class FakeRtcService implements RtcService {
   Future<void> disableCamera() async => disableCameraCalls++;
 
   @override
-  Future<void> setQuality(
-    String participantId,
-    RtcVideoQuality quality,
-  ) async {
+  Future<void> setQuality(String participantId, RtcVideoQuality quality) async {
     setQualityCalls.add((participantId: participantId, quality: quality));
   }
 
@@ -157,7 +155,7 @@ class FakeRtcService implements RtcService {
 
   @override
   Future<void> startScreenShare(
-    String sourceId, {
+    String? sourceId, {
     bool includeSystemAudio = false,
   }) async {
     if (failStartScreenShareTimes > 0) {
@@ -201,7 +199,8 @@ class FakeRtcService implements RtcService {
 /// Repository fake: apenas os métodos usados pelo voice; o restante da
 /// interface cai em `noSuchMethod` (nunca chamado nos testes).
 class FakeServersRepository implements ServersRepository {
-  Future<VoiceJoinInfo> Function(String serverId, String channelId)? onJoinVoice;
+  Future<VoiceJoinInfo> Function(String serverId, String channelId)?
+  onJoinVoice;
   int joinVoiceCalls = 0;
 
   @override
@@ -237,16 +236,15 @@ RtcParticipant _participant(
   bool screenShare = false,
   bool systemAudio = false,
   bool speaking = false,
-}) =>
-    RtcParticipant(
-      id: id,
-      name: name,
-      isMicrophoneEnabled: mic,
-      isCameraEnabled: camera,
-      isScreenSharing: screenShare,
-      isSystemAudioEnabled: systemAudio,
-      isSpeaking: speaking,
-    );
+}) => RtcParticipant(
+  id: id,
+  name: name,
+  isMicrophoneEnabled: mic,
+  isCameraEnabled: camera,
+  isScreenSharing: screenShare,
+  isSystemAudioEnabled: systemAudio,
+  isSpeaking: speaking,
+);
 
 void main() {
   group('VoiceController', () {
@@ -279,53 +277,66 @@ void main() {
 
     Future<void> settle() => pumpEventQueue();
 
-    test('join conecta com a url/token do joinVoice e vai para connected',
-        () async {
-      repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
-      rtc.localId = 'user_u1';
-      final notifier = buildVoice();
-      expect(state().status, VoiceSessionStatus.idle);
+    test(
+      'join conecta com a url/token do joinVoice e vai para connected',
+      () async {
+        repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
+        rtc.localId = 'user_u1';
+        final notifier = buildVoice();
+        expect(state().status, VoiceSessionStatus.idle);
 
-      await notifier.join();
-      await settle();
+        await notifier.join();
+        await settle();
 
-      expect(repo.joinVoiceCalls, 1);
-      expect(rtc.connections, [
-        (url: 'wss://livekit.test', token: 'token-1'),
-      ]);
-      expect(rtc.lastTokenGenerator, isNotNull,
-          reason: 'tokenGenerator registrado para reconexão futura');
-      expect(state().status, VoiceSessionStatus.connected);
-      expect(state().isMicrophoneEnabled, isTrue,
-          reason: 'mic entra ativo por padrão (decisão Fase 7)');
-      expect(state().cameraQuality, RtcCameraQuality.auto,
-          reason: 'perfil de transmissão começa em Auto (Fase 7)');
-    });
-
-    test('falha de connect refaz o join e reconecta com token fresco',
-        () async {
-      var joinCalls = 0;
-      repo.onJoinVoice = (serverId, channelId) async {
-        joinCalls++;
-        return VoiceJoinInfo(
-          livekitUrl: 'wss://livekit.test',
-          token: joinCalls == 1 ? 'token-velho' : 'token-fresco',
-          roomName: 'ch_c1',
+        expect(repo.joinVoiceCalls, 1);
+        expect(rtc.connections, [
+          (url: 'wss://livekit.test', token: 'token-1'),
+        ]);
+        expect(
+          rtc.lastTokenGenerator,
+          isNotNull,
+          reason: 'tokenGenerator registrado para reconexão futura',
         );
-      };
-      rtc.failConnectTimes = 1; // 1ª tentativa falha (token expirado)
-      final notifier = buildVoice();
+        expect(state().status, VoiceSessionStatus.connected);
+        expect(
+          state().isMicrophoneEnabled,
+          isTrue,
+          reason: 'mic entra ativo por padrão (decisão Fase 7)',
+        );
+        expect(
+          state().cameraQuality,
+          RtcCameraQuality.auto,
+          reason: 'perfil de transmissão começa em Auto (Fase 7)',
+        );
+      },
+    );
 
-      await notifier.join();
-      await settle();
+    test(
+      'falha de connect refaz o join e reconecta com token fresco',
+      () async {
+        var joinCalls = 0;
+        repo.onJoinVoice = (serverId, channelId) async {
+          joinCalls++;
+          return VoiceJoinInfo(
+            livekitUrl: 'wss://livekit.test',
+            token: joinCalls == 1 ? 'token-velho' : 'token-fresco',
+            roomName: 'ch_c1',
+          );
+        };
+        rtc.failConnectTimes = 1; // 1ª tentativa falha (token expirado)
+        final notifier = buildVoice();
 
-      expect(joinCalls, 2, reason: 'refaz o /join para obter token fresco');
-      expect(
-        rtc.connections.map((c) => c.token),
-        ['token-velho', 'token-fresco'],
-      );
-      expect(state().status, VoiceSessionStatus.connected);
-    });
+        await notifier.join();
+        await settle();
+
+        expect(joinCalls, 2, reason: 'refaz o /join para obter token fresco');
+        expect(rtc.connections.map((c) => c.token), [
+          'token-velho',
+          'token-fresco',
+        ]);
+        expect(state().status, VoiceSessionStatus.connected);
+      },
+    );
 
     test('falha persistente do connect vira estado error', () async {
       repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
@@ -340,19 +351,21 @@ void main() {
       expect(state().errorMessage, isNotNull);
     });
 
-    test('erro do join (backend) vira estado error sem chamar connect',
-        () async {
-      repo.onJoinVoice = (serverId, channelId) async =>
-          throw const ApiException(message: 'Canal de voz indisponível');
-      final notifier = buildVoice();
+    test(
+      'erro do join (backend) vira estado error sem chamar connect',
+      () async {
+        repo.onJoinVoice = (serverId, channelId) async =>
+            throw const ApiException(message: 'Canal de voz indisponível');
+        final notifier = buildVoice();
 
-      await notifier.join();
-      await settle();
+        await notifier.join();
+        await settle();
 
-      expect(rtc.connections, isEmpty);
-      expect(state().status, VoiceSessionStatus.error);
-      expect(state().errorMessage, isNotNull);
-    });
+        expect(rtc.connections, isEmpty);
+        expect(state().status, VoiceSessionStatus.error);
+        expect(state().errorMessage, isNotNull);
+      },
+    );
 
     test('leave desconecta e volta para idle', () async {
       repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
@@ -369,15 +382,17 @@ void main() {
       expect(state().participants, isEmpty);
     });
 
-    test('toggleMicrophone chama enable/disable e atualiza o estado',
-        () async {
+    test('toggleMicrophone chama enable/disable e atualiza o estado', () async {
       repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
       rtc.localId = 'user_u1';
       final notifier = buildVoice();
       await notifier.join();
       await settle();
-      expect(state().isMicrophoneEnabled, isTrue,
-          reason: 'mic entra ATIVO por padrão (Fase 7)');
+      expect(
+        state().isMicrophoneEnabled,
+        isTrue,
+        reason: 'mic entra ATIVO por padrão (Fase 7)',
+      );
 
       await notifier.toggleMicrophone();
       await settle();
@@ -415,27 +430,28 @@ void main() {
       expect(rtc.disconnectCalls, 1);
     });
 
-    test('participantes do stream aparecem no estado, local primeiro',
-        () async {
-      rtc.localId = 'user_u1';
-      buildVoice();
+    test(
+      'participantes do stream aparecem no estado, local primeiro',
+      () async {
+        rtc.localId = 'user_u1';
+        buildVoice();
 
-      rtc.pushParticipants([
-        _participant('user_u2', 'Bia'),
-        _participant('user_u3', 'Caio'),
-        _participant('user_u1', 'Ana'),
-      ]);
-      await settle();
+        rtc.pushParticipants([
+          _participant('user_u2', 'Bia'),
+          _participant('user_u3', 'Caio'),
+          _participant('user_u1', 'Ana'),
+        ]);
+        await settle();
 
-      expect(state().participants.map((p) => p.id), [
-        'user_u1',
-        'user_u2',
-        'user_u3',
-      ], reason: 'local primeiro, depois por nome');
-    });
+        expect(
+          state().participants.map((p) => p.id),
+          ['user_u1', 'user_u2', 'user_u3'],
+          reason: 'local primeiro, depois por nome',
+        );
+      },
+    );
 
-    test('estado do participante reflete mic e speaking do snapshot',
-        () async {
+    test('estado do participante reflete mic e speaking do snapshot', () async {
       buildVoice();
 
       rtc.pushParticipants([
@@ -462,75 +478,93 @@ void main() {
       expect(state().participants, isEmpty);
     });
 
-    test('MicEnabledChangedEvent do local sincroniza o botão de mute',
-        () async {
-      repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
-      rtc.localId = 'user_u1';
-      final notifier = buildVoice();
-      await notifier.join();
-      await settle();
-      expect(state().isMicrophoneEnabled, isTrue,
-          reason: 'mic entra ATIVO por padrão (Fase 7)');
+    test(
+      'MicEnabledChangedEvent do local sincroniza o botão de mute',
+      () async {
+        repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
+        rtc.localId = 'user_u1';
+        final notifier = buildVoice();
+        await notifier.join();
+        await settle();
+        expect(
+          state().isMicrophoneEnabled,
+          isTrue,
+          reason: 'mic entra ATIVO por padrão (Fase 7)',
+        );
 
-      // O RtcService real emite isso quando o mute local é confirmado.
-      rtc.pushEvent(const MicEnabledChangedEvent(
-        participantId: 'user_u1',
-        isMicrophoneEnabled: false,
-      ));
-      await settle();
+        // O RtcService real emite isso quando o mute local é confirmado.
+        rtc.pushEvent(
+          const MicEnabledChangedEvent(
+            participantId: 'user_u1',
+            isMicrophoneEnabled: false,
+          ),
+        );
+        await settle();
 
-      expect(state().isMicrophoneEnabled, isFalse);
-    });
+        expect(state().isMicrophoneEnabled, isFalse);
+      },
+    );
 
-    test('MicEnabledChangedEvent de outro participante não toca o botão',
-        () async {
-      repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
-      rtc.localId = 'user_u1';
-      final notifier = buildVoice();
-      await notifier.join();
-      await settle();
+    test(
+      'MicEnabledChangedEvent de outro participante não toca o botão',
+      () async {
+        repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
+        rtc.localId = 'user_u1';
+        final notifier = buildVoice();
+        await notifier.join();
+        await settle();
 
-      rtc.pushEvent(const MicEnabledChangedEvent(
-        participantId: 'user_u2',
-        isMicrophoneEnabled: false,
-      ));
-      await settle();
+        rtc.pushEvent(
+          const MicEnabledChangedEvent(
+            participantId: 'user_u2',
+            isMicrophoneEnabled: false,
+          ),
+        );
+        await settle();
 
-      expect(state().isMicrophoneEnabled, isTrue,
-          reason: 'evento de remoto não toca o botão local (mic segue ativo)');
-    });
+        expect(
+          state().isMicrophoneEnabled,
+          isTrue,
+          reason: 'evento de remoto não toca o botão local (mic segue ativo)',
+        );
+      },
+    );
 
     // ── Fix autoplay web: playback de áudio remoto bloqueado/retomado ──────
 
-    test('AudioPlaybackBlockedEvent liga o banner de áudio bloqueado',
-        () async {
-      repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
-      final notifier = buildVoice();
-      await notifier.join();
-      await settle();
-      expect(state().isAudioBlocked, isFalse);
+    test(
+      'AudioPlaybackBlockedEvent liga o banner de áudio bloqueado',
+      () async {
+        repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
+        final notifier = buildVoice();
+        await notifier.join();
+        await settle();
+        expect(state().isAudioBlocked, isFalse);
 
-      rtc.pushEvent(const AudioPlaybackBlockedEvent());
-      await settle();
+        rtc.pushEvent(const AudioPlaybackBlockedEvent());
+        await settle();
 
-      expect(state().isAudioBlocked, isTrue);
-    });
+        expect(state().isAudioBlocked, isTrue);
+      },
+    );
 
-    test('AudioPlaybackResumedEvent desliga o banner de áudio bloqueado',
-        () async {
-      repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
-      final notifier = buildVoice();
-      await notifier.join();
-      await settle();
-      rtc.pushEvent(const AudioPlaybackBlockedEvent());
-      await settle();
-      expect(state().isAudioBlocked, isTrue);
+    test(
+      'AudioPlaybackResumedEvent desliga o banner de áudio bloqueado',
+      () async {
+        repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
+        final notifier = buildVoice();
+        await notifier.join();
+        await settle();
+        rtc.pushEvent(const AudioPlaybackBlockedEvent());
+        await settle();
+        expect(state().isAudioBlocked, isTrue);
 
-      rtc.pushEvent(const AudioPlaybackResumedEvent());
-      await settle();
+        rtc.pushEvent(const AudioPlaybackResumedEvent());
+        await settle();
 
-      expect(state().isAudioBlocked, isFalse);
-    });
+        expect(state().isAudioBlocked, isFalse);
+      },
+    );
 
     test('resumeAudio conectado chama o serviço (1 chamada)', () async {
       repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
@@ -566,60 +600,69 @@ void main() {
       expect(state().isAudioBlocked, isFalse);
     });
 
-    test('DisconnectedEvent (queda) reseta o estado de áudio bloqueado',
-        () async {
-      repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
-      final notifier = buildVoice();
-      await notifier.join();
-      await settle();
-      rtc.pushEvent(const AudioPlaybackBlockedEvent());
-      await settle();
-      expect(state().isAudioBlocked, isTrue);
+    test(
+      'DisconnectedEvent (queda) reseta o estado de áudio bloqueado',
+      () async {
+        repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
+        final notifier = buildVoice();
+        await notifier.join();
+        await settle();
+        rtc.pushEvent(const AudioPlaybackBlockedEvent());
+        await settle();
+        expect(state().isAudioBlocked, isTrue);
 
-      rtc.pushEvent(const DisconnectedEvent());
-      await settle();
+        rtc.pushEvent(const DisconnectedEvent());
+        await settle();
 
-      expect(state().isAudioBlocked, isFalse);
-    });
+        expect(state().isAudioBlocked, isFalse);
+      },
+    );
 
-    test('ReconnectedEvent (sala nova) reseta o estado de áudio bloqueado',
-        () async {
-      repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
-      final notifier = buildVoice();
-      await notifier.join();
-      await settle();
-      rtc.pushEvent(const AudioPlaybackBlockedEvent());
-      await settle();
-      expect(state().isAudioBlocked, isTrue);
+    test(
+      'ReconnectedEvent (sala nova) reseta o estado de áudio bloqueado',
+      () async {
+        repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
+        final notifier = buildVoice();
+        await notifier.join();
+        await settle();
+        rtc.pushEvent(const AudioPlaybackBlockedEvent());
+        await settle();
+        expect(state().isAudioBlocked, isTrue);
 
-      rtc.pushEvent(const ReconnectingEvent());
-      rtc.pushEvent(const ReconnectedEvent());
-      await settle();
+        rtc.pushEvent(const ReconnectingEvent());
+        rtc.pushEvent(const ReconnectedEvent());
+        await settle();
 
-      expect(state().isAudioBlocked, isFalse);
-    });
+        expect(state().isAudioBlocked, isFalse);
+      },
+    );
 
     // ── Fase 5 (Prompt 2): câmera, spotlight, devices e qualidade ──────────
 
-    test('toggleCamera conectado chama enable/disable e flipa o estado',
-        () async {
-      repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
-      final notifier = buildVoice();
-      await notifier.join();
-      await settle();
-      expect(state().isCameraEnabled, isFalse,
-          reason: 'câmera começa OFF e nunca é publicada no connect');
+    test(
+      'toggleCamera conectado chama enable/disable e flipa o estado',
+      () async {
+        repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
+        final notifier = buildVoice();
+        await notifier.join();
+        await settle();
+        expect(
+          state().isCameraEnabled,
+          isFalse,
+          reason: 'câmera começa OFF e nunca é publicada no connect',
+        );
 
-      await notifier.toggleCamera();
-      await settle();
-      expect(rtc.enableCameraCalls, 1);
-      expect(state().isCameraEnabled, isTrue);
+        await notifier.toggleCamera();
+        await settle();
+        expect(rtc.enableCameraCalls, 1);
+        expect(state().isCameraEnabled, isTrue);
 
-      await notifier.toggleCamera();
-      await settle();
-      expect(rtc.disableCameraCalls, 1);
-      expect(state().isCameraEnabled, isFalse);
-    });
+        await notifier.toggleCamera();
+        await settle();
+        expect(rtc.disableCameraCalls, 1);
+        expect(state().isCameraEnabled, isFalse);
+      },
+    );
 
     test('toggleCamera fora da sessão é ignorado', () async {
       final notifier = buildVoice();
@@ -643,72 +686,95 @@ void main() {
       await settle();
 
       expect(state().status, VoiceSessionStatus.connected);
-      expect(state().isCameraEnabled, isFalse,
-          reason: 'sem otimismo: volta ao estado anterior');
+      expect(
+        state().isCameraEnabled,
+        isFalse,
+        reason: 'sem otimismo: volta ao estado anterior',
+      );
       expect(state().errorMessage, 'Não foi possível alternar a câmera.');
-      expect(rtc.disconnectCalls, 0,
-          reason: 'erro de câmera nunca desconecta a sala');
+      expect(
+        rtc.disconnectCalls,
+        0,
+        reason: 'erro de câmera nunca desconecta a sala',
+      );
     });
 
-    test('CameraEnabledChangedEvent do local reconcilia; de remoto não toca',
-        () async {
-      repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
-      rtc.localId = 'user_u1';
-      final notifier = buildVoice();
-      await notifier.join();
-      await settle();
-      expect(state().isCameraEnabled, isFalse);
+    test(
+      'CameraEnabledChangedEvent do local reconcilia; de remoto não toca',
+      () async {
+        repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
+        rtc.localId = 'user_u1';
+        final notifier = buildVoice();
+        await notifier.join();
+        await settle();
+        expect(state().isCameraEnabled, isFalse);
 
-      rtc.pushEvent(const CameraEnabledChangedEvent(
-        participantId: 'user_u1',
-        isCameraEnabled: true,
-      ));
-      await settle();
-      expect(state().isCameraEnabled, isTrue);
+        rtc.pushEvent(
+          const CameraEnabledChangedEvent(
+            participantId: 'user_u1',
+            isCameraEnabled: true,
+          ),
+        );
+        await settle();
+        expect(state().isCameraEnabled, isTrue);
 
-      rtc.pushEvent(const CameraEnabledChangedEvent(
-        participantId: 'user_u2',
-        isCameraEnabled: false,
-      ));
-      await settle();
-      expect(state().isCameraEnabled, isTrue,
-          reason: 'evento de remoto não toca o botão local');
-    });
+        rtc.pushEvent(
+          const CameraEnabledChangedEvent(
+            participantId: 'user_u2',
+            isCameraEnabled: false,
+          ),
+        );
+        await settle();
+        expect(
+          state().isCameraEnabled,
+          isTrue,
+          reason: 'evento de remoto não toca o botão local',
+        );
+      },
+    );
 
-    test('refreshCameraDevices preenche a lista; falha mantém a atual',
-        () async {
-      repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
-      final notifier = buildVoice();
-      await notifier.join();
-      await settle();
+    test(
+      'refreshCameraDevices preenche a lista; falha mantém a atual',
+      () async {
+        repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
+        final notifier = buildVoice();
+        await notifier.join();
+        await settle();
 
-      rtc.cameraDevices = const [
-        RtcVideoDevice(id: 'dev-1', label: 'Webcam integrada'),
-        RtcVideoDevice(id: 'dev-2', label: ''),
-      ];
-      await notifier.refreshCameraDevices();
-      await settle();
-      expect(rtc.listCameraDevicesCalls, 1);
-      expect(state().cameraDevices.length, 2);
+        rtc.cameraDevices = const [
+          RtcVideoDevice(id: 'dev-1', label: 'Webcam integrada'),
+          RtcVideoDevice(id: 'dev-2', label: ''),
+        ];
+        await notifier.refreshCameraDevices();
+        await settle();
+        expect(rtc.listCameraDevicesCalls, 1);
+        expect(state().cameraDevices.length, 2);
 
-      rtc.failListCameraDevices = true;
-      await notifier.refreshCameraDevices();
-      await settle();
-      expect(rtc.listCameraDevicesCalls, 2);
-      expect(state().cameraDevices.length, 2,
-          reason: 'falha de enumeração mantém a lista anterior');
+        rtc.failListCameraDevices = true;
+        await notifier.refreshCameraDevices();
+        await settle();
+        expect(rtc.listCameraDevicesCalls, 2);
+        expect(
+          state().cameraDevices.length,
+          2,
+          reason: 'falha de enumeração mantém a lista anterior',
+        );
 
-      // Seleção que saiu da lista nova é limpa no próximo refresh.
-      await notifier.selectCamera('dev-1');
-      await settle();
-      expect(state().selectedCameraId, 'dev-1');
-      rtc.failListCameraDevices = false;
-      rtc.cameraDevices = const [RtcVideoDevice(id: 'dev-3', label: 'Outra')];
-      await notifier.refreshCameraDevices();
-      await settle();
-      expect(state().selectedCameraId, isNull,
-          reason: 'deviceId que saiu da lista é limpo');
-    });
+        // Seleção que saiu da lista nova é limpa no próximo refresh.
+        await notifier.selectCamera('dev-1');
+        await settle();
+        expect(state().selectedCameraId, 'dev-1');
+        rtc.failListCameraDevices = false;
+        rtc.cameraDevices = const [RtcVideoDevice(id: 'dev-3', label: 'Outra')];
+        await notifier.refreshCameraDevices();
+        await settle();
+        expect(
+          state().selectedCameraId,
+          isNull,
+          reason: 'deviceId que saiu da lista é limpo',
+        );
+      },
+    );
 
     test('selectCamera troca ao vivo só com a câmera ligada', () async {
       repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
@@ -749,50 +815,59 @@ void main() {
       expect(rtc.switchCameraCalls, ['dev-2', 'dev-4']);
     });
 
-    test('applyTileQuality: remoto com setQuality, local ignorado, dedupe',
-        () async {
-      rtc.localId = 'user_u1';
-      final notifier = buildVoice();
+    test(
+      'applyTileQuality: remoto com setQuality, local ignorado, dedupe',
+      () async {
+        rtc.localId = 'user_u1';
+        final notifier = buildVoice();
 
-      await notifier.applyTileQuality('user_u2', RtcVideoQuality.medium);
-      await settle();
-      await notifier.applyTileQuality('user_u2', RtcVideoQuality.medium);
-      await settle();
-      expect(rtc.setQualityCalls, [
-        (participantId: 'user_u2', quality: RtcVideoQuality.medium),
-      ], reason: 'mesma qualidade 2x → 1 chamada (dedupe)');
+        await notifier.applyTileQuality('user_u2', RtcVideoQuality.medium);
+        await settle();
+        await notifier.applyTileQuality('user_u2', RtcVideoQuality.medium);
+        await settle();
+        expect(rtc.setQualityCalls, [
+          (participantId: 'user_u2', quality: RtcVideoQuality.medium),
+        ], reason: 'mesma qualidade 2x → 1 chamada (dedupe)');
 
-      await notifier.applyTileQuality('user_u2', RtcVideoQuality.high);
-      await settle();
-      expect(rtc.setQualityCalls.length, 2);
+        await notifier.applyTileQuality('user_u2', RtcVideoQuality.high);
+        await settle();
+        expect(rtc.setQualityCalls.length, 2);
 
-      await notifier.applyTileQuality('user_u1', RtcVideoQuality.high);
-      await settle();
-      expect(rtc.setQualityCalls.length, 2,
-          reason: 'qualidade local é da publicação — nunca setQuality');
-    });
+        await notifier.applyTileQuality('user_u1', RtcVideoQuality.high);
+        await settle();
+        expect(
+          rtc.setQualityCalls.length,
+          2,
+          reason: 'qualidade local é da publicação — nunca setQuality',
+        );
+      },
+    );
 
     // ── Fase 7: qualidade de transmissão (publicação) ────────────────
 
-    test('setCameraQuality conectado chama o serviço e atualiza o estado',
-        () async {
-      repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
-      final notifier = buildVoice();
-      await notifier.join();
-      await settle();
-      expect(state().cameraQuality, RtcCameraQuality.auto);
+    test(
+      'setCameraQuality conectado chama o serviço e atualiza o estado',
+      () async {
+        repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
+        final notifier = buildVoice();
+        await notifier.join();
+        await settle();
+        expect(state().cameraQuality, RtcCameraQuality.auto);
 
-      await notifier.setCameraQuality(RtcCameraQuality.q1080);
-      await settle();
-      expect(rtc.setCameraQualityCalls, [RtcCameraQuality.q1080]);
-      expect(state().cameraQuality, RtcCameraQuality.q1080);
+        await notifier.setCameraQuality(RtcCameraQuality.q1080);
+        await settle();
+        expect(rtc.setCameraQualityCalls, [RtcCameraQuality.q1080]);
+        expect(state().cameraQuality, RtcCameraQuality.q1080);
 
-      await notifier.setCameraQuality(RtcCameraQuality.q720);
-      await settle();
-      expect(rtc.setCameraQualityCalls,
-          [RtcCameraQuality.q1080, RtcCameraQuality.q720]);
-      expect(state().cameraQuality, RtcCameraQuality.q720);
-    });
+        await notifier.setCameraQuality(RtcCameraQuality.q720);
+        await settle();
+        expect(rtc.setCameraQualityCalls, [
+          RtcCameraQuality.q1080,
+          RtcCameraQuality.q720,
+        ]);
+        expect(state().cameraQuality, RtcCameraQuality.q720);
+      },
+    );
 
     test('setCameraQuality fora da sessão é ignorado', () async {
       final notifier = buildVoice();
@@ -815,12 +890,20 @@ void main() {
       await settle();
 
       expect(state().status, VoiceSessionStatus.connected);
-      expect(state().cameraQuality, RtcCameraQuality.auto,
-          reason: 'sem otimismo: perfil não muda quando o serviço falha');
-      expect(state().errorMessage,
-          'Não foi possível ajustar a qualidade da câmera.');
-      expect(rtc.disconnectCalls, 0,
-          reason: 'erro de qualidade nunca desconecta a sala');
+      expect(
+        state().cameraQuality,
+        RtcCameraQuality.auto,
+        reason: 'sem otimismo: perfil não muda quando o serviço falha',
+      );
+      expect(
+        state().errorMessage,
+        'Não foi possível ajustar a qualidade da câmera.',
+      );
+      expect(
+        rtc.disconnectCalls,
+        0,
+        reason: 'erro de qualidade nunca desconecta a sala',
+      );
     });
 
     test('join reseta o perfil de transmissão para Auto', () async {
@@ -837,36 +920,44 @@ void main() {
       await settle();
       await notifier.join();
       await settle();
-      expect(state().cameraQuality, RtcCameraQuality.auto,
-          reason: 'sessão nova = perfil default (decisão: por sessão)');
+      expect(
+        state().cameraQuality,
+        RtcCameraQuality.auto,
+        reason: 'sessão nova = perfil default (decisão: por sessão)',
+      );
     });
 
-    test('toggleSpotlight seta, repete limpa; snapshot órfão limpa sozinho',
-        () async {
-      final notifier = buildVoice();
+    test(
+      'toggleSpotlight seta, repete limpa; snapshot órfão limpa sozinho',
+      () async {
+        final notifier = buildVoice();
 
-      notifier.toggleSpotlight('user_u2');
-      expect(state().spotlightParticipantId, 'user_u2');
+        notifier.toggleSpotlight('user_u2');
+        expect(state().spotlightParticipantId, 'user_u2');
 
-      notifier.toggleSpotlight('user_u2');
-      expect(state().spotlightParticipantId, isNull,
-          reason: 'toque repetido no destaque volta ao grid');
+        notifier.toggleSpotlight('user_u2');
+        expect(
+          state().spotlightParticipantId,
+          isNull,
+          reason: 'toque repetido no destaque volta ao grid',
+        );
 
-      notifier.toggleSpotlight('user_u2');
-      expect(state().spotlightParticipantId, 'user_u2');
+        notifier.toggleSpotlight('user_u2');
+        expect(state().spotlightParticipantId, 'user_u2');
 
-      // Câmera desligou → destaque de tile sem vídeo não faz sentido.
-      rtc.pushParticipants([_participant('user_u2', 'Bia', camera: false)]);
-      await settle();
-      expect(state().spotlightParticipantId, isNull);
+        // Câmera desligou → destaque de tile sem vídeo não faz sentido.
+        rtc.pushParticipants([_participant('user_u2', 'Bia', camera: false)]);
+        await settle();
+        expect(state().spotlightParticipantId, isNull);
 
-      // Saiu da sala → limpo também.
-      notifier.toggleSpotlight('user_u2');
-      expect(state().spotlightParticipantId, 'user_u2');
-      rtc.pushParticipants([_participant('user_u3', 'Caio', camera: true)]);
-      await settle();
-      expect(state().spotlightParticipantId, isNull);
-    });
+        // Saiu da sala → limpo também.
+        notifier.toggleSpotlight('user_u2');
+        expect(state().spotlightParticipantId, 'user_u2');
+        rtc.pushParticipants([_participant('user_u3', 'Caio', camera: true)]);
+        await settle();
+        expect(state().spotlightParticipantId, isNull);
+      },
+    );
 
     test('leave e DisconnectedEvent resetam câmera e spotlight', () async {
       repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
@@ -901,53 +992,67 @@ void main() {
 
     // ── Fase 6 (Prompt 2): screen share, spotlight automático e reconexão ──
 
-    test('start/stopScreenShare conectado chamam o serviço e flipam o estado',
-        () async {
-      repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
-      rtc.localId = 'user_u1';
-      final notifier = buildVoice();
-      await notifier.join();
-      await settle();
-      expect(state().isScreenSharing, isFalse,
-          reason: 'share começa OFF (nunca publicado no connect)');
+    test(
+      'start/stopScreenShare conectado chamam o serviço e flipam o estado',
+      () async {
+        repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
+        rtc.localId = 'user_u1';
+        final notifier = buildVoice();
+        await notifier.join();
+        await settle();
+        expect(
+          state().isScreenSharing,
+          isFalse,
+          reason: 'share começa OFF (nunca publicado no connect)',
+        );
 
-      await notifier.startScreenShare('src-1');
-      await settle();
-      expect(rtc.startScreenShareCalls, 1);
-      expect(rtc.startScreenShareSources, ['src-1']);
-      expect(state().isScreenSharing, isTrue,
-          reason: 'flag liga pós-await (sem otimismo)');
+        await notifier.startScreenShare('src-1');
+        await settle();
+        expect(rtc.startScreenShareCalls, 1);
+        expect(rtc.startScreenShareSources, ['src-1']);
+        expect(
+          state().isScreenSharing,
+          isTrue,
+          reason: 'flag liga pós-await (sem otimismo)',
+        );
 
-      await notifier.stopScreenShare();
-      await settle();
-      expect(rtc.stopScreenShareCalls, 1);
-      expect(state().isScreenSharing, isFalse);
-    });
+        await notifier.stopScreenShare();
+        await settle();
+        expect(rtc.stopScreenShareCalls, 1);
+        expect(state().isScreenSharing, isFalse);
+      },
+    );
 
-    test('startScreenShare fora da sessão é ignorado; com share ativo é no-op',
-        () async {
-      final notifier = buildVoice();
+    test(
+      'startScreenShare fora da sessão é ignorado; com share ativo é no-op',
+      () async {
+        final notifier = buildVoice();
 
-      // Fora da sessão (idle): ignorado, 0 chamadas.
-      await notifier.startScreenShare('src-1');
-      await settle();
-      expect(rtc.startScreenShareCalls, 0);
-      expect(state().isScreenSharing, isFalse);
+        // Fora da sessão (idle): ignorado, 0 chamadas.
+        await notifier.startScreenShare('src-1');
+        await settle();
+        expect(rtc.startScreenShareCalls, 0);
+        expect(state().isScreenSharing, isFalse);
 
-      // Conectado com share ativo: no-op — contador não cresce.
-      repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
-      rtc.localId = 'user_u1';
-      await notifier.join();
-      await settle();
-      await notifier.startScreenShare('src-2');
-      await settle();
-      expect(rtc.startScreenShareCalls, 1);
+        // Conectado com share ativo: no-op — contador não cresce.
+        repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
+        rtc.localId = 'user_u1';
+        await notifier.join();
+        await settle();
+        await notifier.startScreenShare('src-2');
+        await settle();
+        expect(rtc.startScreenShareCalls, 1);
 
-      await notifier.startScreenShare('src-3');
-      await settle();
-      expect(rtc.startScreenShareCalls, 1, reason: 'já compartilhando → no-op');
-      expect(rtc.startScreenShareSources, ['src-2']);
-    });
+        await notifier.startScreenShare('src-3');
+        await settle();
+        expect(
+          rtc.startScreenShareCalls,
+          1,
+          reason: 'já compartilhando → no-op',
+        );
+        expect(rtc.startScreenShareSources, ['src-2']);
+      },
+    );
 
     test('falha de startScreenShare não derruba a sessão', () async {
       repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
@@ -961,11 +1066,20 @@ void main() {
       await settle();
 
       expect(state().status, VoiceSessionStatus.connected);
-      expect(state().isScreenSharing, isFalse,
-          reason: 'sem otimismo: flag não liga quando o serviço falha');
-      expect(state().errorMessage, 'Não foi possível iniciar o compartilhamento.');
-      expect(rtc.disconnectCalls, 0,
-          reason: 'erro de share nunca desconecta a sala');
+      expect(
+        state().isScreenSharing,
+        isFalse,
+        reason: 'sem otimismo: flag não liga quando o serviço falha',
+      );
+      expect(
+        state().errorMessage,
+        'Não foi possível iniciar o compartilhamento.',
+      );
+      expect(
+        rtc.disconnectCalls,
+        0,
+        reason: 'erro de share nunca desconecta a sala',
+      );
     });
 
     test('falha de stopScreenShare mantém a sessão e avisa', () async {
@@ -984,180 +1098,224 @@ void main() {
       await settle();
 
       expect(state().status, VoiceSessionStatus.connected);
-      expect(state().isScreenSharing, isTrue,
-          reason: 'sem otimismo: flag não desliga quando o serviço falha');
-      expect(state().errorMessage, 'Não foi possível encerrar o compartilhamento.');
+      expect(
+        state().isScreenSharing,
+        isTrue,
+        reason: 'sem otimismo: flag não desliga quando o serviço falha',
+      );
+      expect(
+        state().errorMessage,
+        'Não foi possível encerrar o compartilhamento.',
+      );
       expect(rtc.disconnectCalls, 0);
     });
 
     // ── Fase 6.1: áudio de sistema no screen share ────────────────────────
 
-    test('startScreenShare repassa includeSystemAudio para o serviço', () async {
-      repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
-      rtc.localId = 'user_u1';
-      final notifier = buildVoice();
-      await notifier.join();
-      await settle();
+    test(
+      'startScreenShare repassa includeSystemAudio para o serviço',
+      () async {
+        repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
+        rtc.localId = 'user_u1';
+        final notifier = buildVoice();
+        await notifier.join();
+        await settle();
 
-      await notifier.startScreenShare('src-1', includeSystemAudio: true);
-      await settle();
-      expect(rtc.startScreenShareCalls, 1);
-      expect(rtc.startScreenShareSystemAudioFlags, [true]);
+        await notifier.startScreenShare('src-1', includeSystemAudio: true);
+        await settle();
+        expect(rtc.startScreenShareCalls, 1);
+        expect(rtc.startScreenShareSystemAudioFlags, [true]);
 
-      // Default (sem flag) continua false — um share sem áudio não ativa o
-      // flag do próximo.
-      await notifier.stopScreenShare();
-      await settle();
-      await notifier.startScreenShare('src-2');
-      await settle();
-      expect(rtc.startScreenShareSystemAudioFlags, [true, false]);
-    });
+        // Default (sem flag) continua false — um share sem áudio não ativa o
+        // flag do próximo.
+        await notifier.stopScreenShare();
+        await settle();
+        await notifier.startScreenShare('src-2');
+        await settle();
+        expect(rtc.startScreenShareSystemAudioFlags, [true, false]);
+      },
+    );
 
-    test('toggleIncludeSystemAudio alterna a preferência (só conectado e sem share)',
-        () async {
-      final notifier = buildVoice();
-      // Fora da sessão: no-op.
-      notifier.toggleIncludeSystemAudio();
-      expect(state().includeSystemAudio, isFalse);
+    test(
+      'toggleIncludeSystemAudio alterna a preferência (só conectado e sem share)',
+      () async {
+        final notifier = buildVoice();
+        // Fora da sessão: no-op.
+        notifier.toggleIncludeSystemAudio();
+        expect(state().includeSystemAudio, isFalse);
 
-      repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
-      rtc.localId = 'user_u1';
-      await notifier.join();
-      await settle();
+        repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
+        rtc.localId = 'user_u1';
+        await notifier.join();
+        await settle();
 
-      notifier.toggleIncludeSystemAudio();
-      expect(state().includeSystemAudio, isTrue);
-      notifier.toggleIncludeSystemAudio();
-      expect(state().includeSystemAudio, isFalse);
+        notifier.toggleIncludeSystemAudio();
+        expect(state().includeSystemAudio, isTrue);
+        notifier.toggleIncludeSystemAudio();
+        expect(state().includeSystemAudio, isFalse);
 
-      // Com share ativo: no-op (a decisão é lida apenas no start).
-      await notifier.startScreenShare('src-1', includeSystemAudio: true);
-      await settle();
-      expect(state().isScreenSharing, isTrue);
-      notifier.toggleIncludeSystemAudio();
-      expect(state().includeSystemAudio, isFalse,
-          reason: 'share ativo → preferência travada no start');
-    });
+        // Com share ativo: no-op (a decisão é lida apenas no start).
+        await notifier.startScreenShare('src-1', includeSystemAudio: true);
+        await settle();
+        expect(state().isScreenSharing, isTrue);
+        notifier.toggleIncludeSystemAudio();
+        expect(
+          state().includeSystemAudio,
+          isFalse,
+          reason: 'share ativo → preferência travada no start',
+        );
+      },
+    );
 
-    test('falha do áudio de sistema NÃO bloqueia o share (share inicia + aviso)',
-        () async {
-      repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
-      rtc.localId = 'user_u1';
-      final notifier = buildVoice();
-      await notifier.join();
-      await settle();
+    test(
+      'falha do áudio de sistema NÃO bloqueia o share (share inicia + aviso)',
+      () async {
+        repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
+        rtc.localId = 'user_u1';
+        final notifier = buildVoice();
+        await notifier.join();
+        await settle();
 
-      rtc.failSystemAudioTimes = 1;
-      await notifier.startScreenShare('src-1', includeSystemAudio: true);
-      await settle();
+        rtc.failSystemAudioTimes = 1;
+        await notifier.startScreenShare('src-1', includeSystemAudio: true);
+        await settle();
 
-      expect(rtc.startScreenShareCalls, 1, reason: 'o vídeo publicou');
-      expect(state().status, VoiceSessionStatus.connected);
-      expect(state().isScreenSharing, isTrue,
-          reason: 'o vídeo saiu — só o áudio de sistema falhou');
-      expect(
-        state().errorMessage,
-        'Compartilhamento iniciado sem áudio de sistema.',
-      );
-      expect(rtc.disconnectCalls, 0);
-    });
+        expect(rtc.startScreenShareCalls, 1, reason: 'o vídeo publicou');
+        expect(state().status, VoiceSessionStatus.connected);
+        expect(
+          state().isScreenSharing,
+          isTrue,
+          reason: 'o vídeo saiu — só o áudio de sistema falhou',
+        );
+        expect(
+          state().errorMessage,
+          'Compartilhamento iniciado sem áudio de sistema.',
+        );
+        expect(rtc.disconnectCalls, 0);
+      },
+    );
 
-    test('SystemAudioEnabledChangedEvent do local reconcilia; de remoto não toca',
-        () async {
-      repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
-      rtc.localId = 'user_u1';
-      final notifier = buildVoice();
-      await notifier.join();
-      await settle();
-      expect(state().isSystemAudioEnabled, isFalse);
+    test(
+      'SystemAudioEnabledChangedEvent do local reconcilia; de remoto não toca',
+      () async {
+        repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
+        rtc.localId = 'user_u1';
+        final notifier = buildVoice();
+        await notifier.join();
+        await settle();
+        expect(state().isSystemAudioEnabled, isFalse);
 
-      // Remoto: não toca o espelho local.
-      rtc.eventsController.add(SystemAudioEnabledChangedEvent(
-        participantId: 'user_u2',
-        isSystemAudioEnabled: true,
-      ));
-      await settle();
-      expect(state().isSystemAudioEnabled, isFalse);
+        // Remoto: não toca o espelho local.
+        rtc.eventsController.add(
+          SystemAudioEnabledChangedEvent(
+            participantId: 'user_u2',
+            isSystemAudioEnabled: true,
+          ),
+        );
+        await settle();
+        expect(state().isSystemAudioEnabled, isFalse);
 
-      // Local: reconcilia.
-      rtc.eventsController.add(SystemAudioEnabledChangedEvent(
-        participantId: 'user_u1',
-        isSystemAudioEnabled: true,
-      ));
-      await settle();
-      expect(state().isSystemAudioEnabled, isTrue);
-    });
+        // Local: reconcilia.
+        rtc.eventsController.add(
+          SystemAudioEnabledChangedEvent(
+            participantId: 'user_u1',
+            isSystemAudioEnabled: true,
+          ),
+        );
+        await settle();
+        expect(state().isSystemAudioEnabled, isTrue);
+      },
+    );
 
-    test('leave reseta a preferência e o espelho de áudio de sistema', () async {
-      repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
-      rtc.localId = 'user_u1';
-      final notifier = buildVoice();
-      await notifier.join();
-      await settle();
+    test(
+      'leave reseta a preferência e o espelho de áudio de sistema',
+      () async {
+        repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
+        rtc.localId = 'user_u1';
+        final notifier = buildVoice();
+        await notifier.join();
+        await settle();
 
-      notifier.toggleIncludeSystemAudio();
-      rtc.eventsController.add(SystemAudioEnabledChangedEvent(
-        participantId: 'user_u1',
-        isSystemAudioEnabled: true,
-      ));
-      await settle();
-      expect(state().includeSystemAudio, isTrue);
-      expect(state().isSystemAudioEnabled, isTrue);
+        notifier.toggleIncludeSystemAudio();
+        rtc.eventsController.add(
+          SystemAudioEnabledChangedEvent(
+            participantId: 'user_u1',
+            isSystemAudioEnabled: true,
+          ),
+        );
+        await settle();
+        expect(state().includeSystemAudio, isTrue);
+        expect(state().isSystemAudioEnabled, isTrue);
 
-      await notifier.leave();
-      await settle();
-      expect(state().includeSystemAudio, isFalse);
-      expect(state().isSystemAudioEnabled, isFalse);
-    });
+        await notifier.leave();
+        await settle();
+        expect(state().includeSystemAudio, isFalse);
+        expect(state().isSystemAudioEnabled, isFalse);
+      },
+    );
 
-    test('ScreenShareEnabledChangedEvent do local reconcilia; de remoto não toca',
-        () async {
-      repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
-      rtc.localId = 'user_u1';
-      final notifier = buildVoice();
-      await notifier.join();
-      await settle();
-      expect(state().isScreenSharing, isFalse);
+    test(
+      'ScreenShareEnabledChangedEvent do local reconcilia; de remoto não toca',
+      () async {
+        repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
+        rtc.localId = 'user_u1';
+        final notifier = buildVoice();
+        await notifier.join();
+        await settle();
+        expect(state().isScreenSharing, isFalse);
 
-      // O RtcService real emite isso quando o share local é confirmado.
-      rtc.pushEvent(const ScreenShareEnabledChangedEvent(
-        participantId: 'user_u1',
-        isScreenSharing: true,
-      ));
-      await settle();
-      expect(state().isScreenSharing, isTrue);
+        // O RtcService real emite isso quando o share local é confirmado.
+        rtc.pushEvent(
+          const ScreenShareEnabledChangedEvent(
+            participantId: 'user_u1',
+            isScreenSharing: true,
+          ),
+        );
+        await settle();
+        expect(state().isScreenSharing, isTrue);
 
-      rtc.pushEvent(const ScreenShareEnabledChangedEvent(
-        participantId: 'user_u2',
-        isScreenSharing: false,
-      ));
-      await settle();
-      expect(state().isScreenSharing, isTrue,
-          reason: 'evento de remoto não toca o botão local');
-    });
+        rtc.pushEvent(
+          const ScreenShareEnabledChangedEvent(
+            participantId: 'user_u2',
+            isScreenSharing: false,
+          ),
+        );
+        await settle();
+        expect(
+          state().isScreenSharing,
+          isTrue,
+          reason: 'evento de remoto não toca o botão local',
+        );
+      },
+    );
 
-    test('1º sharer no snapshot ganha destaque automático salvando o anterior',
-        () async {
-      rtc.localId = 'user_u1';
-      final notifier = buildVoice();
+    test(
+      '1º sharer no snapshot ganha destaque automático salvando o anterior',
+      () async {
+        rtc.localId = 'user_u1';
+        final notifier = buildVoice();
 
-      // Spotlight manual pré-existente (Fase 5).
-      notifier.toggleSpotlight('user_u2');
-      expect(state().spotlightParticipantId, 'user_u2');
+        // Spotlight manual pré-existente (Fase 5).
+        notifier.toggleSpotlight('user_u2');
+        expect(state().spotlightParticipantId, 'user_u2');
 
-      // 1º snapshot com sharer: destaque vai para o sharer, anterior salvo.
-      rtc.pushParticipants([
-        _participant('user_u1', 'Ana'),
-        _participant('user_u2', 'Bia', camera: true),
-        _participant('user_u3', 'Caio', camera: true, screenShare: true),
-      ]);
-      await settle();
+        // 1º snapshot com sharer: destaque vai para o sharer, anterior salvo.
+        rtc.pushParticipants([
+          _participant('user_u1', 'Ana'),
+          _participant('user_u2', 'Bia', camera: true),
+          _participant('user_u3', 'Caio', camera: true, screenShare: true),
+        ]);
+        await settle();
 
-      expect(state().spotlightParticipantId, 'user_u3');
-      expect(state().autoSpotlightActive, isTrue);
-      expect(state().savedSpotlightParticipantId, 'user_u2',
-          reason: 'spotlight manual anterior salvo para restaurar');
-    });
+        expect(state().spotlightParticipantId, 'user_u3');
+        expect(state().autoSpotlightActive, isTrue);
+        expect(
+          state().savedSpotlightParticipantId,
+          'user_u2',
+          reason: 'spotlight manual anterior salvo para restaurar',
+        );
+      },
+    );
 
     test('share termina: spotlight restaurado para o id salvo', () async {
       rtc.localId = 'user_u1';
@@ -1186,30 +1344,35 @@ void main() {
       expect(state().savedSpotlightParticipantId, isNull);
     });
 
-    test('share termina com spotlight anterior em grid: restaura para grid',
-        () async {
-      rtc.localId = 'user_u1';
-      buildVoice();
+    test(
+      'share termina com spotlight anterior em grid: restaura para grid',
+      () async {
+        rtc.localId = 'user_u1';
+        buildVoice();
 
-      rtc.pushParticipants([
-        _participant('user_u1', 'Ana'),
-        _participant('user_u2', 'Bia', screenShare: true),
-      ]);
-      await settle();
-      expect(state().spotlightParticipantId, 'user_u2');
-      expect(state().savedSpotlightParticipantId, isNull,
-          reason: 'era grid — nada para restaurar');
+        rtc.pushParticipants([
+          _participant('user_u1', 'Ana'),
+          _participant('user_u2', 'Bia', screenShare: true),
+        ]);
+        await settle();
+        expect(state().spotlightParticipantId, 'user_u2');
+        expect(
+          state().savedSpotlightParticipantId,
+          isNull,
+          reason: 'era grid — nada para restaurar',
+        );
 
-      rtc.pushParticipants([
-        _participant('user_u1', 'Ana'),
-        _participant('user_u2', 'Bia'),
-      ]);
-      await settle();
+        rtc.pushParticipants([
+          _participant('user_u1', 'Ana'),
+          _participant('user_u2', 'Bia'),
+        ]);
+        await settle();
 
-      expect(state().spotlightParticipantId, isNull, reason: 'volta ao grid');
-      expect(state().autoSpotlightActive, isFalse);
-      expect(state().savedSpotlightParticipantId, isNull);
-    });
+        expect(state().spotlightParticipantId, isNull, reason: 'volta ao grid');
+        expect(state().autoSpotlightActive, isFalse);
+        expect(state().savedSpotlightParticipantId, isNull);
+      },
+    );
 
     test('2º sharer assume o destaque com auto-spotlight ativo', () async {
       rtc.localId = 'user_u1';
@@ -1230,205 +1393,246 @@ void main() {
       ]);
       await settle();
 
-      expect(state().spotlightParticipantId, 'user_u3',
-          reason: 'troca de sharer: destaque segue o share');
+      expect(
+        state().spotlightParticipantId,
+        'user_u3',
+        reason: 'troca de sharer: destaque segue o share',
+      );
       expect(state().autoSpotlightActive, isTrue);
     });
 
-    test('dispensa manual do auto-spotlight não é re-forçada pelo snapshot',
-        () async {
-      rtc.localId = 'user_u1';
-      final notifier = buildVoice();
+    test(
+      'dispensa manual do auto-spotlight não é re-forçada pelo snapshot',
+      () async {
+        rtc.localId = 'user_u1';
+        final notifier = buildVoice();
 
-      rtc.pushParticipants([
-        _participant('user_u1', 'Ana'),
-        _participant('user_u2', 'Bia', screenShare: true),
-      ]);
-      await settle();
-      expect(state().spotlightParticipantId, 'user_u2');
-      expect(state().autoSpotlightActive, isTrue);
+        rtc.pushParticipants([
+          _participant('user_u1', 'Ana'),
+          _participant('user_u2', 'Bia', screenShare: true),
+        ]);
+        await settle();
+        expect(state().spotlightParticipantId, 'user_u2');
+        expect(state().autoSpotlightActive, isTrue);
 
-      // Toque no sharer em destaque: dispensa explícita → grid.
-      notifier.toggleSpotlight('user_u2');
-      expect(state().spotlightParticipantId, isNull);
-      expect(state().autoSpotlightActive, isFalse);
+        // Toque no sharer em destaque: dispensa explícita → grid.
+        notifier.toggleSpotlight('user_u2');
+        expect(state().spotlightParticipantId, isNull);
+        expect(state().autoSpotlightActive, isFalse);
 
-      // Snapshot seguinte com o sharer AINDA compartilhando: não re-força.
-      rtc.pushParticipants([
-        _participant('user_u1', 'Ana'),
-        _participant('user_u2', 'Bia', screenShare: true),
-      ]);
-      await settle();
+        // Snapshot seguinte com o sharer AINDA compartilhando: não re-força.
+        rtc.pushParticipants([
+          _participant('user_u1', 'Ana'),
+          _participant('user_u2', 'Bia', screenShare: true),
+        ]);
+        await settle();
 
-      expect(state().spotlightParticipantId, isNull);
-      expect(state().autoSpotlightActive, isFalse,
-          reason: 'dispensa manual desativa o auto — sem loop visual');
-    });
+        expect(state().spotlightParticipantId, isNull);
+        expect(
+          state().autoSpotlightActive,
+          isFalse,
+          reason: 'dispensa manual desativa o auto — sem loop visual',
+        );
+      },
+    );
 
-    test('selecionar OUTRO participante dispensa o auto-spotlight (não só o sharer)',
-        () async {
-      rtc.localId = 'user_u1';
-      final notifier = buildVoice();
+    test(
+      'selecionar OUTRO participante dispensa o auto-spotlight (não só o sharer)',
+      () async {
+        rtc.localId = 'user_u1';
+        final notifier = buildVoice();
 
-      rtc.pushParticipants([
-        _participant('user_u1', 'Ana'),
-        _participant('user_u2', 'Bia', screenShare: true),
-        _participant('user_u3', 'Caio', camera: true),
-      ]);
-      await settle();
-      expect(state().spotlightParticipantId, 'user_u2');
-      expect(state().autoSpotlightActive, isTrue);
+        rtc.pushParticipants([
+          _participant('user_u1', 'Ana'),
+          _participant('user_u2', 'Bia', screenShare: true),
+          _participant('user_u3', 'Caio', camera: true),
+        ]);
+        await settle();
+        expect(state().spotlightParticipantId, 'user_u2');
+        expect(state().autoSpotlightActive, isTrue);
 
-      // Seleção manual de OUTRO tile (não o sharer): assume o controle —
-      // dispensa o auto e limpa o saved (senão o snapshot re-forçaria o
-      // sharer e o fim do share restauraria um estado obsoleto).
-      notifier.toggleSpotlight('user_u3');
-      expect(state().spotlightParticipantId, 'user_u3');
-      expect(state().autoSpotlightActive, isFalse);
-      expect(state().savedSpotlightParticipantId, isNull);
+        // Seleção manual de OUTRO tile (não o sharer): assume o controle —
+        // dispensa o auto e limpa o saved (senão o snapshot re-forçaria o
+        // sharer e o fim do share restauraria um estado obsoleto).
+        notifier.toggleSpotlight('user_u3');
+        expect(state().spotlightParticipantId, 'user_u3');
+        expect(state().autoSpotlightActive, isFalse);
+        expect(state().savedSpotlightParticipantId, isNull);
 
-      // Snapshot seguinte com o sharer AINDA compartilhando: não re-força.
-      rtc.pushParticipants([
-        _participant('user_u1', 'Ana'),
-        _participant('user_u2', 'Bia', screenShare: true),
-        _participant('user_u3', 'Caio', camera: true),
-      ]);
-      await settle();
-      expect(state().spotlightParticipantId, 'user_u3',
-          reason: 'seleção manual sobrevive ao snapshot');
-      expect(state().autoSpotlightActive, isFalse);
+        // Snapshot seguinte com o sharer AINDA compartilhando: não re-força.
+        rtc.pushParticipants([
+          _participant('user_u1', 'Ana'),
+          _participant('user_u2', 'Bia', screenShare: true),
+          _participant('user_u3', 'Caio', camera: true),
+        ]);
+        await settle();
+        expect(
+          state().spotlightParticipantId,
+          'user_u3',
+          reason: 'seleção manual sobrevive ao snapshot',
+        );
+        expect(state().autoSpotlightActive, isFalse);
 
-      // Share TERMINA depois da dispensa manual: a seleção manual DELE
-      // permanece — o shareEnded não pode restaurar um saved já limpo
-      // (converteria o spotlight manual em grid).
-      rtc.pushParticipants([
-        _participant('user_u1', 'Ana'),
-        _participant('user_u2', 'Bia'),
-        _participant('user_u3', 'Caio', camera: true),
-      ]);
-      await settle();
-      expect(state().spotlightParticipantId, 'user_u3',
-          reason: 'fim do share após dispensa manual preserva a seleção');
-      expect(state().autoSpotlightActive, isFalse);
-      expect(state().savedSpotlightParticipantId, isNull);
-    });
+        // Share TERMINA depois da dispensa manual: a seleção manual DELE
+        // permanece — o shareEnded não pode restaurar um saved já limpo
+        // (converteria o spotlight manual em grid).
+        rtc.pushParticipants([
+          _participant('user_u1', 'Ana'),
+          _participant('user_u2', 'Bia'),
+          _participant('user_u3', 'Caio', camera: true),
+        ]);
+        await settle();
+        expect(
+          state().spotlightParticipantId,
+          'user_u3',
+          reason: 'fim do share após dispensa manual preserva a seleção',
+        );
+        expect(state().autoSpotlightActive, isFalse);
+        expect(state().savedSpotlightParticipantId, isNull);
+      },
+    );
 
-    test('reconexão: Reconnecting mantém connected; Reconnected reseta mídia',
-        () async {
-      repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
-      rtc.localId = 'user_u1';
-      final notifier = buildVoice();
-      await notifier.join();
-      await settle();
+    test(
+      'reconexão: Reconnecting mantém connected; Reconnected reseta mídia',
+      () async {
+        repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
+        rtc.localId = 'user_u1';
+        final notifier = buildVoice();
+        await notifier.join();
+        await settle();
 
-      // Estado "sujo" antes da queda: mic/câmera/share ligados + spotlight.
-      await notifier.toggleMicrophone();
-      await settle();
-      await notifier.toggleCamera();
-      await settle();
-      await notifier.startScreenShare('src-1');
-      await settle();
-      notifier.toggleSpotlight('user_u2');
+        // Estado "sujo" antes da queda: mic/câmera/share ligados + spotlight.
+        await notifier.toggleMicrophone();
+        await settle();
+        await notifier.toggleCamera();
+        await settle();
+        await notifier.startScreenShare('src-1');
+        await settle();
+        notifier.toggleSpotlight('user_u2');
 
-      rtc.pushEvent(const ReconnectingEvent());
-      await settle();
-      expect(state().isReconnecting, isTrue);
-      expect(state().status, VoiceSessionStatus.connected,
-          reason: 'reconexão em andamento NÃO derruba para idle/error');
+        rtc.pushEvent(const ReconnectingEvent());
+        await settle();
+        expect(state().isReconnecting, isTrue);
+        expect(
+          state().status,
+          VoiceSessionStatus.connected,
+          reason: 'reconexão em andamento NÃO derruba para idle/error',
+        );
 
-      rtc.pushEvent(const ReconnectedEvent());
-      await settle();
-      expect(state().isReconnecting, isFalse);
-      expect(state().isMicrophoneEnabled, isFalse,
-          reason: 'sala nova: mic republicado mutado');
-      expect(state().isCameraEnabled, isFalse,
-          reason: 'sala nova: câmera local recomeça off');
-      expect(state().isScreenSharing, isFalse,
-          reason: 'sala nova: share local recomeça off');
-      expect(state().autoSpotlightActive, isFalse);
-      expect(state().savedSpotlightParticipantId, isNull);
-      expect(state().spotlightParticipantId, isNull);
-    });
+        rtc.pushEvent(const ReconnectedEvent());
+        await settle();
+        expect(state().isReconnecting, isFalse);
+        expect(
+          state().isMicrophoneEnabled,
+          isFalse,
+          reason: 'sala nova: mic republicado mutado',
+        );
+        expect(
+          state().isCameraEnabled,
+          isFalse,
+          reason: 'sala nova: câmera local recomeça off',
+        );
+        expect(
+          state().isScreenSharing,
+          isFalse,
+          reason: 'sala nova: share local recomeça off',
+        );
+        expect(state().autoSpotlightActive, isFalse);
+        expect(state().savedSpotlightParticipantId, isNull);
+        expect(state().spotlightParticipantId, isNull);
+      },
+    );
 
-    test('DisconnectedEvent e leave resetam share/reconexão/auto-spotlight',
-        () async {
-      repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
-      rtc.localId = 'user_u1';
-      final notifier = buildVoice();
-      await notifier.join();
-      await settle();
+    test(
+      'DisconnectedEvent e leave resetam share/reconexão/auto-spotlight',
+      () async {
+        repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
+        rtc.localId = 'user_u1';
+        final notifier = buildVoice();
+        await notifier.join();
+        await settle();
 
-      await notifier.startScreenShare('src-1');
-      await settle();
-      notifier.toggleSpotlight('user_u2');
-      rtc.pushEvent(const ReconnectingEvent());
-      await settle();
-      expect(state().isReconnecting, isTrue);
+        await notifier.startScreenShare('src-1');
+        await settle();
+        notifier.toggleSpotlight('user_u2');
+        rtc.pushEvent(const ReconnectingEvent());
+        await settle();
+        expect(state().isReconnecting, isTrue);
 
-      // Queda final (não reconectou): idle com banner limpo e share resetado.
-      rtc.pushEvent(const DisconnectedEvent());
-      await settle();
-      expect(state().status, VoiceSessionStatus.idle);
-      expect(state().isReconnecting, isFalse);
-      expect(state().isScreenSharing, isFalse);
-      expect(state().autoSpotlightActive, isFalse);
-      expect(state().savedSpotlightParticipantId, isNull);
+        // Queda final (não reconectou): idle com banner limpo e share resetado.
+        rtc.pushEvent(const DisconnectedEvent());
+        await settle();
+        expect(state().status, VoiceSessionStatus.idle);
+        expect(state().isReconnecting, isFalse);
+        expect(state().isScreenSharing, isFalse);
+        expect(state().autoSpotlightActive, isFalse);
+        expect(state().savedSpotlightParticipantId, isNull);
 
-      // Reconecta e sai: leave reseta igual.
-      await notifier.join();
-      await settle();
-      await notifier.startScreenShare('src-2');
-      await settle();
-      notifier.toggleSpotlight('user_u2');
-      await notifier.leave();
-      await settle();
-      expect(state().status, VoiceSessionStatus.idle);
-      expect(state().isScreenSharing, isFalse);
-      expect(state().isReconnecting, isFalse);
-      expect(state().autoSpotlightActive, isFalse);
-      expect(state().savedSpotlightParticipantId, isNull);
-    });
+        // Reconecta e sai: leave reseta igual.
+        await notifier.join();
+        await settle();
+        await notifier.startScreenShare('src-2');
+        await settle();
+        notifier.toggleSpotlight('user_u2');
+        await notifier.leave();
+        await settle();
+        expect(state().status, VoiceSessionStatus.idle);
+        expect(state().isScreenSharing, isFalse);
+        expect(state().isReconnecting, isFalse);
+        expect(state().autoSpotlightActive, isFalse);
+        expect(state().savedSpotlightParticipantId, isNull);
+      },
+    );
 
-    test('revalidação: sharer sem câmera mantém destaque; sem vídeo limpa',
-        () async {
-      rtc.localId = 'user_u1';
-      final notifier = buildVoice();
+    test(
+      'revalidação: sharer sem câmera mantém destaque; sem vídeo limpa',
+      () async {
+        rtc.localId = 'user_u1';
+        final notifier = buildVoice();
 
-      // Sharer entra compartilhando COM câmera (auto-spotlight ativo).
-      rtc.pushParticipants([
-        _participant('user_u1', 'Ana'),
-        _participant('user_u2', 'Bia', camera: true, screenShare: true),
-      ]);
-      await settle();
-      expect(state().spotlightParticipantId, 'user_u2');
+        // Sharer entra compartilhando COM câmera (auto-spotlight ativo).
+        rtc.pushParticipants([
+          _participant('user_u1', 'Ana'),
+          _participant('user_u2', 'Bia', camera: true, screenShare: true),
+        ]);
+        await settle();
+        expect(state().spotlightParticipantId, 'user_u2');
 
-      // Desliga a câmera, segue compartilhando: destaque SE MANTÉM (a tela
-      // é o vídeo do sharer — critério ampliado da revalidação).
-      rtc.pushParticipants([
-        _participant('user_u1', 'Ana'),
-        _participant('user_u2', 'Bia', screenShare: true),
-      ]);
-      await settle();
-      expect(state().spotlightParticipantId, 'user_u2',
-          reason: 'sharer sem câmera ainda merece destaque (destaque de tela vale)');
+        // Desliga a câmera, segue compartilhando: destaque SE MANTÉM (a tela
+        // é o vídeo do sharer — critério ampliado da revalidação).
+        rtc.pushParticipants([
+          _participant('user_u1', 'Ana'),
+          _participant('user_u2', 'Bia', screenShare: true),
+        ]);
+        await settle();
+        expect(
+          state().spotlightParticipantId,
+          'user_u2',
+          reason:
+              'sharer sem câmera ainda merece destaque (destaque de tela vale)',
+        );
 
-      // Share termina → restaura; um manual em quem NÃO tem câmera nem
-      // share continua sendo limpo (comportamento Fase 5 intacto).
-      rtc.pushParticipants([
-        _participant('user_u1', 'Ana'),
-        _participant('user_u2', 'Bia'),
-      ]);
-      await settle();
-      notifier.toggleSpotlight('user_u3');
-      expect(state().spotlightParticipantId, 'user_u3');
-      rtc.pushParticipants([
-        _participant('user_u1', 'Ana'),
-        _participant('user_u2', 'Bia'),
-        _participant('user_u3', 'Caio'),
-      ]);
-      await settle();
-      expect(state().spotlightParticipantId, isNull,
-          reason: 'sem câmera E sem share: destaque limpo (Fase 5 intacto)');
-    });
+        // Share termina → restaura; um manual em quem NÃO tem câmera nem
+        // share continua sendo limpo (comportamento Fase 5 intacto).
+        rtc.pushParticipants([
+          _participant('user_u1', 'Ana'),
+          _participant('user_u2', 'Bia'),
+        ]);
+        await settle();
+        notifier.toggleSpotlight('user_u3');
+        expect(state().spotlightParticipantId, 'user_u3');
+        rtc.pushParticipants([
+          _participant('user_u1', 'Ana'),
+          _participant('user_u2', 'Bia'),
+          _participant('user_u3', 'Caio'),
+        ]);
+        await settle();
+        expect(
+          state().spotlightParticipantId,
+          isNull,
+          reason: 'sem câmera E sem share: destaque limpo (Fase 5 intacto)',
+        );
+      },
+    );
   });
 }

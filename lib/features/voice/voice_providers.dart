@@ -143,8 +143,7 @@ class VoiceState {
       isCameraEnabled: isCameraEnabled ?? this.isCameraEnabled,
       isScreenSharing: isScreenSharing ?? this.isScreenSharing,
       includeSystemAudio: includeSystemAudio ?? this.includeSystemAudio,
-      isSystemAudioEnabled:
-          isSystemAudioEnabled ?? this.isSystemAudioEnabled,
+      isSystemAudioEnabled: isSystemAudioEnabled ?? this.isSystemAudioEnabled,
       isReconnecting: isReconnecting ?? this.isReconnecting,
       isAudioBlocked: isAudioBlocked ?? this.isAudioBlocked,
       autoSpotlightActive: autoSpotlightActive ?? this.autoSpotlightActive,
@@ -152,8 +151,8 @@ class VoiceState {
       // grid (null) deve funcionar; o padrão `??` manteria o id salvo.
       savedSpotlightParticipantId:
           identical(savedSpotlightParticipantId, _unset)
-              ? this.savedSpotlightParticipantId
-              : savedSpotlightParticipantId as String?,
+          ? this.savedSpotlightParticipantId
+          : savedSpotlightParticipantId as String?,
       spotlightParticipantId: identical(spotlightParticipantId, _unset)
           ? this.spotlightParticipantId
           : spotlightParticipantId as String?,
@@ -182,8 +181,11 @@ class VoiceState {
 /// - Queda da sala por conta própria: [DisconnectedEvent] volta para
 ///   `idle` (o serviço já limpou o estado interno).
 class VoiceController
-    extends AutoDisposeFamilyNotifier<VoiceState,
-        ({String serverId, String channelId})> {
+    extends
+        AutoDisposeFamilyNotifier<
+          VoiceState,
+          ({String serverId, String channelId})
+        > {
   StreamSubscription<List<RtcParticipant>>? _participantsSub;
   StreamSubscription<RtcEvent>? _eventsSub;
   bool _disposed = false;
@@ -347,8 +349,8 @@ class VoiceController
     );
   }
 
-  /// Publica a tela local (botão de compartilhar; [sourceId] vem do
-  /// RtcScreenSharePicker de core/rtc). Espelho do [toggleCamera]: sem
+  /// Publica a tela local (botão de compartilhar; [sourceId] nulo delega a
+  /// escolha para o portal nativo do SO). Espelho do [toggleCamera]: sem
   /// otimismo antes do await, erro de captura NUNCA derruba a sessão e o
   /// [ScreenShareEnabledChangedEvent] local reconcilia.
   ///
@@ -357,12 +359,14 @@ class VoiceController
   /// e o [SystemAudioPublishException] só troca a mensagem — o
   /// [ScreenShareEnabledChangedEvent] confirma o share na sequência.
   Future<void> startScreenShare(
-    String sourceId, {
+    String? sourceId, {
     bool includeSystemAudio = false,
   }) async {
     final current = state;
     if (current.status != VoiceSessionStatus.connected) return;
-    if (current.isScreenSharing) return; // já compartilhando (o serviço também no-op)
+    if (current.isScreenSharing) {
+      return; // já compartilhando (o serviço também no-op)
+    }
     final rtc = ref.read(rtcServiceProvider);
     try {
       await rtc.startScreenShare(
@@ -393,10 +397,7 @@ class VoiceController
       return;
     }
     if (_disposed) return;
-    state = state.copyWith(
-      isScreenSharing: true,
-      errorMessage: null,
-    );
+    state = state.copyWith(isScreenSharing: true, errorMessage: null);
   }
 
   /// Alterna a preferência de incluir o ÁUDIO DE SISTEMA no PRÓXIMO
@@ -432,10 +433,7 @@ class VoiceController
       return;
     }
     if (_disposed) return;
-    state = state.copyWith(
-      isScreenSharing: false,
-      errorMessage: null,
-    );
+    state = state.copyWith(isScreenSharing: false, errorMessage: null);
   }
 
   /// Alterna o destaque (spotlight) de um participante: toque repetido no
@@ -449,8 +447,9 @@ class VoiceController
       // desligado (senão o snapshot seguinte re-forçaria o sharer e o fim
       // do share restauraria um estado obsoleto, perdendo a seleção manual).
       state = state.copyWith(
-        spotlightParticipantId:
-            state.spotlightParticipantId == participantId ? null : participantId,
+        spotlightParticipantId: state.spotlightParticipantId == participantId
+            ? null
+            : participantId,
         autoSpotlightActive: false,
         savedSpotlightParticipantId: null,
       );
@@ -531,10 +530,7 @@ class VoiceController
       return;
     }
     if (_disposed) return;
-    state = state.copyWith(
-      cameraQuality: quality,
-      errorMessage: null,
-    );
+    state = state.copyWith(cameraQuality: quality, errorMessage: null);
   }
 
   /// Aplica a qualidade de recepção de um tile REMOTO conforme o papel
@@ -661,9 +657,10 @@ class VoiceController
     // qualidade os ids que saíram (tile desmontado = OFF).
     final spotlightId = next.spotlightParticipantId;
     if (spotlightId != null &&
-        !sorted.any((p) =>
-            p.id == spotlightId &&
-            (p.isCameraEnabled || p.isScreenSharing))) {
+        !sorted.any(
+          (p) =>
+              p.id == spotlightId && (p.isCameraEnabled || p.isScreenSharing),
+        )) {
       next = next.copyWith(spotlightParticipantId: null);
     }
     final ids = {for (final p in sorted) p.id};
@@ -703,18 +700,18 @@ class VoiceController
         // startAudio bem-sucedido dentro do gesto: o banner pode sumir.
         state = state.copyWith(isAudioBlocked: false);
       case MicEnabledChangedEvent(
-          :final participantId,
-          :final isMicrophoneEnabled,
-        ):
+        :final participantId,
+        :final isMicrophoneEnabled,
+      ):
         final localId = ref.read(rtcServiceProvider).localParticipantId;
         if (participantId == localId &&
             state.isMicrophoneEnabled != isMicrophoneEnabled) {
           state = state.copyWith(isMicrophoneEnabled: isMicrophoneEnabled);
         }
       case CameraEnabledChangedEvent(
-          :final participantId,
-          :final isCameraEnabled,
-        ):
+        :final participantId,
+        :final isCameraEnabled,
+      ):
         // Espelho exato do mic: só o evento do participante LOCAL toca o
         // botão; remotos aparecem via snapshot de participants.
         final localId = ref.read(rtcServiceProvider).localParticipantId;
@@ -723,9 +720,9 @@ class VoiceController
           state = state.copyWith(isCameraEnabled: isCameraEnabled);
         }
       case ScreenShareEnabledChangedEvent(
-          :final participantId,
-          :final isScreenSharing,
-        ):
+        :final participantId,
+        :final isScreenSharing,
+      ):
         // Espelho exato do mic/câmera: só o evento do participante LOCAL
         // toca o botão de share; remotos aparecem via snapshot.
         final localId = ref.read(rtcServiceProvider).localParticipantId;
@@ -734,9 +731,9 @@ class VoiceController
           state = state.copyWith(isScreenSharing: isScreenSharing);
         }
       case SystemAudioEnabledChangedEvent(
-          :final participantId,
-          :final isSystemAudioEnabled,
-        ):
+        :final participantId,
+        :final isSystemAudioEnabled,
+      ):
         // Espelho exato do share: só o evento do participante LOCAL toca o
         // estado; remotos aparecem via snapshot de participants.
         final localId = ref.read(rtcServiceProvider).localParticipantId;
@@ -791,7 +788,9 @@ class VoiceController
 
 /// Sessão de voz do canal — `autoDispose.family`: ao trocar de canal (ou
 /// sair da view), o provider é descartado e o controller desconecta.
-final voiceControllerProvider = AutoDisposeNotifierProvider.family<
-    VoiceController, VoiceState, ({String serverId, String channelId})>(
-  VoiceController.new,
-);
+final voiceControllerProvider =
+    AutoDisposeNotifierProvider.family<
+      VoiceController,
+      VoiceState,
+      ({String serverId, String channelId})
+    >(VoiceController.new);

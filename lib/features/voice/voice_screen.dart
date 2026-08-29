@@ -61,11 +61,7 @@ class VoiceScreen extends ConsumerWidget {
             state.status == VoiceSessionStatus.connected)
           _AudioBlockedBanner(onTap: notifier.resumeAudio),
         Expanded(
-          child: _ParticipantsPanel(
-            state: state,
-            notifier: notifier,
-            arg: arg,
-          ),
+          child: _ParticipantsPanel(state: state, notifier: notifier, arg: arg),
         ),
         const Divider(height: 1),
         _Controls(
@@ -86,12 +82,8 @@ class VoiceScreen extends ConsumerWidget {
   }
 
   /// Fluxo do botão de compartilhar tela: ativo → encerra; inativo → abre o
-  /// [RtcScreenSharePicker] e só publica com fonte escolhida (cancelar não
-  /// faz NADA — nem stop nem start).
-  Future<void> _toggleScreenShare(
-    BuildContext context,
-    WidgetRef ref,
-  ) async {
+  /// modal próprio do 4fun para escolher janela/display antes de publicar.
+  Future<void> _toggleScreenShare(BuildContext context, WidgetRef ref) async {
     final arg = (serverId: serverId, channelId: channelId);
     final notifier = ref.read(voiceControllerProvider(arg).notifier);
     final current = ref.read(voiceControllerProvider(arg));
@@ -99,10 +91,10 @@ class VoiceScreen extends ConsumerWidget {
       await notifier.stopScreenShare();
       return;
     }
-    final sourceId = await RtcScreenSharePicker.show(context);
-    if (sourceId == null) return; // usuário cancelou o picker
+    final selection = await RtcScreenSharePicker.show(context);
+    if (selection == null) return;
     await notifier.startScreenShare(
-      sourceId,
+      selection.sourceId,
       includeSystemAudio: current.includeSystemAudio,
     );
   }
@@ -114,8 +106,9 @@ class VoiceScreen extends ConsumerWidget {
     WidgetRef ref,
     ({String serverId, String channelId}) arg,
   ) {
-    unawaited(ref.read(voiceControllerProvider(arg).notifier)
-        .refreshCameraDevices());
+    unawaited(
+      ref.read(voiceControllerProvider(arg).notifier).refreshCameraDevices(),
+    );
     showModalBottomSheet<void>(
       context: context,
       builder: (_) => _CameraSettingsSheet(arg: arg),
@@ -319,8 +312,9 @@ class _ParticipantsPanel extends StatelessWidget {
       case VoiceSessionStatus.connected:
         // Com ≥1 câmera OU tela ativa o painel vira canal de MÍDIA
         // (grid/spotlight); sem nenhuma mantém a lista da Fase 4 intacta.
-        final hasMedia =
-            state.participants.any((p) => p.isCameraEnabled || p.isScreenSharing);
+        final hasMedia = state.participants.any(
+          (p) => p.isCameraEnabled || p.isScreenSharing,
+        );
         if (!hasMedia) {
           return _ParticipantList(participants: state.participants);
         }
@@ -368,8 +362,7 @@ class _VideoGrid extends StatelessWidget {
               arg: arg,
               participant: participant,
               role: VoiceVideoTileRole.grid,
-              onTap: participant.isCameraEnabled ||
-                      participant.isScreenSharing
+              onTap: participant.isCameraEnabled || participant.isScreenSharing
                   ? () => notifier.toggleSpotlight(participant.id)
                   : null,
             );
@@ -400,8 +393,7 @@ class _SpotlightLayout extends StatelessWidget {
     // assim, se não houver destaque válido, cai no grid.
     RtcParticipant? spotlight;
     for (final p in state.participants) {
-      if (p.id == spotlightId &&
-          (p.isCameraEnabled || p.isScreenSharing)) {
+      if (p.id == spotlightId && (p.isCameraEnabled || p.isScreenSharing)) {
         spotlight = p;
         break;
       }
@@ -528,21 +520,14 @@ class _ParticipantTile extends ConsumerWidget {
               ),
             ),
           ),
-          if (isLocal) ...[
-            const SizedBox(width: 6),
-            const _LocalBadge(),
-          ],
+          if (isLocal) ...[const SizedBox(width: 6), const _LocalBadge()],
         ],
       ),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           if (participant.isSpeaking)
-            Icon(
-              Icons.graphic_eq,
-              size: 18,
-              color: theme.colorScheme.primary,
-            ),
+            Icon(Icons.graphic_eq, size: 18, color: theme.colorScheme.primary),
           const SizedBox(width: 10),
           Icon(
             participant.isCameraEnabled ? Icons.videocam : Icons.videocam_off,
@@ -675,9 +660,7 @@ class _Controls extends StatelessWidget {
           icon: state.isCameraEnabled ? Icons.videocam : Icons.videocam_off,
           active: state.isCameraEnabled,
           activeColor: theme.colorScheme.error,
-          tooltip: state.isCameraEnabled
-              ? 'Desativar câmera'
-              : 'Ativar câmera',
+          tooltip: state.isCameraEnabled ? 'Desativar câmera' : 'Ativar câmera',
           onPressed: onToggleCamera,
         ),
         const SizedBox(width: 8),
@@ -698,7 +681,8 @@ class _Controls extends StatelessWidget {
         // — pode ter falhado a publicação); sem share, a preferência.
         _mediaToggleButton(
           theme: theme,
-          icon: (state.isScreenSharing
+          icon:
+              (state.isScreenSharing
                   ? state.isSystemAudioEnabled
                   : state.includeSystemAudio)
               ? Icons.volume_up
@@ -709,11 +693,11 @@ class _Controls extends StatelessWidget {
           activeColor: theme.colorScheme.primary,
           tooltip: state.isScreenSharing
               ? (state.isSystemAudioEnabled
-                  ? 'Transmitindo áudio de sistema'
-                  : 'Sem áudio de sistema neste compartilhamento')
+                    ? 'Transmitindo áudio de sistema'
+                    : 'Sem áudio de sistema neste compartilhamento')
               : (state.includeSystemAudio
-                  ? 'Áudio de sistema no próximo compartilhamento'
-                  : 'Incluir áudio de sistema no compartilhamento'),
+                    ? 'Áudio de sistema no próximo compartilhamento'
+                    : 'Incluir áudio de sistema no compartilhamento'),
           onPressed: state.isScreenSharing || state.isReconnecting
               ? null
               : onToggleSystemAudio,
@@ -766,9 +750,7 @@ class _Controls extends StatelessWidget {
           icon: state.isCameraEnabled ? Icons.videocam : Icons.videocam_off,
           active: state.isCameraEnabled,
           activeColor: theme.colorScheme.error,
-          tooltip: state.isCameraEnabled
-              ? 'Desativar câmera'
-              : 'Ativar câmera',
+          tooltip: state.isCameraEnabled ? 'Desativar câmera' : 'Ativar câmera',
           onPressed: onToggleCamera,
         ),
         const SizedBox(width: 12),
@@ -852,11 +834,11 @@ class _Controls extends StatelessWidget {
                   Text(
                     state.isScreenSharing
                         ? (state.isSystemAudioEnabled
-                            ? 'Áudio de sistema: transmitindo'
-                            : 'Áudio de sistema: sem áudio')
+                              ? 'Áudio de sistema: transmitindo'
+                              : 'Áudio de sistema: sem áudio')
                         : (state.includeSystemAudio
-                            ? 'Áudio de sistema: ligado'
-                            : 'Áudio de sistema: desligado'),
+                              ? 'Áudio de sistema: ligado'
+                              : 'Áudio de sistema: desligado'),
                   ),
                 ],
               ),
