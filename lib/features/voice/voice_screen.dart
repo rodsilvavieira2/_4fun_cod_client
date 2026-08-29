@@ -81,8 +81,9 @@ class VoiceScreen extends ConsumerWidget {
     );
   }
 
-  /// Fluxo do botão de compartilhar tela: ativo → encerra; inativo → abre o
-  /// modal próprio do 4fun para escolher janela/display antes de publicar.
+  /// Fluxo do botão de compartilhar tela: ativo → encerra; inativo → delega a
+  /// escolha ao navegador no Web, ao portal no Linux ou ao seletor de fontes
+  /// do desktopCapturer no Windows.
   Future<void> _toggleScreenShare(BuildContext context, WidgetRef ref) async {
     final arg = (serverId: serverId, channelId: channelId);
     final notifier = ref.read(voiceControllerProvider(arg).notifier);

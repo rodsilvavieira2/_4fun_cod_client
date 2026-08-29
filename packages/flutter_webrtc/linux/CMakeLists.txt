@@ -29,6 +29,7 @@ add_library(${PLUGIN_NAME} SHARED
   "../common/cpp/src/flutter_webrtc_base.cc"
   "../common/cpp/src/flutter_common.cc"
   "loopback_capturer_factory.cc"
+  "portal_video_capturer.cc"
   "pulse_loopback_capturer.cc"
   "flutter_webrtc_plugin.cc"
   "flutter/core_implementations.cc"
@@ -56,6 +57,18 @@ target_include_directories(${PLUGIN_NAME} INTERFACE
 )
 target_link_libraries(${PLUGIN_NAME} PRIVATE flutter)
 target_link_libraries(${PLUGIN_NAME} PRIVATE PkgConfig::GTK)
+
+# Native Wayland screen sharing. The xdg-desktop-portal session is opened by
+# the plugin and its PipeWire stream is converted to I420 by GStreamer before
+# being injected into a custom WebRTC video source. This avoids the two portal
+# dialogs caused by RTCDesktopMediaList enumeration followed by capture.
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(PORTAL_CAPTURE REQUIRED IMPORTED_TARGET
+  gio-unix-2.0
+  gstreamer-app-1.0
+  gstreamer-video-1.0
+)
+target_link_libraries(${PLUGIN_NAME} PRIVATE PkgConfig::PORTAL_CAPTURE)
 
 # GCC 14+ (and notably GCC 16) tightened transitive header inclusion, so the
 # bundled libwebrtc headers (e.g. third_party/libwebrtc/include/rtc_types.h)

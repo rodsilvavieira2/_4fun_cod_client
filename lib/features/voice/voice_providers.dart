@@ -350,7 +350,8 @@ class VoiceController
   }
 
   /// Publica a tela local (botão de compartilhar; [sourceId] nulo delega a
-  /// escolha para o portal nativo do SO). Espelho do [toggleCamera]: sem
+  /// escolha ao navegador ou ao portal nativo do SO). Espelho do
+  /// [toggleCamera]: sem
   /// otimismo antes do await, erro de captura NUNCA derruba a sessão e o
   /// [ScreenShareEnabledChangedEvent] local reconcilia.
   ///

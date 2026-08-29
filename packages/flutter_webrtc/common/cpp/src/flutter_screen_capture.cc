@@ -5,6 +5,10 @@
 #include <cstdlib>
 #include <stdexcept>
 
+#ifdef __linux__
+#include "portal_video_capturer.h"
+#endif
+
 namespace flutter_webrtc_plugin {
 namespace {
 
@@ -349,6 +353,56 @@ void FlutterScreenCapture::GetDisplayMedia(
   if (it != constraints.end() && TypeIs<EncodableMap>(it->second)) {
     video_constraints = GetValue<EncodableMap>(it->second);
   }
+
+#ifdef __linux__
+  // On Linux, use xdg-desktop-portal as the platform source picker. Bypass
+  // RTCDesktopMediaList enumeration so the request opens exactly one portal
+  // session whose PipeWire frames feed a custom WebRTC source directly.
+  if (source_id == "0") {
+    auto* portal_impl = new RefCountedObject<PortalVideoCapturer>();
+    scoped_refptr<RTCVideoCapturer> portal_capturer = portal_impl;
+    scoped_refptr<RTCVideoSource> video_source =
+        base_->factory_->CreateCustomVideoSource(
+            "linux_portal_screen_capture",
+            base_->ParseMediaConstraints(video_constraints));
+    portal_impl->SetVideoSource(video_source);
+
+    if (!portal_impl->StartCapture()) {
+      if (loopback_capturer_) {
+        loopback_capturer_->Stop();
+        loopback_capturer_.reset();
+        loopback_audio_source_ = nullptr;
+      }
+      for (auto audio_track : stream->audio_tracks().std_vector()) {
+        stream->RemoveTrack(audio_track);
+        base_->local_tracks_.erase(audio_track->id().std_string());
+      }
+      result->Error("GetDisplayMedia",
+                    "Linux portal capture failed: " +
+                        portal_impl->last_error());
+      return;
+    }
+
+    scoped_refptr<RTCVideoTrack> track =
+        base_->factory_->CreateVideoTrack(video_source, uuid.c_str());
+
+    EncodableList video_tracks;
+    EncodableMap info;
+    info[EncodableValue("id")] = EncodableValue(track->id().std_string());
+    info[EncodableValue("label")] = EncodableValue(track->id().std_string());
+    info[EncodableValue("kind")] = EncodableValue(track->kind().std_string());
+    info[EncodableValue("enabled")] = EncodableValue(track->enabled());
+    video_tracks.push_back(EncodableValue(info));
+    params[EncodableValue("videoTracks")] = EncodableValue(video_tracks);
+
+    stream->AddTrack(track);
+    base_->local_tracks_[track->id().std_string()] = track;
+    base_->local_streams_[uuid] = stream;
+    base_->video_capturers_[track->id().std_string()] = portal_capturer;
+    result->Success(EncodableValue(params));
+    return;
+  }
+#endif
 
   scoped_refptr<MediaSource> source;
 #ifdef __linux__

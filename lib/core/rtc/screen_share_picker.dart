@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart' as rtc;
 
@@ -28,10 +29,11 @@ class RtcScreenShareSelection {
 /// Modal Flutter próprio para seleção de compartilhamento de tela.
 ///
 /// Estratégia por plataforma:
-/// - Windows e Linux/X11: lista janelas + displays via `desktopCapturer`.
-/// - Linux/Wayland: lista displays via `desktopCapturer` e usa uma fonte
-///   sintética `portal:window`; a escolha real da janela acontece no
-///   xdg-desktop-portal, sem chamar a listagem nativa que causava SIGSEGV.
+/// - Web: delega ao seletor nativo do navegador.
+/// - Linux: não abre este modal e delega toda a escolha ao portal do sistema
+///   por uma única sessão xdg-desktop-portal/PipeWire.
+/// - Windows: lista janelas + displays via `desktopCapturer`, pois o backend
+///   RTC dessa plataforma exige que o app forneça o sourceId.
 ///
 /// O visual é inspirado no portal usado pelo OBS, mas a captura real continua
 /// passando pelo backend seguro da plataforma.
@@ -46,6 +48,16 @@ class RtcScreenSharePicker {
     String cancelText = 'Cancelar',
     String shareText = 'Compartilhar',
   }) {
+    if (kIsWeb || Platform.isLinux) {
+      return Future.value(
+        const RtcScreenShareSelection(
+          kind: RtcScreenShareSourceKind.display,
+          sourceId: null,
+          usesSystemPicker: true,
+        ),
+      );
+    }
+
     return showDialog<RtcScreenShareSelection>(
       context: context,
       barrierDismissible: true,
@@ -76,34 +88,21 @@ class _ScreenShareSource {
 }
 
 class _ScreenShareSourceSnapshot {
-  const _ScreenShareSourceSnapshot({required this.sources, this.warning});
+  const _ScreenShareSourceSnapshot({required this.sources});
 
   final List<_ScreenShareSource> sources;
-  final String? warning;
 }
 
 abstract class _ScreenShareSourceProvider {
   const _ScreenShareSourceProvider();
 
-  factory _ScreenShareSourceProvider.current() {
-    if (Platform.isLinux && _isWaylandSession) {
-      return const _LinuxWaylandSourceProvider();
-    }
-    return const _DesktopCapturerSourceProvider();
-  }
+  factory _ScreenShareSourceProvider.current() = _DesktopCapturerSourceProvider;
 
   Future<_ScreenShareSourceSnapshot> loadSources();
 
   bool canUseKind(RtcScreenShareSourceKind kind);
 
   String? disabledReasonFor(RtcScreenShareSourceKind kind);
-
-  static bool get _isWaylandSession {
-    final sessionType = Platform.environment['XDG_SESSION_TYPE']?.toLowerCase();
-    final waylandDisplay = Platform.environment['WAYLAND_DISPLAY'];
-    return sessionType == 'wayland' ||
-        (waylandDisplay != null && waylandDisplay.isNotEmpty);
-  }
 }
 
 class _DesktopCapturerSourceProvider implements _ScreenShareSourceProvider {
@@ -122,34 +121,6 @@ class _DesktopCapturerSourceProvider implements _ScreenShareSourceProvider {
     );
     return _ScreenShareSourceSnapshot(
       sources: sources.map(_fromWebRtcSource).toList(growable: false),
-    );
-  }
-}
-
-class _LinuxWaylandSourceProvider implements _ScreenShareSourceProvider {
-  const _LinuxWaylandSourceProvider();
-
-  static const _portalWindowSource = _ScreenShareSource(
-    id: 'portal:window',
-    name: 'Escolher janela pelo portal do sistema',
-    kind: RtcScreenShareSourceKind.window,
-  );
-
-  @override
-  bool canUseKind(RtcScreenShareSourceKind kind) => true;
-
-  @override
-  String? disabledReasonFor(RtcScreenShareSourceKind kind) => null;
-
-  @override
-  Future<_ScreenShareSourceSnapshot> loadSources() async {
-    final sources = await rtc.desktopCapturer.getSources(
-      types: const [rtc.SourceType.Screen],
-    );
-    return _ScreenShareSourceSnapshot(
-      sources: [_portalWindowSource, ...sources.map(_fromWebRtcSource)],
-      warning:
-          'Linux/Wayland detectado: janelas usam o portal do sistema na etapa final, como no OBS.',
     );
   }
 }
@@ -195,7 +166,6 @@ class _ScreenShareDialogState extends State<_ScreenShareDialog> {
   RtcScreenShareSourceKind _activeKind = RtcScreenShareSourceKind.window;
   List<_ScreenShareSource> _sources = const [];
   String? _selectedId;
-  String? _warning;
   String? _error;
   bool _loading = true;
 
@@ -218,7 +188,6 @@ class _ScreenShareDialogState extends State<_ScreenShareDialog> {
       if (!mounted) return;
       setState(() {
         _sources = snapshot.sources;
-        _warning = snapshot.warning;
         if (_selectedId != null &&
             !_sources.any((source) => source.id == _selectedId)) {
           _selectedId = null;
@@ -330,10 +299,6 @@ class _ScreenShareDialogState extends State<_ScreenShareDialog> {
                 ),
                 onChanged: _changeKind,
               ),
-              if (_warning != null) ...[
-                const SizedBox(height: 14),
-                _InlineNotice(text: _warning!),
-              ],
               const SizedBox(height: 16),
               Expanded(
                 child: _SourcePanel(
@@ -534,31 +499,6 @@ class _TabButton extends StatelessWidget {
               style: TextStyle(color: foreground, fontWeight: FontWeight.w700),
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-class _InlineNotice extends StatelessWidget {
-  const _InlineNotice({required this.text});
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: const Color(0xFF2A2C34),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFF3C4250)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        child: Text(
-          text,
-          textAlign: TextAlign.center,
-          style: const TextStyle(color: Color(0xFFD7DAE1), fontSize: 12),
         ),
       ),
     );
