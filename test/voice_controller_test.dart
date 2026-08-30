@@ -18,6 +18,8 @@ class FakeRtcService implements RtcService {
       StreamController<List<RtcParticipant>>.broadcast();
   final StreamController<RtcEvent> eventsController =
       StreamController<RtcEvent>.broadcast();
+  final StreamController<void> devicesController =
+      StreamController<void>.broadcast();
 
   /// Identity do participante local (configurável por teste).
   @override
@@ -47,6 +49,11 @@ class FakeRtcService implements RtcService {
   setQualityCalls = [];
   int listCameraDevicesCalls = 0;
   List<RtcVideoDevice> cameraDevices = const [];
+  List<RtcAudioDevice> audioInputs = const [];
+  List<RtcAudioDevice> audioOutputs = const [];
+  String? selectedAudioInputId;
+  String? selectedAudioOutputId;
+  bool remoteAudioEnabled = true;
   RtcVideoTrackRef? cameraTrackRef;
 
   // Contrato de qualidade do screen share — registra escolhas pendentes e
@@ -215,6 +222,30 @@ class FakeRtcService implements RtcService {
 
   @override
   Future<void> resumeAudio() async => resumeAudioCalls++;
+
+  @override
+  Stream<void> get mediaDevicesChanged => devicesController.stream;
+
+  @override
+  Future<List<RtcAudioDevice>> listAudioInputDevices() async => audioInputs;
+
+  @override
+  Future<List<RtcAudioDevice>> listAudioOutputDevices() async => audioOutputs;
+
+  @override
+  Future<void> selectAudioInput(String? deviceId) async {
+    selectedAudioInputId = deviceId;
+  }
+
+  @override
+  Future<void> selectAudioOutput(String? deviceId) async {
+    selectedAudioOutputId = deviceId;
+  }
+
+  @override
+  Future<void> setRemoteAudioEnabled(bool enabled) async {
+    remoteAudioEnabled = enabled;
+  }
 
   void pushParticipants(List<RtcParticipant> list) =>
       participantsController.add(list);
@@ -439,6 +470,27 @@ void main() {
 
       expect(rtc.enableMicCalls, 0);
       expect(rtc.disableMicCalls, 0);
+    });
+
+    test('ensurdecer interrompe áudio remoto, muta e restaura o mic', () async {
+      rtc.localId = 'user_u1';
+      final notifier = buildVoice();
+      await notifier.join();
+      await settle();
+
+      await notifier.toggleDeafen();
+
+      expect(state().isDeafened, isTrue);
+      expect(state().isMicrophoneEnabled, isFalse);
+      expect(rtc.remoteAudioEnabled, isFalse);
+      expect(rtc.disableMicCalls, 1);
+
+      await notifier.toggleDeafen();
+
+      expect(state().isDeafened, isFalse);
+      expect(state().isMicrophoneEnabled, isTrue);
+      expect(rtc.remoteAudioEnabled, isTrue);
+      expect(rtc.enableMicCalls, 1);
     });
 
     test('troca de canal (dispose do provider) desconecta', () async {

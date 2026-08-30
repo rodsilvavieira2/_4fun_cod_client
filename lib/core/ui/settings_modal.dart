@@ -18,6 +18,7 @@ import 'settings_sections/voice_video_section.dart';
 Future<void> showSettingsModal(
   BuildContext context, {
   String? serverId,
+  SettingsSection initialSection = SettingsSection.account,
 }) {
   return showGeneralDialog(
     context: context,
@@ -29,7 +30,7 @@ Future<void> showSettingsModal(
       return FadeTransition(opacity: animation, child: child);
     },
     pageBuilder: (context, animation, secondaryAnimation) {
-      return _SettingsModal(serverId: serverId);
+      return _SettingsModal(serverId: serverId, initialSection: initialSection);
     },
   );
 }
@@ -38,16 +39,23 @@ Future<void> showSettingsModal(
 /// reabrir; nada persiste (decisão da SPEC 3, não há fonte de verdade de
 /// config no client).
 class _SettingsModal extends StatefulWidget {
-  const _SettingsModal({this.serverId});
+  const _SettingsModal({this.serverId, required this.initialSection});
 
   final String? serverId;
+  final SettingsSection initialSection;
 
   @override
   State<_SettingsModal> createState() => _SettingsModalState();
 }
 
 class _SettingsModalState extends State<_SettingsModal> {
-  SettingsSection _section = SettingsSection.account;
+  late SettingsSection _section;
+
+  @override
+  void initState() {
+    super.initState();
+    _section = widget.initialSection;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -114,9 +122,7 @@ class _SettingsBody extends StatelessWidget {
           height: 48,
           padding: const EdgeInsets.symmetric(horizontal: 16),
           decoration: const BoxDecoration(
-            border: Border(
-              bottom: BorderSide(color: AppThemeColors.hairline),
-            ),
+            border: Border(bottom: BorderSide(color: AppThemeColors.hairline)),
           ),
           child: Row(
             children: [
@@ -170,10 +176,7 @@ class SettingsModalEscClose extends StatelessWidget {
         const SingleActivator(LogicalKeyboardKey.escape): () =>
             Navigator.of(context).maybePop(),
       },
-      child: Focus(
-        autofocus: true,
-        child: child,
-      ),
+      child: Focus(autofocus: true, child: child),
     );
   }
 }

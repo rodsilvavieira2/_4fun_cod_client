@@ -222,15 +222,42 @@ enum RtcScreenShareQuality {
   q360p3,
 }
 
-/// Dispositivo de captura de vídeo (câmera).
-class RtcVideoDevice {
-  const RtcVideoDevice({required this.id, required this.label});
+/// Categoria de um dispositivo de mídia disponível no sistema.
+enum RtcMediaDeviceKind { audioInput, audioOutput, videoInput }
+
+/// Dispositivo de mídia enumerado pelo sistema operacional/navegador.
+class RtcMediaDevice {
+  const RtcMediaDevice({
+    required this.id,
+    required this.label,
+    required this.kind,
+  });
 
   /// deviceId do MediaDevice (usado em [RtcService.switchCamera]).
   final String id;
 
   /// Label amigável (pode vir vazio antes da permissão de câmera).
   final String label;
+
+  final RtcMediaDeviceKind kind;
+}
+
+/// Dispositivo de captura de vídeo (câmera).
+class RtcVideoDevice extends RtcMediaDevice {
+  const RtcVideoDevice({required super.id, required super.label})
+    : super(kind: RtcMediaDeviceKind.videoInput);
+}
+
+/// Dispositivo de áudio de entrada ou saída.
+class RtcAudioDevice extends RtcMediaDevice {
+  const RtcAudioDevice({
+    required super.id,
+    required super.label,
+    required super.kind,
+  }) : assert(
+         kind == RtcMediaDeviceKind.audioInput ||
+             kind == RtcMediaDeviceKind.audioOutput,
+       );
 }
 
 /// Referência OPACA a uma track de vídeo.
@@ -345,6 +372,26 @@ abstract class RtcService {
   /// Lista as câmeras disponíveis no dispositivo (enumerateDevices
   /// `type: 'videoinput'`). Labels podem vir vazias antes da permissão.
   Future<List<RtcVideoDevice>> listCameraDevices();
+
+  /// Lista os microfones disponíveis. Labels podem estar vazias antes da
+  /// permissão no navegador.
+  Future<List<RtcAudioDevice>> listAudioInputDevices();
+
+  /// Lista as saídas de áudio disponíveis.
+  Future<List<RtcAudioDevice>> listAudioOutputDevices();
+
+  /// Emite quando o sistema informa adição/remoção de dispositivos.
+  Stream<void> get mediaDevicesChanged;
+
+  /// Define o microfone. `null` volta ao padrão atual do sistema.
+  Future<void> selectAudioInput(String? deviceId);
+
+  /// Define a saída de áudio. `null` volta ao padrão atual do sistema.
+  Future<void> selectAudioOutput(String? deviceId);
+
+  /// Liga/desliga localmente todo áudio remoto, sem sinalizar essa decisão à
+  /// sala. O controller usa isso para implementar o ensurdecer.
+  Future<void> setRemoteAudioEnabled(bool enabled);
 
   /// Seleciona a câmera usada pelo preview e pela publicação local.
   ///

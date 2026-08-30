@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:flutter_webrtc/flutter_webrtc.dart' as rtc;
 
 // `SpeakingChangedEvent` e `ReconnectingEvent` (mixin, events.dart:71)
@@ -112,6 +112,12 @@ class LiveKitRtcService implements RtcService {
   /// seleção feita no preview também seja usada quando a câmera for publicada.
   String? _selectedCameraId;
 
+  /// Preferências de áudio são locais e sobrevivem à sala atual. Quando não
+  /// há room, ficam pendentes para o próximo connect.
+  String? _selectedAudioInputId;
+  String? _selectedAudioOutputId;
+  bool _remoteAudioEnabled = true;
+
   /// Track de preview criada fora da room. Ela nunca é publicada e só existe
   /// enquanto o sheet de configurações está aberto.
   LocalVideoTrack? _cameraPreviewTrack;
@@ -161,6 +167,10 @@ class LiveKitRtcService implements RtcService {
   @override
   Stream<RtcEvent> get events => _eventsController.stream;
 
+  @override
+  Stream<void> get mediaDevicesChanged =>
+      Hardware.instance.onDeviceChange.stream.map<void>((_) {});
+
   /// Gerador de token passado no último [connect], disponível para o
   /// controller obter um token fresco numa reconexão manual.
   RtcTokenGenerator? get tokenGenerator => _tokenGenerator;
@@ -181,7 +191,7 @@ class LiveKitRtcService implements RtcService {
     _tokenGenerator = tokenGenerator;
     _livekitUrl = url; // preservada para o loop de reconexão automática
 
-    final room = Room(roomOptions: _roomOptions);
+    final room = Room(roomOptions: _effectiveRoomOptions());
     _room = room;
     _wire(room);
 
@@ -661,7 +671,11 @@ class LiveKitRtcService implements RtcService {
   Future<void> switchCamera(String deviceId) async {
     await _runCameraPreviewOperation(() async {
       final room = _room;
-      if (room == null || _disposed) return;
+      if (_disposed) return;
+      // A preferência precisa sobreviver mesmo fora de uma chamada: a próxima
+      // publicação/preview já deve abrir na câmera selecionada.
+      _selectedCameraId = deviceId;
+      if (room == null) return;
       final localParticipant = room.localParticipant;
       if (localParticipant == null) return;
 
@@ -669,7 +683,6 @@ class LiveKitRtcService implements RtcService {
       if (preview != null) {
         // API nativa 2.11.0: restartTrack interno, sem republicar nada.
         await preview.switchCamera(deviceId);
-        _selectedCameraId = deviceId;
         return;
       }
 
@@ -681,7 +694,6 @@ class LiveKitRtcService implements RtcService {
       }
       // Com a câmera OFF e sem preview, a seleção ainda precisa sobreviver
       // para o próximo enableCamera().
-      _selectedCameraId = deviceId;
     });
   }
 
@@ -697,6 +709,92 @@ class LiveKitRtcService implements RtcService {
       for (final device in devices)
         RtcVideoDevice(id: device.deviceId, label: device.label),
     ];
+  }
+
+  @override
+  Future<List<RtcAudioDevice>> listAudioInputDevices() async {
+    final devices = await Hardware.instance.audioInputs();
+    return [
+      for (final device in devices)
+        RtcAudioDevice(
+          id: device.deviceId,
+          label: device.label,
+          kind: RtcMediaDeviceKind.audioInput,
+        ),
+    ];
+  }
+
+  @override
+  Future<List<RtcAudioDevice>> listAudioOutputDevices() async {
+    final devices = await Hardware.instance.audioOutputs();
+    return [
+      for (final device in devices)
+        RtcAudioDevice(
+          id: device.deviceId,
+          label: device.label,
+          kind: RtcMediaDeviceKind.audioOutput,
+        ),
+    ];
+  }
+
+  @override
+  Future<void> selectAudioInput(String? deviceId) async {
+    if (_disposed) return;
+    final devices = await Hardware.instance.audioInputs();
+    final device = _resolveAudioDevice(devices, deviceId);
+    if (device == null) {
+      if (deviceId != null) {
+        throw StateError('Microfone selecionado não está disponível.');
+      }
+      _selectedAudioInputId = null;
+      return;
+    }
+    final room = _room;
+    if (room != null) {
+      await room.setAudioInputDevice(device);
+    } else if (!kIsWeb) {
+      await Hardware.instance.selectAudioInput(device);
+    }
+    _selectedAudioInputId = deviceId;
+  }
+
+  @override
+  Future<void> selectAudioOutput(String? deviceId) async {
+    if (_disposed) return;
+    final devices = await Hardware.instance.audioOutputs();
+    final device = _resolveAudioDevice(devices, deviceId);
+    if (device == null) {
+      if (deviceId != null) {
+        throw StateError('Saída de áudio selecionada não está disponível.');
+      }
+      _selectedAudioOutputId = null;
+      return;
+    }
+    final room = _room;
+    if (room != null) {
+      await room.setAudioOutputDevice(device);
+    } else if (!kIsWeb) {
+      await Hardware.instance.selectAudioOutput(device);
+    }
+    _selectedAudioOutputId = deviceId;
+  }
+
+  @override
+  Future<void> setRemoteAudioEnabled(bool enabled) async {
+    _remoteAudioEnabled = enabled;
+    final room = _room;
+    if (room == null || _disposed) return;
+    for (final participant in room.remoteParticipants.values) {
+      for (final publication in participant.audioTrackPublications) {
+        final track = publication.track;
+        if (track is! RemoteAudioTrack) continue;
+        if (enabled) {
+          await track.start();
+        } else {
+          await track.stop();
+        }
+      }
+    }
   }
 
   @override
@@ -817,6 +915,15 @@ class LiveKitRtcService implements RtcService {
       // re-deriva o estado de mic do participante afetado e emite
       // MicEnabledChangedEvent se mudou.
       room.events.on<TrackPublishedEvent>((e) {
+        _syncParticipant(e.participant);
+        _emitSnapshot();
+      }),
+      room.events.on<TrackSubscribedEvent>((e) {
+        // Ensurdecer é uma decisão local. Tracks que chegam depois do clique
+        // também não podem começar a tocar.
+        if (!_remoteAudioEnabled && e.track is RemoteAudioTrack) {
+          unawaited((e.track as RemoteAudioTrack).stop());
+        }
         _syncParticipant(e.participant);
         _emitSnapshot();
       }),
@@ -1115,8 +1222,41 @@ class LiveKitRtcService implements RtcService {
     _livekitUrl = null;
     _screenShareQuality = RtcScreenShareQuality.auto;
     _screenShareEncodingBaseline = null;
-    _selectedCameraId = null;
+    _remoteAudioEnabled = true;
     await _teardownRoom();
+  }
+
+  RoomOptions _effectiveRoomOptions() {
+    var options = _roomOptions;
+    final audioInputId = _selectedAudioInputId;
+    if (audioInputId != null) {
+      options = options.copyWith(
+        defaultAudioCaptureOptions: options.defaultAudioCaptureOptions.copyWith(
+          deviceId: audioInputId,
+        ),
+      );
+    }
+    final audioOutputId = _selectedAudioOutputId;
+    if (audioOutputId != null) {
+      options = options.copyWith(
+        defaultAudioOutputOptions: options.defaultAudioOutputOptions.copyWith(
+          deviceId: audioOutputId,
+        ),
+      );
+    }
+    return options;
+  }
+
+  MediaDevice? _resolveAudioDevice(
+    List<MediaDevice> devices,
+    String? requestedId,
+  ) {
+    if (devices.isEmpty) return null;
+    if (requestedId == null) return devices.first;
+    for (final device in devices) {
+      if (device.deviceId == requestedId) return device;
+    }
+    return null;
   }
 
   CameraCaptureOptions _cameraCaptureOptions({String? deviceId}) {

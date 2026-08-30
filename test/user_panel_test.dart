@@ -19,40 +19,42 @@ class _FakeAuthController extends AuthController {
 
 void main() {
   testWidgets(
-      'UserPanel renderiza sem assert (color+decoration) com usuário autenticado',
-      (WidgetTester tester) async {
-    const user = User(
-      id: 'user-1',
-      name: 'Rodrigo',
-      username: 'rodrigo',
-      email: 'rodrigo@example.com',
-    );
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          authControllerProvider.overrideWith(
-            () => _FakeAuthController(const Authenticated(user: user)),
-          ),
-        ],
-        child: const MaterialApp(
-          home: Scaffold(body: UserPanel()),
+    'UserPanel renderiza sem assert (color+decoration) com usuário autenticado',
+    (WidgetTester tester) async {
+      const user = User(
+        id: 'user-1',
+        name: 'Rodrigo',
+        username: 'rodrigo',
+        email: 'rodrigo@example.com',
+      );
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            authControllerProvider.overrideWith(
+              () => _FakeAuthController(const Authenticated(user: user)),
+            ),
+          ],
+          child: const MaterialApp(home: Scaffold(body: UserPanel())),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
+      );
+      await tester.pumpAndSettle();
 
-    // O container não pode lançar a assert do Flutter ("color is just a
-    // shorthand for decoration") — a presença dos widgets confirma o
-    // build sem ErrorWidget.
-    expect(find.text('Rodrigo'), findsOneWidget);
-    expect(find.text('Online'), findsOneWidget);
-    expect(find.byIcon(Icons.mic_none), findsOneWidget);
-    expect(find.byIcon(Icons.headset_outlined), findsOneWidget);
-    expect(find.byIcon(Icons.settings_outlined), findsOneWidget);
-  });
+      // O container não pode lançar a assert do Flutter ("color is just a
+      // shorthand for decoration") — a presença dos widgets confirma o
+      // build sem ErrorWidget.
+      expect(find.text('Rodrigo'), findsOneWidget);
+      expect(find.text('Online'), findsOneWidget);
+      // Fora de uma chamada os controles principais ficam desativados, mas os
+      // seletores nas setas permanecem disponíveis.
+      expect(find.byIcon(Icons.mic_off_outlined), findsOneWidget);
+      expect(find.byIcon(Icons.headset_outlined), findsOneWidget);
+      expect(find.byIcon(Icons.settings_outlined), findsOneWidget);
+    },
+  );
 
-  testWidgets('UserPanel tolera usuário ausente (estado de bootstrap)',
-      (WidgetTester tester) async {
+  testWidgets('UserPanel tolera usuário ausente (estado de bootstrap)', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -60,9 +62,7 @@ void main() {
             () => _FakeAuthController(const AuthUnknown()),
           ),
         ],
-        child: const MaterialApp(
-          home: Scaffold(body: UserPanel()),
-        ),
+        child: const MaterialApp(home: Scaffold(body: UserPanel())),
       ),
     );
     await tester.pumpAndSettle();

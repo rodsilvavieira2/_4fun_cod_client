@@ -111,26 +111,30 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
         return Scaffold(
           body: isNarrow
               ? (showContent
-                  ? _channelContent(context, selectedChannel, onBack: () {
-                      setState(() => _selectedChannelId = null);
-                    })
-                  : Row(
-                      children: [
-                        ServerRail(
-                          selectedServerId: widget.serverId,
-                          width: 56,
-                          compact: true,
-                        ),
-                        Expanded(
-                          child: _channelListPanel(
-                            context,
-                            detail: detail,
-                            isOwner: isOwner,
-                            channelList: channelList,
+                    ? _channelContent(
+                        context,
+                        selectedChannel,
+                        onBack: () {
+                          setState(() => _selectedChannelId = null);
+                        },
+                      )
+                    : Row(
+                        children: [
+                          ServerRail(
+                            selectedServerId: widget.serverId,
+                            width: 56,
+                            compact: true,
                           ),
-                        ),
-                      ],
-                    ))
+                          Expanded(
+                            child: _channelListPanel(
+                              context,
+                              detail: detail,
+                              isOwner: isOwner,
+                              channelList: channelList,
+                            ),
+                          ),
+                        ],
+                      ))
               : _desktopBody(
                   context,
                   detail: detail,
@@ -183,6 +187,14 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
     required bool isOwner,
     required List<ServerChannel> channelList,
   }) {
+    ServerChannel? selectedVoiceChannel;
+    for (final channel in channelList) {
+      if (channel.id == _selectedChannelId &&
+          channel.type == ChannelType.voice) {
+        selectedVoiceChannel = channel;
+        break;
+      }
+    }
     return Container(
       color: AppThemeColors.card,
       child: Column(
@@ -213,7 +225,15 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
               ),
             ),
           ),
-          UserPanel(onOpenSettings: () => _openSettings(context)),
+          UserPanel(
+            onOpenSettings: () => _openSettings(context),
+            voiceArg: selectedVoiceChannel == null
+                ? null
+                : (
+                    serverId: widget.serverId,
+                    channelId: selectedVoiceChannel.id,
+                  ),
+          ),
         ],
       ),
     );
@@ -249,21 +269,19 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
             ),
           Expanded(
             child: channel == null
-                ? const Center(
-                    child: Text('Selecione um canal'),
-                  )
+                ? const Center(child: Text('Selecione um canal'))
                 : switch (channel.type) {
                     ChannelType.text => ChatScreen(
-                        key: ValueKey(channel.id),
-                        serverId: widget.serverId,
-                        channelId: channel.id,
-                      ),
+                      key: ValueKey(channel.id),
+                      serverId: widget.serverId,
+                      channelId: channel.id,
+                    ),
                     ChannelType.voice => VoiceScreen(
-                        key: ValueKey(channel.id),
-                        serverId: widget.serverId,
-                        channelId: channel.id,
-                        channelName: channel.name,
-                      ),
+                      key: ValueKey(channel.id),
+                      serverId: widget.serverId,
+                      channelId: channel.id,
+                      channelName: channel.name,
+                    ),
                   },
           ),
         ],

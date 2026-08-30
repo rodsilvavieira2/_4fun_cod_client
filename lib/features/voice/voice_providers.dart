@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/rtc/media_devices_provider.dart';
 import '../../core/rtc/rtc_providers.dart';
 import '../../core/rtc/rtc_service.dart';
 import '../../shared/models/voice.dart';
@@ -33,6 +34,7 @@ class VoiceState {
     this.isScreenSharing = false,
     this.includeSystemAudio = false,
     this.isSystemAudioEnabled = false,
+    this.isDeafened = false,
     this.isReconnecting = false,
     this.isAudioBlocked = false,
     this.autoSpotlightActive = false,
@@ -73,6 +75,10 @@ class VoiceState {
   /// Se o áudio de sistema LOCAL está sendo transmitido agora (espelho do
   /// [SystemAudioEnabledChangedEvent] do participante local reconcilia).
   final bool isSystemAudioEnabled;
+
+  /// Áudio remoto desligado localmente. Ao ensurdecer, o controller também
+  /// muta o microfone e restaura o estado anterior ao desfazer a ação.
+  final bool isDeafened;
 
   /// Banner \"Reconectando…\": reconexão automática do serviço em andamento
   /// ([ReconnectingEvent] → [ReconnectedEvent]). A sessão continua
@@ -120,6 +126,7 @@ class VoiceState {
     bool? isScreenSharing,
     bool? includeSystemAudio,
     bool? isSystemAudioEnabled,
+    bool? isDeafened,
     bool? isReconnecting,
     bool? isAudioBlocked,
     bool? autoSpotlightActive,
@@ -143,6 +150,7 @@ class VoiceState {
       isScreenSharing: isScreenSharing ?? this.isScreenSharing,
       includeSystemAudio: includeSystemAudio ?? this.includeSystemAudio,
       isSystemAudioEnabled: isSystemAudioEnabled ?? this.isSystemAudioEnabled,
+      isDeafened: isDeafened ?? this.isDeafened,
       isReconnecting: isReconnecting ?? this.isReconnecting,
       isAudioBlocked: isAudioBlocked ?? this.isAudioBlocked,
       autoSpotlightActive: autoSpotlightActive ?? this.autoSpotlightActive,
@@ -199,6 +207,8 @@ class VoiceController
   /// eventos: evento e snapshot chegam separados). Não vai pro estado.
   final Set<String> _lastSharers = {};
 
+  bool _microphoneWasEnabledBeforeDeafen = false;
+
   @override
   VoiceState build(({String serverId, String channelId}) arg) {
     // Rebuild (invalidação/retry): o Riverpod reutiliza a instância do
@@ -238,6 +248,7 @@ class VoiceController
       selectedCameraId: null,
     );
     try {
+      await ref.read(audioDevicesProvider.notifier).ensureInitialized();
       final info = await _freshJoinInfo();
       await _connect(info);
     } catch (_) {
@@ -253,6 +264,7 @@ class VoiceController
   Future<void> leave() async {
     await ref.read(rtcServiceProvider).disconnect();
     if (_disposed) return;
+    _microphoneWasEnabledBeforeDeafen = false;
     state = state.copyWith(screenShareQuality: RtcScreenShareQuality.auto);
     if (_disposed) return;
     // A sala morreu: câmera/share pararam junto e o destaque não faz mais
@@ -268,6 +280,7 @@ class VoiceController
       isScreenSharing: false,
       includeSystemAudio: false,
       isSystemAudioEnabled: false,
+      isDeafened: false,
       isReconnecting: false,
       isAudioBlocked: false,
       autoSpotlightActive: false,
@@ -292,7 +305,9 @@ class VoiceController
   /// Liga/desliga o microfone local (botão da barra de controles).
   Future<void> toggleMicrophone() async {
     final current = state;
-    if (current.status != VoiceSessionStatus.connected) return;
+    if (current.status != VoiceSessionStatus.connected || current.isDeafened) {
+      return;
+    }
     final rtc = ref.read(rtcServiceProvider);
     try {
       if (current.isMicrophoneEnabled) {
@@ -318,6 +333,51 @@ class VoiceController
       isMicrophoneEnabled: !current.isMicrophoneEnabled,
       errorMessage: null,
     );
+  }
+
+  /// Ensurdecer no estilo Discord: interrompe o áudio remoto e muta o mic.
+  /// Ao desfazer, restaura somente um microfone que estava ativo antes.
+  Future<void> toggleDeafen() async {
+    final current = state;
+    if (current.status != VoiceSessionStatus.connected) return;
+    final rtc = ref.read(rtcServiceProvider);
+    final enablingDeafen = !current.isDeafened;
+    try {
+      if (enablingDeafen) {
+        _microphoneWasEnabledBeforeDeafen = current.isMicrophoneEnabled;
+        if (current.isMicrophoneEnabled) await rtc.disableMicrophone();
+        await rtc.setRemoteAudioEnabled(false);
+        if (_disposed) return;
+        state = state.copyWith(
+          isDeafened: true,
+          isMicrophoneEnabled: false,
+          errorMessage: null,
+        );
+      } else {
+        await rtc.setRemoteAudioEnabled(true);
+        if (_microphoneWasEnabledBeforeDeafen) await rtc.enableMicrophone();
+        if (_disposed) return;
+        state = state.copyWith(
+          isDeafened: false,
+          isMicrophoneEnabled: _microphoneWasEnabledBeforeDeafen,
+          errorMessage: null,
+        );
+        _microphoneWasEnabledBeforeDeafen = false;
+      }
+    } catch (_) {
+      // Se a segunda metade do ensurdecer falhar, não deixe o microfone
+      // desligado sem que o estado consiga informar isso ao usuário.
+      if (enablingDeafen && _microphoneWasEnabledBeforeDeafen) {
+        try {
+          await rtc.enableMicrophone();
+        } catch (_) {}
+      }
+      _microphoneWasEnabledBeforeDeafen = false;
+      if (_disposed) return;
+      state = state.copyWith(
+        errorMessage: 'Não foi possível alterar o ensurdecer.',
+      );
+    }
   }
 
   /// Liga/desliga a câmera local (botão da barra de controles). Espelho do
@@ -478,17 +538,19 @@ class VoiceController
   Future<void> refreshCameraDevices() async {
     final current = state;
     if (current.status != VoiceSessionStatus.connected) return;
-    final rtc = ref.read(rtcServiceProvider);
+    final devicesController = ref.read(audioDevicesProvider.notifier);
     final List<RtcVideoDevice> devices;
     try {
-      devices = await rtc.listCameraDevices();
+      await devicesController.ensureInitialized();
+      await devicesController.refresh();
+      devices = ref.read(audioDevicesProvider).cameras;
     } catch (_) {
       // Hardware ausente/permissão pendente: mantém o cache anterior.
       return;
     }
     if (_disposed) return;
     // Seleção que saiu da lista nova é limpa (device não existe mais).
-    final selectedId = current.selectedCameraId;
+    final selectedId = ref.read(audioDevicesProvider).preferredCameraId;
     final selectedStillValid =
         selectedId != null && devices.any((d) => d.id == selectedId);
     state = state.copyWith(
@@ -503,10 +565,10 @@ class VoiceController
   Future<bool> selectCamera(String deviceId) async {
     final current = state;
     if (current.status != VoiceSessionStatus.connected) return false;
-    final rtc = ref.read(rtcServiceProvider);
-    try {
-      await rtc.switchCamera(deviceId);
-    } catch (_) {
+    final changed = await ref
+        .read(audioDevicesProvider.notifier)
+        .selectCamera(deviceId);
+    if (!changed) {
       if (_disposed) return false;
       state = state.copyWith(
         status: VoiceSessionStatus.connected,
@@ -701,6 +763,7 @@ class VoiceController
           screenShareQuality: RtcScreenShareQuality.auto,
           includeSystemAudio: false,
           isSystemAudioEnabled: false,
+          isDeafened: false,
           isReconnecting: false,
           isAudioBlocked: false,
           autoSpotlightActive: false,
@@ -780,6 +843,9 @@ class VoiceController
           savedSpotlightParticipantId: null,
           spotlightParticipantId: null,
         );
+        if (state.isDeafened) {
+          unawaited(ref.read(rtcServiceProvider).disableMicrophone());
+        }
       case ParticipantJoinedEvent() ||
           ParticipantLeftEvent() ||
           SpeakingChangedEvent():
