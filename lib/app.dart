@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
+import 'features/voice/push_to_talk_listener.dart';
 
 /// Widget raiz da aplicação.
 ///
@@ -15,11 +16,13 @@ class App extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(routerProvider);
-    return MaterialApp.router(
-      title: '4fun Cod',
-      // Design system dark-only (Discord + Vercel dark/Geist).
-      theme: theme4funCod,
-      routerConfig: router,
+    return PushToTalkListener(
+      child: MaterialApp.router(
+        title: '4fun Cod',
+        // Design system dark-only (Discord + Vercel dark/Geist).
+        theme: theme4funCod,
+        routerConfig: router,
+      ),
     );
   }
 }

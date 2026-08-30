@@ -270,6 +270,7 @@ class VoiceController
   /// Sai do canal de voz e volta para `idle`.
   Future<void> leave() async {
     await ref.read(rtcServiceProvider).disconnect();
+    await ref.read(voiceControlsProvider.notifier).resetPushToTalkPress();
     if (_disposed) return;
     state = state.copyWith(screenShareQuality: RtcScreenShareQuality.auto);
     if (_disposed) return;
@@ -712,6 +713,9 @@ class VoiceController
         // pararam junto e o destaque não faz mais sentido.
         _lastQuality.clear();
         _lastSharers.clear();
+        unawaited(
+          ref.read(voiceControlsProvider.notifier).resetPushToTalkPress(),
+        );
         state = state.copyWith(
           status: VoiceSessionStatus.idle,
           participants: const [],

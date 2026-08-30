@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../rtc/media_devices_provider.dart';
 import '../../rtc/rtc_service.dart';
 import '../section_header.dart';
+import '../../../features/voice/voice_controls_provider.dart';
 
 /// Configuração de dispositivos de voz e vídeo. As trocas são aplicadas na
 /// hora e ficam salvas no dispositivo; não existe botão "Salvar".
@@ -57,6 +58,10 @@ class VoiceVideoSection extends ConsumerWidget {
           loading: state.isLoading,
           onChanged: (id) => unawaited(controller.selectCamera(id)),
         ),
+        const SizedBox(height: 24),
+        const Divider(),
+        const SizedBox(height: 16),
+        const _PushToTalkSettings(),
         if (state.errorMessage != null) ...[
           const SizedBox(height: 12),
           Text(
@@ -203,3 +208,122 @@ const _systemDefault = '__system_default__';
 
 String _deviceLabel(RtcMediaDevice device, String category, int index) =>
     device.label.isEmpty ? '$category ${index + 1}' : device.label;
+
+class _PushToTalkSettings extends ConsumerWidget {
+  const _PushToTalkSettings();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(voiceControlsProvider);
+    final controller = ref.read(voiceControlsProvider.notifier);
+    final binding = state.pushToTalkBinding;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SectionHeader('PUSH TO TALK'),
+        const SizedBox(height: 4),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Push to Talk',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ),
+            Switch(
+              value: state.isPushToTalkEnabled,
+              onChanged: state.isApplying
+                  ? null
+                  : (enabled) => unawaited(
+                      controller.setPushToTalkEnabled(enabled),
+                    ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Text('Atalho do Push to Talk', style: Theme.of(context).textTheme.bodyMedium),
+        const SizedBox(height: 4),
+        Text(
+          state.isRecordingPushToTalk
+              ? 'Pressione uma tecla ou botão do meio, voltar ou avançar. ESC cancela.'
+              : 'No navegador, o Push to Talk funciona enquanto esta aba estiver focada.',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: Container(
+                height: 40,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                alignment: Alignment.centerLeft,
+                decoration: BoxDecoration(
+                  color: Theme.of(context).inputDecorationTheme.fillColor,
+                  border: Border.all(color: Theme.of(context).colorScheme.outline),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  state.isRecordingPushToTalk
+                      ? 'Aguardando entrada…'
+                      : binding?.displayLabel ?? 'Nenhum atalho definido',
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: binding == null && !state.isRecordingPushToTalk
+                        ? Theme.of(context).hintColor
+                        : null,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            FilledButton.tonal(
+              onPressed: state.isRecordingPushToTalk
+                  ? controller.cancelPushToTalkRecording
+                  : controller.startPushToTalkRecording,
+              child: Text(state.isRecordingPushToTalk ? 'Cancelar' : 'Gravar'),
+            ),
+            if (binding != null) ...[
+              const SizedBox(width: 4),
+              IconButton(
+                tooltip: 'Limpar atalho',
+                onPressed: () => unawaited(controller.clearPushToTalkBinding()),
+                icon: const Icon(Icons.clear, size: 18),
+              ),
+            ],
+          ],
+        ),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Atraso de liberação',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ),
+            Text('${state.pushToTalkReleaseDelayMs} ms'),
+          ],
+        ),
+        Slider(
+          value: state.pushToTalkReleaseDelayMs.toDouble(),
+          min: 0,
+          max: 2000,
+          divisions: 200,
+          label: '${state.pushToTalkReleaseDelayMs} ms',
+          onChanged: binding == null
+              ? null
+              : (value) => unawaited(
+                  controller.setPushToTalkReleaseDelay(value.round()),
+                ),
+        ),
+        if (state.isPushToTalkEnabled && !state.isPushToTalkPressed) ...[
+          const SizedBox(height: 2),
+          Text(
+            'Pronto: segure ${binding?.displayLabel ?? 'o atalho'} para transmitir.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ],
+      ],
+    );
+  }
+}

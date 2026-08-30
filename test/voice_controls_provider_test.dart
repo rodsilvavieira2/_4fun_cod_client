@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:fourfun_cod_client/core/rtc/rtc_providers.dart';
 import 'package:fourfun_cod_client/core/rtc/rtc_service.dart';
+import 'package:fourfun_cod_client/features/voice/push_to_talk_input.dart';
 import 'package:fourfun_cod_client/features/voice/voice_controls_provider.dart';
 
 class _FakeRtcService implements RtcService {
@@ -29,16 +30,32 @@ class _FakeRtcService implements RtcService {
   dynamic noSuchMethod(Invocation invocation) => null;
 }
 
+class _FakePushToTalkInputService extends PushToTalkInputService {
+  final List<Object?> configured = [];
+  bool result = true;
+
+  @override
+  Future<bool> configure(binding) async {
+    configured.add(binding);
+    return result;
+  }
+}
+
 void main() {
   group('VoiceControlsController', () {
     late _FakeRtcService rtc;
+    late _FakePushToTalkInputService input;
     late ProviderContainer container;
 
     setUp(() {
       SharedPreferences.setMockInitialValues({});
       rtc = _FakeRtcService();
+      input = _FakePushToTalkInputService();
       container = ProviderContainer(
-        overrides: [rtcServiceProvider.overrideWithValue(rtc)],
+        overrides: [
+          rtcServiceProvider.overrideWithValue(rtc),
+          pushToTalkInputServiceProvider.overrideWithValue(input),
+        ],
       );
     });
 
@@ -96,7 +113,10 @@ void main() {
         container.dispose();
         rtc = _FakeRtcService();
         container = ProviderContainer(
-          overrides: [rtcServiceProvider.overrideWithValue(rtc)],
+          overrides: [
+            rtcServiceProvider.overrideWithValue(rtc),
+            pushToTalkInputServiceProvider.overrideWithValue(input),
+          ],
         );
 
         await start(clearCalls: false);
@@ -123,6 +143,45 @@ void main() {
       expect(state.isDeafened, isFalse);
       expect(state.errorMessage, contains('ensurdecer'));
       expect(rtc.calls, ['mic:off', 'remote:false', 'remote:true', 'mic:on']);
+    });
+
+    test('PTT só transmite enquanto o binding está pressionado', () async {
+      await start();
+      final controls = container.read(voiceControlsProvider.notifier);
+
+      expect(await controls.setPushToTalkEnabled(true), isFalse);
+      expect(container.read(voiceControlsProvider).isRecordingPushToTalk, isTrue);
+
+      await controls.recordPushToTalkMouse(4);
+      expect(container.read(voiceControlsProvider).isPushToTalkEnabled, isTrue);
+      expect(container.read(voiceControlsProvider).isMicrophoneEnabled, isFalse);
+      expect(input.configured.last, isNotNull);
+
+      rtc.calls.clear();
+      await controls.setPushToTalkReleaseDelay(0);
+      await controls.setPushToTalkPressed(true);
+      expect(container.read(voiceControlsProvider).isMicrophoneEnabled, isTrue);
+      expect(rtc.calls, ['remote:true', 'mic:on']);
+
+      await controls.setPushToTalkPressed(false);
+      await Future<void>.delayed(Duration.zero);
+      expect(container.read(voiceControlsProvider).isMicrophoneEnabled, isFalse);
+      expect(rtc.calls, ['remote:true', 'mic:on', 'remote:true', 'mic:off']);
+    });
+
+    test('mute manual vence PTT pressionado', () async {
+      await start();
+      final controls = container.read(voiceControlsProvider.notifier);
+      await controls.recordPushToTalkMouse(4);
+      await controls.setPushToTalkEnabled(true);
+      await controls.setPushToTalkPressed(true);
+
+      await controls.toggleMicrophone();
+
+      final state = container.read(voiceControlsProvider);
+      expect(state.isPushToTalkPressed, isTrue);
+      expect(state.isMuted, isTrue);
+      expect(state.isMicrophoneEnabled, isFalse);
     });
   });
 }
