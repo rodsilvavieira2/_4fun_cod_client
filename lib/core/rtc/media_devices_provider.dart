@@ -131,36 +131,70 @@ class AudioDevicesController extends Notifier<AudioDevicesState> {
 
   Future<void> refresh() async {
     final rtc = ref.read(rtcServiceProvider);
+    if (_disposed) return;
+    state = state.copyWith(isLoading: true, errorMessage: null);
+
+    final inputsFuture = _load(rtc.listAudioInputDevices);
+    final outputsFuture = _load(rtc.listAudioOutputDevices);
+    final camerasFuture = _load(rtc.listCameraDevices);
+    final inputs = await inputsFuture;
+    final outputs = await outputsFuture;
+    final cameras = await camerasFuture;
+    if (_disposed) return;
+
+    final messages = <String>[];
+    if (inputs.failed) {
+      messages.add('Não foi possível listar os microfones.');
+    }
+    if (outputs.failed) {
+      messages.add('Não foi possível listar as saídas de áudio.');
+    }
+    if (cameras.failed) {
+      messages.add('Não foi possível listar as câmeras.');
+    }
+    state = state.copyWith(
+      inputs: inputs.value ?? state.inputs,
+      outputs: outputs.value ?? state.outputs,
+      cameras: cameras.value ?? state.cameras,
+      isLoading: false,
+      errorMessage: messages.isEmpty ? null : messages.join(' '),
+    );
+
+    // Id indisponível não é apagado: aplica o padrão do sistema agora e a
+    // preferência volta automaticamente quando o device retornar.
     try {
-      final inputs = await rtc.listAudioInputDevices();
-      final outputs = await rtc.listAudioOutputDevices();
-      final cameras = await rtc.listCameraDevices();
-      if (_disposed) return;
-      state = state.copyWith(
-        inputs: inputs,
-        outputs: outputs,
-        cameras: cameras,
-        isLoading: false,
-        errorMessage: null,
-      );
-      // Id indisponível não é apagado: aplica o padrão do sistema agora e a
-      // preferência volta automaticamente quando o device retornar.
       await rtc.selectAudioInput(
         state.preferredInputUnavailable ? null : state.preferredInputId,
       );
+    } catch (_) {
+      messages.add('Não foi possível aplicar o microfone preferido.');
+    }
+    try {
       await rtc.selectAudioOutput(
         state.preferredOutputUnavailable ? null : state.preferredOutputId,
       );
+    } catch (_) {
+      messages.add('Não foi possível aplicar a saída de áudio preferida.');
+    }
+    try {
       if (!state.preferredCameraUnavailable &&
           state.preferredCameraId != null) {
         await rtc.switchCamera(state.preferredCameraId!);
       }
     } catch (_) {
-      if (_disposed) return;
-      state = state.copyWith(
-        isLoading: false,
-        errorMessage: 'Não foi possível atualizar os dispositivos de áudio.',
-      );
+      messages.add('Não foi possível aplicar a câmera preferida.');
+    }
+    if (_disposed) return;
+    if (messages.isNotEmpty) {
+      state = state.copyWith(errorMessage: messages.join(' '));
+    }
+  }
+
+  Future<_LoadResult<T>> _load<T>(Future<T> Function() load) async {
+    try {
+      return _LoadResult.success(await load());
+    } catch (_) {
+      return const _LoadResult.failure();
     }
   }
 
@@ -227,6 +261,15 @@ class AudioDevicesController extends Notifier<AudioDevicesState> {
       return false;
     }
   }
+}
+
+class _LoadResult<T> {
+  const _LoadResult.success(this.value) : failed = false;
+
+  const _LoadResult.failure() : value = null, failed = true;
+
+  final T? value;
+  final bool failed;
 }
 
 final audioDevicesProvider =

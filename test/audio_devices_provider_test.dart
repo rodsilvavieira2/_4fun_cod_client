@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:fourfun_cod_client/core/rtc/audio_device_normalizer.dart';
 import 'package:fourfun_cod_client/core/rtc/media_devices_provider.dart';
 import 'package:fourfun_cod_client/core/rtc/rtc_providers.dart';
 import 'package:fourfun_cod_client/core/rtc/rtc_service.dart';
@@ -13,6 +14,9 @@ class _FakeRtcService implements RtcService {
   List<RtcAudioDevice> inputs = const [];
   List<RtcAudioDevice> outputs = const [];
   List<RtcVideoDevice> cameras = const [];
+  Object? inputsError;
+  Object? outputsError;
+  Object? camerasError;
   final List<String?> inputSelections = [];
   final List<String?> outputSelections = [];
   final List<String> cameraSelections = [];
@@ -21,13 +25,22 @@ class _FakeRtcService implements RtcService {
   Stream<void> get mediaDevicesChanged => devicesChanged.stream;
 
   @override
-  Future<List<RtcAudioDevice>> listAudioInputDevices() async => inputs;
+  Future<List<RtcAudioDevice>> listAudioInputDevices() async {
+    if (inputsError != null) throw inputsError!;
+    return inputs;
+  }
 
   @override
-  Future<List<RtcAudioDevice>> listAudioOutputDevices() async => outputs;
+  Future<List<RtcAudioDevice>> listAudioOutputDevices() async {
+    if (outputsError != null) throw outputsError!;
+    return outputs;
+  }
 
   @override
-  Future<List<RtcVideoDevice>> listCameraDevices() async => cameras;
+  Future<List<RtcVideoDevice>> listCameraDevices() async {
+    if (camerasError != null) throw camerasError!;
+    return cameras;
+  }
 
   @override
   Future<void> selectAudioInput(String? deviceId) async {
@@ -144,5 +157,40 @@ void main() {
       );
       expect(rtc.outputSelections.last, 'speaker');
     });
+
+    test(
+      'mantém os dispositivos de áudio quando a câmera falha ao atualizar',
+      () async {
+        final subscription = container.listen(audioDevicesProvider, (_, _) {});
+        addTearDown(subscription.close);
+        await settle();
+
+        rtc.camerasError = StateError('camera indisponível');
+        await container.read(audioDevicesProvider.notifier).refresh();
+
+        final state = container.read(audioDevicesProvider);
+        expect(state.inputs.single.id, 'mic-usb');
+        expect(state.outputs.single.id, 'speaker');
+        expect(state.isLoading, isFalse);
+        expect(state.errorMessage, contains('câmeras'));
+      },
+    );
+  });
+
+  test('oculta aliases nativos do padrão do sistema', () {
+    final devices = normalizeAudioDevices(const [
+      RtcAudioDevice(
+        id: 'default: fifine',
+        label: 'default: Fifine Microphone Pro',
+        kind: RtcMediaDeviceKind.audioInput,
+      ),
+      RtcAudioDevice(
+        id: 'fifine',
+        label: 'Fifine Microphone Pro',
+        kind: RtcMediaDeviceKind.audioInput,
+      ),
+    ]);
+
+    expect(devices.map((device) => device.id), ['fifine']);
   });
 }

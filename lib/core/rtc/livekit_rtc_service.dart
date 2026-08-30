@@ -9,6 +9,7 @@ import 'package:flutter_webrtc/flutter_webrtc.dart' as rtc;
 import 'package:livekit_client/livekit_client.dart'
     hide SpeakingChangedEvent, ReconnectingEvent;
 
+import 'audio_device_normalizer.dart';
 import 'rtc_service.dart';
 
 /// Implementação de [RtcService] sobre o LiveKit.
@@ -714,27 +715,27 @@ class LiveKitRtcService implements RtcService {
   @override
   Future<List<RtcAudioDevice>> listAudioInputDevices() async {
     final devices = await Hardware.instance.audioInputs();
-    return [
+    return normalizeAudioDevices([
       for (final device in devices)
         RtcAudioDevice(
           id: device.deviceId,
           label: device.label,
           kind: RtcMediaDeviceKind.audioInput,
         ),
-    ];
+    ]);
   }
 
   @override
   Future<List<RtcAudioDevice>> listAudioOutputDevices() async {
     final devices = await Hardware.instance.audioOutputs();
-    return [
+    return normalizeAudioDevices([
       for (final device in devices)
         RtcAudioDevice(
           id: device.deviceId,
           label: device.label,
           kind: RtcMediaDeviceKind.audioOutput,
         ),
-    ];
+    ]);
   }
 
   @override
