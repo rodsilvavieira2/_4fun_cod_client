@@ -94,7 +94,8 @@ class LiveKitRtcService implements RtcService {
     encoding: VideoEncoding(maxBitrate: 8000000, maxFramerate: 60),
   );
 
-  /// Opções da sala (mic publicado ATIVO por padrão desde a Fase 7).
+  /// Opções da sala. O microfone é publicado conforme a preferência global
+  /// pendente, que no primeiro uso é ativa.
   final RoomOptions _roomOptions;
 
   Room? _room;
@@ -117,6 +118,7 @@ class LiveKitRtcService implements RtcService {
   /// há room, ficam pendentes para o próximo connect.
   String? _selectedAudioInputId;
   String? _selectedAudioOutputId;
+  bool _microphoneEnabled = true;
   bool _remoteAudioEnabled = true;
 
   /// Track de preview criada fora da room. Ela nunca é publicada e só existe
@@ -203,10 +205,9 @@ class LiveKitRtcService implements RtcService {
       rethrow; // o controller trata o erro (token inválido, servidor fora etc.)
     }
 
-    // Publica o mic ATIVO por padrão (Fase 7 — requisito "áudio por
-    // padrão"; a Fase 4 publicava mutado via publication.mute(), removido).
-    // O AEC/NS/AGC do defaultRoomOptions mitigam eco/ruído; o usuário pode
-    // mutar a qualquer momento pelo botão da barra de controles.
+    // Publica o mic já no estado desejado. A preferência pode ter sido
+    // alterada fora da sala e não pode gerar uma janela em que o usuário
+    // entra transmitindo antes de o controller conseguir mutá-lo.
     final localParticipant = room.localParticipant;
     if (localParticipant == null) {
       // Impossível na prática pós-connect (o Room sempre tem o participante
@@ -214,7 +215,7 @@ class LiveKitRtcService implements RtcService {
       return;
     }
     try {
-      await localParticipant.setMicrophoneEnabled(true);
+      await localParticipant.setMicrophoneEnabled(_microphoneEnabled);
     } catch (_) {
       // Falha ao publicar o mic: NUNCA deixa o Room órfão — limpa e propaga.
       await _cleanupRoom();
@@ -245,10 +246,17 @@ class LiveKitRtcService implements RtcService {
   @override
   Future<void> enableMicrophone() async {
     final room = _room;
-    if (room == null || _disposed) return;
+    if (room == null || _disposed) {
+      if (!_disposed) _microphoneEnabled = true;
+      return;
+    }
     final localParticipant = room.localParticipant;
-    if (localParticipant == null) return;
+    if (localParticipant == null) {
+      _microphoneEnabled = true;
+      return;
+    }
     await localParticipant.setMicrophoneEnabled(true);
+    _microphoneEnabled = true;
     // O estado é atualizado pelos eventos TrackMuted/Unmuted +
     // LocalTrackPublished/Unpublished.
   }
@@ -256,10 +264,17 @@ class LiveKitRtcService implements RtcService {
   @override
   Future<void> disableMicrophone() async {
     final room = _room;
-    if (room == null || _disposed) return;
+    if (room == null || _disposed) {
+      if (!_disposed) _microphoneEnabled = false;
+      return;
+    }
     final localParticipant = room.localParticipant;
-    if (localParticipant == null) return;
+    if (localParticipant == null) {
+      _microphoneEnabled = false;
+      return;
+    }
     await localParticipant.setMicrophoneEnabled(false);
+    _microphoneEnabled = false;
   }
 
   @override
@@ -782,19 +797,30 @@ class LiveKitRtcService implements RtcService {
 
   @override
   Future<void> setRemoteAudioEnabled(bool enabled) async {
-    _remoteAudioEnabled = enabled;
     final room = _room;
-    if (room == null || _disposed) return;
-    for (final participant in room.remoteParticipants.values) {
-      for (final publication in participant.audioTrackPublications) {
-        final track = publication.track;
-        if (track is! RemoteAudioTrack) continue;
-        if (enabled) {
-          await track.start();
-        } else {
-          await track.stop();
+    if (room == null || _disposed) {
+      if (!_disposed) _remoteAudioEnabled = enabled;
+      return;
+    }
+    final previous = _remoteAudioEnabled;
+    // Atualiza antes de percorrer as tracks para que uma inscrição concorrente
+    // respeite imediatamente a decisão em [_wire].
+    _remoteAudioEnabled = enabled;
+    try {
+      for (final participant in room.remoteParticipants.values) {
+        for (final publication in participant.audioTrackPublications) {
+          final track = publication.track;
+          if (track is! RemoteAudioTrack) continue;
+          if (enabled) {
+            await track.start();
+          } else {
+            await track.stop();
+          }
         }
       }
+    } catch (_) {
+      _remoteAudioEnabled = previous;
+      rethrow;
     }
   }
 
@@ -1181,11 +1207,9 @@ class LiveKitRtcService implements RtcService {
         continue;
       }
       try {
-        // Mesmo padrão do connect (Fase 7): mic publicado ATIVO (requisito
-        // "áudio por padrão"; a Fase 4 republicava mutado). Câmera/share
-        // locais recomeçam DESLIGADOS (risco V1 documentado no contrato do
-        // ReconnectedEvent).
-        await localParticipant.setMicrophoneEnabled(true);
+        // Reaplica a preferência global antes de notificar a UI. Câmera/share
+        // locais continuam desligados após a reconexão.
+        await localParticipant.setMicrophoneEnabled(_microphoneEnabled);
       } catch (error) {
         debugPrint('[rtc] falha ao republicar o mic na reconexão: $error');
         await _teardownRoom();
@@ -1223,7 +1247,6 @@ class LiveKitRtcService implements RtcService {
     _livekitUrl = null;
     _screenShareQuality = RtcScreenShareQuality.auto;
     _screenShareEncodingBaseline = null;
-    _remoteAudioEnabled = true;
     await _teardownRoom();
   }
 

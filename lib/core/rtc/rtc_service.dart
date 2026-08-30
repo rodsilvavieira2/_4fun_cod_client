@@ -306,9 +306,13 @@ abstract class RtcService {
   Future<void> disconnect();
 
   /// Habilita o microfone local (publica/desmuta a track de mic).
+  ///
+  /// Sem sala ativa, registra a preferência para o próximo [connect].
   Future<void> enableMicrophone();
 
   /// Desabilita o microfone local (muta a track de mic).
+  ///
+  /// Sem sala ativa, registra a preferência para o próximo [connect].
   Future<void> disableMicrophone();
 
   /// Habilita a câmera local (publica a track de câmera, ou desmuta a
@@ -390,7 +394,8 @@ abstract class RtcService {
   Future<void> selectAudioOutput(String? deviceId);
 
   /// Liga/desliga localmente todo áudio remoto, sem sinalizar essa decisão à
-  /// sala. O controller usa isso para implementar o ensurdecer.
+  /// sala. Sem sala ativa, registra a preferência para as tracks da próxima
+  /// conexão. O controller usa isso para implementar o ensurdecer.
   Future<void> setRemoteAudioEnabled(bool enabled);
 
   /// Seleciona a câmera usada pelo preview e pela publicação local.

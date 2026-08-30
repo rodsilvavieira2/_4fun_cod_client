@@ -11,16 +11,15 @@ import '../../core/theme/app_theme.dart';
 import '../../core/ui/app_icon_button.dart';
 import '../../core/ui/settings_modal.dart';
 import '../../core/ui/settings_modal_sidebar.dart';
-import '../voice/voice_providers.dart';
+import '../voice/voice_controls_provider.dart';
 
 /// Rodapé da sidebar (wireframe v3 §4.2): avatar 32 + nome + status, e 3
 /// ícones de ação (mic/fones/⚙️). O ⚙️ dispara [onOpenSettings] (SPEC 3
 /// implementa o modal; aqui só a cablagem).
 class UserPanel extends ConsumerWidget {
-  const UserPanel({super.key, this.onOpenSettings, this.voiceArg});
+  const UserPanel({super.key, this.onOpenSettings});
 
   final VoidCallback? onOpenSettings;
-  final ({String serverId, String channelId})? voiceArg;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -29,14 +28,7 @@ class UserPanel extends ConsumerWidget {
     final name = user?.name ?? '…';
     final avatarUrl = user?.avatarUrl;
     final devices = ref.watch(audioDevicesProvider);
-    final arg = voiceArg;
-    final voiceState = arg == null
-        ? null
-        : ref.watch(voiceControllerProvider(arg));
-    final voice = arg == null
-        ? null
-        : ref.read(voiceControllerProvider(arg).notifier);
-    final connected = voiceState?.status == VoiceSessionStatus.connected;
+    final controls = ref.watch(voiceControlsProvider);
 
     return Container(
       // color + decoration simultâneos disparam a assert do Flutter
@@ -98,17 +90,17 @@ class UserPanel extends ConsumerWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               _SplitMediaControl(
-                icon: voiceState?.isMicrophoneEnabled ?? false
+                icon: controls.isMicrophoneEnabled
                     ? Icons.mic_none
                     : Icons.mic_off_outlined,
-                tooltip: connected
-                    ? (voiceState!.isDeafened
-                          ? 'Desative o ensurdecer para usar o microfone'
-                          : 'Microfone')
-                    : 'Microfone disponível durante uma chamada',
-                onMainPressed: connected && !voiceState!.isDeafened
-                    ? voice!.toggleMicrophone
-                    : null,
+                tooltip: controls.isDeafened
+                    ? 'Desative o ensurdecer para usar o microfone'
+                    : (controls.isMuted
+                          ? 'Ativar microfone'
+                          : 'Desativar microfone'),
+                onMainPressed: controls.isDeafened || controls.isApplying
+                    ? null
+                    : () => unawaited(_toggleMicrophone(context, ref)),
                 menu: _audioMenu(
                   context: context,
                   devices: devices.inputs,
@@ -119,15 +111,15 @@ class UserPanel extends ConsumerWidget {
                 ),
               ),
               _SplitMediaControl(
-                icon: voiceState?.isDeafened ?? false
+                icon: controls.isDeafened
                     ? Icons.headset_off_outlined
                     : Icons.headset_outlined,
-                tooltip: connected
-                    ? (voiceState!.isDeafened
-                          ? 'Parar de ensurdecer'
-                          : 'Ensurdecer')
-                    : 'Ensurdecer durante chamada',
-                onMainPressed: connected ? voice!.toggleDeafen : null,
+                tooltip: controls.isDeafened
+                    ? 'Parar de ensurdecer'
+                    : 'Ensurdecer',
+                onMainPressed: controls.isApplying
+                    ? null
+                    : () => unawaited(_toggleDeafen(context, ref)),
                 menu: _audioMenu(
                   context: context,
                   devices: devices.outputs,
@@ -165,6 +157,34 @@ class UserPanel extends ConsumerWidget {
           content: Text(message ?? 'Não foi possível trocar o microfone.'),
         ),
       );
+    }
+  }
+
+  Future<void> _toggleMicrophone(BuildContext context, WidgetRef ref) async {
+    final changed = await ref
+        .read(voiceControlsProvider.notifier)
+        .toggleMicrophone();
+    if (!changed && context.mounted) {
+      final message = ref.read(voiceControlsProvider).errorMessage;
+      if (message != null) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(message)));
+      }
+    }
+  }
+
+  Future<void> _toggleDeafen(BuildContext context, WidgetRef ref) async {
+    final changed = await ref
+        .read(voiceControlsProvider.notifier)
+        .toggleDeafen();
+    if (!changed && context.mounted) {
+      final message = ref.read(voiceControlsProvider).errorMessage;
+      if (message != null) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(message)));
+      }
     }
   }
 

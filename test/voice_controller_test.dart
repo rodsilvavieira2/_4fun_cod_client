@@ -8,6 +8,7 @@ import 'package:fourfun_cod_client/core/rtc/rtc_providers.dart';
 import 'package:fourfun_cod_client/core/rtc/rtc_service.dart';
 import 'package:fourfun_cod_client/features/servers/servers_providers.dart';
 import 'package:fourfun_cod_client/features/servers/servers_repository.dart';
+import 'package:fourfun_cod_client/features/voice/voice_controls_provider.dart';
 import 'package:fourfun_cod_client/features/voice/voice_providers.dart';
 import 'package:fourfun_cod_client/shared/models/voice.dart';
 
@@ -462,15 +463,19 @@ void main() {
       expect(state().isMicrophoneEnabled, isTrue);
     });
 
-    test('toggleMicrophone fora da sessão é ignorado', () async {
-      final notifier = buildVoice();
+    test(
+      'toggleMicrophone fora da sessão fica pendente para o próximo join',
+      () async {
+        final notifier = buildVoice();
 
-      await notifier.toggleMicrophone();
-      await settle();
+        await notifier.toggleMicrophone();
+        await settle();
 
-      expect(rtc.enableMicCalls, 0);
-      expect(rtc.disableMicCalls, 0);
-    });
+        expect(rtc.enableMicCalls, 0);
+        expect(rtc.disableMicCalls, 1);
+        expect(container.read(voiceControlsProvider).isMuted, isTrue);
+      },
+    );
 
     test('ensurdecer interrompe áudio remoto, muta e restaura o mic', () async {
       rtc.localId = 'user_u1';
@@ -491,6 +496,19 @@ void main() {
       expect(state().isMicrophoneEnabled, isTrue);
       expect(rtc.remoteAudioEnabled, isTrue);
       expect(rtc.enableMicCalls, 1);
+    });
+
+    test('join respeita mute configurado antes de entrar na sala', () async {
+      repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
+      await container.read(voiceControlsProvider.notifier).toggleMicrophone();
+      final notifier = buildVoice();
+
+      await notifier.join();
+      await settle();
+
+      expect(state().status, VoiceSessionStatus.connected);
+      expect(state().isMicrophoneEnabled, isFalse);
+      expect(container.read(voiceControlsProvider).isMuted, isTrue);
     });
 
     test('troca de canal (dispose do provider) desconecta', () async {

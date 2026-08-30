@@ -187,14 +187,6 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
     required bool isOwner,
     required List<ServerChannel> channelList,
   }) {
-    ServerChannel? selectedVoiceChannel;
-    for (final channel in channelList) {
-      if (channel.id == _selectedChannelId &&
-          channel.type == ChannelType.voice) {
-        selectedVoiceChannel = channel;
-        break;
-      }
-    }
     return Container(
       color: AppThemeColors.card,
       child: Column(
@@ -225,15 +217,7 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
               ),
             ),
           ),
-          UserPanel(
-            onOpenSettings: () => _openSettings(context),
-            voiceArg: selectedVoiceChannel == null
-                ? null
-                : (
-                    serverId: widget.serverId,
-                    channelId: selectedVoiceChannel.id,
-                  ),
-          ),
+          UserPanel(onOpenSettings: () => _openSettings(context)),
         ],
       ),
     );

@@ -7,6 +7,7 @@ import '../../core/rtc/rtc_providers.dart';
 import '../../core/rtc/rtc_service.dart';
 import '../../shared/models/voice.dart';
 import '../servers/servers_providers.dart';
+import 'voice_controls_provider.dart';
 
 /// Estado da sessão de voz de um canal.
 enum VoiceSessionStatus { idle, connecting, connected, error }
@@ -76,8 +77,8 @@ class VoiceState {
   /// [SystemAudioEnabledChangedEvent] do participante local reconcilia).
   final bool isSystemAudioEnabled;
 
-  /// Áudio remoto desligado localmente. Ao ensurdecer, o controller também
-  /// muta o microfone e restaura o estado anterior ao desfazer a ação.
+  /// Áudio remoto desligado localmente. É o espelho da preferência global de
+  /// ensurdecer enquanto esta sessão estiver conectada.
   final bool isDeafened;
 
   /// Banner \"Reconectando…\": reconexão automática do serviço em andamento
@@ -207,8 +208,6 @@ class VoiceController
   /// eventos: evento e snapshot chegam separados). Não vai pro estado.
   final Set<String> _lastSharers = {};
 
-  bool _microphoneWasEnabledBeforeDeafen = false;
-
   @override
   VoiceState build(({String serverId, String channelId}) arg) {
     // Rebuild (invalidação/retry): o Riverpod reutiliza a instância do
@@ -218,6 +217,13 @@ class VoiceController
     _eventsSub?.cancel();
 
     final rtc = ref.watch(rtcServiceProvider);
+    ref.listen<VoiceControlsState>(voiceControlsProvider, (_, controls) {
+      if (_disposed || state.status != VoiceSessionStatus.connected) return;
+      state = state.copyWith(
+        isMicrophoneEnabled: controls.isMicrophoneEnabled,
+        isDeafened: controls.isDeafened,
+      );
+    });
     _participantsSub = rtc.participants.listen(_applyParticipants);
     _eventsSub = rtc.events.listen(_applyEvent);
 
@@ -248,6 +254,7 @@ class VoiceController
       selectedCameraId: null,
     );
     try {
+      await ref.read(voiceControlsProvider.notifier).ensureInitialized();
       await ref.read(audioDevicesProvider.notifier).ensureInitialized();
       final info = await _freshJoinInfo();
       await _connect(info);
@@ -264,7 +271,6 @@ class VoiceController
   Future<void> leave() async {
     await ref.read(rtcServiceProvider).disconnect();
     if (_disposed) return;
-    _microphoneWasEnabledBeforeDeafen = false;
     state = state.copyWith(screenShareQuality: RtcScreenShareQuality.auto);
     if (_disposed) return;
     // A sala morreu: câmera/share pararam junto e o destaque não faz mais
@@ -302,82 +308,33 @@ class VoiceController
     await ref.read(rtcServiceProvider).resumeAudio();
   }
 
-  /// Liga/desliga o microfone local (botão da barra de controles).
+  /// Liga/desliga a preferência global de microfone. Fora da sala, ela fica
+  /// pendente para o próximo connect; dentro, o RTC a aplica imediatamente.
   Future<void> toggleMicrophone() async {
-    final current = state;
-    if (current.status != VoiceSessionStatus.connected || current.isDeafened) {
-      return;
-    }
-    final rtc = ref.read(rtcServiceProvider);
-    try {
-      if (current.isMicrophoneEnabled) {
-        await rtc.disableMicrophone();
-      } else {
-        await rtc.enableMicrophone();
-      }
-    } catch (_) {
-      // Falha de hardware/permissão: não derruba a sessão; volta para o
-      // estado anterior (sem otimismo) e avisa o usuário.
-      if (_disposed) return;
-      state = state.copyWith(
-        status: VoiceSessionStatus.connected,
-        isMicrophoneEnabled: current.isMicrophoneEnabled,
-        errorMessage: 'Não foi possível alternar o microfone.',
-      );
-      return;
-    }
-    // Otimista para o botão; os eventos MicEnabledChangedEvent do
-    // participante local reconciliam com o estado real do LiveKit.
+    final changed = await ref
+        .read(voiceControlsProvider.notifier)
+        .toggleMicrophone();
     if (_disposed) return;
+    final controls = ref.read(voiceControlsProvider);
     state = state.copyWith(
-      isMicrophoneEnabled: !current.isMicrophoneEnabled,
-      errorMessage: null,
+      isMicrophoneEnabled: controls.isMicrophoneEnabled,
+      isDeafened: controls.isDeafened,
+      errorMessage: changed ? null : controls.errorMessage,
     );
   }
 
-  /// Ensurdecer no estilo Discord: interrompe o áudio remoto e muta o mic.
-  /// Ao desfazer, restaura somente um microfone que estava ativo antes.
+  /// Alterna a preferência global de ensurdecer no estilo Discord.
   Future<void> toggleDeafen() async {
-    final current = state;
-    if (current.status != VoiceSessionStatus.connected) return;
-    final rtc = ref.read(rtcServiceProvider);
-    final enablingDeafen = !current.isDeafened;
-    try {
-      if (enablingDeafen) {
-        _microphoneWasEnabledBeforeDeafen = current.isMicrophoneEnabled;
-        if (current.isMicrophoneEnabled) await rtc.disableMicrophone();
-        await rtc.setRemoteAudioEnabled(false);
-        if (_disposed) return;
-        state = state.copyWith(
-          isDeafened: true,
-          isMicrophoneEnabled: false,
-          errorMessage: null,
-        );
-      } else {
-        await rtc.setRemoteAudioEnabled(true);
-        if (_microphoneWasEnabledBeforeDeafen) await rtc.enableMicrophone();
-        if (_disposed) return;
-        state = state.copyWith(
-          isDeafened: false,
-          isMicrophoneEnabled: _microphoneWasEnabledBeforeDeafen,
-          errorMessage: null,
-        );
-        _microphoneWasEnabledBeforeDeafen = false;
-      }
-    } catch (_) {
-      // Se a segunda metade do ensurdecer falhar, não deixe o microfone
-      // desligado sem que o estado consiga informar isso ao usuário.
-      if (enablingDeafen && _microphoneWasEnabledBeforeDeafen) {
-        try {
-          await rtc.enableMicrophone();
-        } catch (_) {}
-      }
-      _microphoneWasEnabledBeforeDeafen = false;
-      if (_disposed) return;
-      state = state.copyWith(
-        errorMessage: 'Não foi possível alterar o ensurdecer.',
-      );
-    }
+    final changed = await ref
+        .read(voiceControlsProvider.notifier)
+        .toggleDeafen();
+    if (_disposed) return;
+    final controls = ref.read(voiceControlsProvider);
+    state = state.copyWith(
+      isMicrophoneEnabled: controls.isMicrophoneEnabled,
+      isDeafened: controls.isDeafened,
+      errorMessage: changed ? null : controls.errorMessage,
+    );
   }
 
   /// Liga/desliga a câmera local (botão da barra de controles). Espelho do
@@ -669,12 +626,13 @@ class VoiceController
       }
     }
     if (_disposed) return;
-    // O mic entra publicado ATIVO por padrão (Fase 7 — "áudio por padrão";
-    // a Fase 4 entrava mutado) e a câmera NUNCA é publicada no connect —
-    // começa OFF (só via botão).
+    // O serviço já publicou o mic na preferência global restaurada antes do
+    // connect; câmera continua OFF e só liga pelo respectivo botão.
+    final controls = ref.read(voiceControlsProvider);
     state = state.copyWith(
       status: VoiceSessionStatus.connected,
-      isMicrophoneEnabled: true,
+      isMicrophoneEnabled: controls.isMicrophoneEnabled,
+      isDeafened: controls.isDeafened,
     );
   }
 
@@ -826,13 +784,14 @@ class VoiceController
         // restabelecer; NADA aqui pode derrubar para idle/error.
         state = state.copyWith(isReconnecting: true);
       case ReconnectedEvent():
-        // Sala NOVA: o serviço republicou o mic MUTADO (padrão do connect);
-        // câmera/share locais recomeçam off (risco V1 documentado). Reset
-        // também o rastreio de sharers do auto-spotlight.
+        // Sala nova preserva mute/ensurdecer globais; câmera/share locais
+        // recomeçam off. Reset também o rastreio de sharers do auto-spotlight.
         _lastSharers.clear();
+        final controls = ref.read(voiceControlsProvider);
         state = state.copyWith(
           isReconnecting: false,
-          isMicrophoneEnabled: false,
+          isMicrophoneEnabled: controls.isMicrophoneEnabled,
+          isDeafened: controls.isDeafened,
           isCameraEnabled: false,
           isScreenSharing: false,
           screenShareQuality: RtcScreenShareQuality.auto,
@@ -843,9 +802,6 @@ class VoiceController
           savedSpotlightParticipantId: null,
           spotlightParticipantId: null,
         );
-        if (state.isDeafened) {
-          unawaited(ref.read(rtcServiceProvider).disableMicrophone());
-        }
       case ParticipantJoinedEvent() ||
           ParticipantLeftEvent() ||
           SpeakingChangedEvent():
