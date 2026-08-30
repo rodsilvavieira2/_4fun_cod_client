@@ -7,15 +7,13 @@ import '../../core/auth/auth_controller.dart';
 import '../../core/auth/auth_state.dart';
 import '../../core/rtc/media_devices_provider.dart';
 import '../../core/rtc/rtc_service.dart';
-import '../../core/theme/app_theme.dart';
-import '../../core/ui/app_icon_button.dart';
 import '../../core/ui/settings_modal.dart';
 import '../../core/ui/settings_modal_sidebar.dart';
+import '../../core/ui/ui.dart';
 import '../voice/voice_controls_provider.dart';
 
-/// Rodapé da sidebar (wireframe v3 §4.2): avatar 32 + nome + status, e 3
-/// ícones de ação (mic/fones/⚙️). O ⚙️ dispara [onOpenSettings] (SPEC 3
-/// implementa o modal; aqui só a cablagem).
+/// Rodapé da sidebar (wireframe v4 macOS):
+/// Avatar 32 + nome + status dot + controles de áudio (mic/fones/⚙️) estilo compacto.
 class UserPanel extends ConsumerWidget {
   const UserPanel({super.key, this.onOpenSettings});
 
@@ -31,39 +29,47 @@ class UserPanel extends ConsumerWidget {
     final controls = ref.watch(voiceControlsProvider);
 
     return Container(
-      // color + decoration simultâneos disparam a assert do Flutter
-      // ("color is just a shorthand for decoration") — cor vai no
-      // BoxDecoration. Padding 10/14 conforme wireframe (.user-panel).
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: const BoxDecoration(
-        color: AppThemeColors.card,
-        border: Border(top: BorderSide(color: AppThemeColors.hairline)),
+        color: AppTokens.surface1,
+        border: Border(
+          top: BorderSide(color: AppTokens.borderHairline, width: 1),
+        ),
       ),
       child: Row(
         children: [
-          // Avatar 32 com "ring" (wireframe: .up-avatar .ring radius 8,
-          // borda hairline, fundo bg-surface).
-          Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              color: AppThemeColors.card,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: AppThemeColors.hairline),
-            ),
-            alignment: Alignment.center,
-            clipBehavior: Clip.antiAlias,
-            child: avatarUrl != null
-                ? Image.network(
-                    avatarUrl,
-                    width: 32,
-                    height: 32,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, _, _) => _initial(name),
-                  )
-                : _initial(name),
+          // Avatar com PresenceDot
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: AppTokens.surface2,
+                  borderRadius: BorderRadius.circular(AppRadius.sm),
+                  border: Border.all(color: AppTokens.borderHairline, width: 1),
+                ),
+                alignment: Alignment.center,
+                clipBehavior: Clip.antiAlias,
+                child: avatarUrl != null
+                    ? Image.network(
+                        avatarUrl,
+                        width: 32,
+                        height: 32,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, _, _) => _initial(name),
+                      )
+                    : _initial(name),
+              ),
+              const Positioned(
+                right: -2,
+                bottom: -2,
+                child: PresenceDot(status: PresenceStatus.online, size: 10),
+              ),
+            ],
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -73,19 +79,23 @@ class UserPanel extends ConsumerWidget {
                   name,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
+                    fontFamily: 'Geist',
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
+                    color: AppTokens.textPrimary,
                   ),
                 ),
                 const Text(
                   'Online',
-                  style: TextStyle(fontSize: 11, color: AppStatusColors.online),
+                  style: TextStyle(
+                    fontFamily: 'Geist',
+                    fontSize: 11,
+                    color: AppTokens.accentGreen,
+                  ),
                 ),
               ],
             ),
           ),
-          // Ícones 28x28 com gap 4 (wireframe: .up-icons gap 4, .up-icon
-          // 28x28 radius 6).
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -93,6 +103,8 @@ class UserPanel extends ConsumerWidget {
                 icon: controls.isMicrophoneEnabled
                     ? Icons.mic_none
                     : Icons.mic_off_outlined,
+                isActive: !controls.isMicrophoneEnabled,
+                activeColor: AppTokens.accentPurple,
                 tooltip: controls.isDeafened
                     ? 'Desative o ensurdecer para usar o microfone'
                     : (controls.isMuted
@@ -114,6 +126,8 @@ class UserPanel extends ConsumerWidget {
                 icon: controls.isDeafened
                     ? Icons.headset_off_outlined
                     : Icons.headset_outlined,
+                isActive: controls.isDeafened,
+                activeColor: AppTokens.accentPurple,
                 tooltip: controls.isDeafened
                     ? 'Parar de ensurdecer'
                     : 'Ensurdecer',
@@ -132,7 +146,7 @@ class UserPanel extends ConsumerWidget {
               AppIconButton(
                 icon: Icons.settings_outlined,
                 tooltip: 'Configurações',
-                minSize: 28,
+                minSize: 26,
                 onPressed: onOpenSettings,
               ),
             ],
@@ -217,7 +231,13 @@ class UserPanel extends ConsumerWidget {
     return PopupMenuButton<String>(
       tooltip: title,
       padding: EdgeInsets.zero,
-      icon: const Icon(Icons.arrow_drop_down, size: 16),
+      color: AppTokens.surface2,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        side: const BorderSide(color: AppTokens.borderSubtle, width: 1),
+      ),
+      elevation: 12,
+      icon: const Icon(Icons.arrow_drop_down, size: 14, color: AppTokens.textSecondary),
       onSelected: (value) {
         if (value == settingsValue) {
           showSettingsModal(
@@ -231,17 +251,28 @@ class UserPanel extends ConsumerWidget {
       itemBuilder: (context) => [
         PopupMenuItem<String>(
           enabled: false,
-          child: Text(title, style: Theme.of(context).textTheme.labelLarge),
+          child: Text(
+            title,
+            style: const TextStyle(
+              fontFamily: 'Geist',
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: AppTokens.textMuted,
+            ),
+          ),
         ),
         CheckedPopupMenuItem<String>(
           value: defaultValue,
           checked: selectedId == null,
-          child: const Text('Padrão do sistema'),
+          child: const Text('Padrão do sistema', style: TextStyle(fontFamily: 'Geist', fontSize: 13)),
         ),
         if (unavailable)
           const PopupMenuItem<String>(
             enabled: false,
-            child: Text('Preferido indisponível; usando o padrão.'),
+            child: Text(
+              'Preferido indisponível; usando o padrão.',
+              style: TextStyle(fontFamily: 'Geist', fontSize: 12, color: AppTokens.accentAmber),
+            ),
           ),
         for (var index = 0; index < devices.length; index++)
           CheckedPopupMenuItem<String>(
@@ -251,12 +282,13 @@ class UserPanel extends ConsumerWidget {
               devices[index].label.isEmpty
                   ? '$title ${index + 1}'
                   : devices[index].label,
+              style: const TextStyle(fontFamily: 'Geist', fontSize: 13),
             ),
           ),
         const PopupMenuDivider(),
         const PopupMenuItem<String>(
           value: settingsValue,
-          child: Text('Configurações de voz'),
+          child: Text('Configurações de voz', style: TextStyle(fontFamily: 'Geist', fontSize: 13)),
         ),
       ],
     );
@@ -265,7 +297,12 @@ class UserPanel extends ConsumerWidget {
   Widget _initial(String name) {
     return Text(
       name.isEmpty ? '?' : name[0].toUpperCase(),
-      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+      style: const TextStyle(
+        fontFamily: 'Geist',
+        fontSize: 13,
+        fontWeight: FontWeight.w600,
+        color: AppTokens.textPrimary,
+      ),
     );
   }
 }
@@ -276,12 +313,16 @@ class _SplitMediaControl extends StatelessWidget {
     required this.tooltip,
     required this.onMainPressed,
     required this.menu,
+    this.isActive = false,
+    this.activeColor,
   });
 
   final IconData icon;
   final String tooltip;
   final VoidCallback? onMainPressed;
   final PopupMenuButton<String> menu;
+  final bool isActive;
+  final Color? activeColor;
 
   @override
   Widget build(BuildContext context) {
@@ -291,10 +332,13 @@ class _SplitMediaControl extends StatelessWidget {
         AppIconButton(
           icon: icon,
           tooltip: tooltip,
-          minSize: 28,
+          minSize: 26,
+          iconSize: 16,
+          isActive: isActive,
+          activeColor: activeColor,
           onPressed: onMainPressed,
         ),
-        SizedBox(width: 16, height: 28, child: menu),
+        SizedBox(width: 14, height: 26, child: menu),
       ],
     );
   }

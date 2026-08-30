@@ -2,17 +2,20 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/api/api_exception.dart';
+import '../../core/ui/ui.dart';
 import '../../shared/models/servers.dart';
 import 'channels_providers.dart';
 
-/// Diálogo de criação de canal (nome + tipo TEXT/VOICE) — apenas OWNER.
+/// Diálogo de criação de canal moderno tipo macOS (nome + tipo TEXT/VOICE) — apenas OWNER.
 Future<void> showCreateChannelDialog(
   BuildContext context, {
   required String serverId,
 }) {
-  return showDialog<void>(
+  return showMacModalWindow<void>(
     context: context,
-    builder: (_) => _CreateChannelDialog(serverId: serverId),
+    title: 'Criar canal',
+    maxWidth: 420,
+    child: _CreateChannelDialog(serverId: serverId),
   );
 }
 
@@ -63,68 +66,83 @@ class _CreateChannelDialogState extends ConsumerState<_CreateChannelDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Criar canal'),
-      content: Form(
+    return Padding(
+      padding: const EdgeInsets.all(20),
+      child: Form(
         key: _formKey,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            TextFormField(
+            AppTextField(
               controller: _nameController,
               autofocus: true,
-              decoration: const InputDecoration(
-                labelText: 'Nome do canal',
-                border: OutlineInputBorder(),
-              ),
+              label: 'NOME DO CANAL',
+              hintText: 'ex: geral, novidades',
               validator: (value) => (value == null || value.trim().isEmpty)
                   ? 'Informe o nome do canal.'
                   : null,
+              onFieldSubmitted: (_) => _create(),
             ),
-            const SizedBox(height: 16),
-            SegmentedButton<ChannelType>(
-              segments: const [
-                ButtonSegment(
+            const SizedBox(height: 18),
+            const Text(
+              'TIPO DE CANAL',
+              style: TextStyle(
+                fontFamily: 'Geist',
+                fontSize: 12.5,
+                fontWeight: FontWeight.w500,
+                color: AppTokens.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 8),
+            AppSegmentedControl<ChannelType>(
+              selectedValue: _type,
+              onChanged: (type) => setState(() => _type = type),
+              items: const [
+                SegmentItem(
                   value: ChannelType.text,
-                  label: Text('# Texto'),
-                  icon: Icon(Icons.chat_bubble_outline),
+                  label: 'Texto',
+                  icon: Icons.tag,
                 ),
-                ButtonSegment(
+                SegmentItem(
                   value: ChannelType.voice,
-                  label: Text('🔊 Voz'),
+                  label: 'Voz & Vídeo',
+                  icon: Icons.volume_up_outlined,
                 ),
               ],
-              selected: {_type},
-              onSelectionChanged: (selection) =>
-                  setState(() => _type = selection.first),
             ),
             if (_error != null) ...[
-              const SizedBox(height: 12),
+              const SizedBox(height: 14),
               Text(
                 _error!,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
+                style: const TextStyle(
+                  fontFamily: 'Geist',
+                  fontSize: 12.5,
+                  color: AppTokens.accentPurple,
+                ),
               ),
             ],
+            const SizedBox(height: 24),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                AppButton(
+                  label: 'Cancelar',
+                  variant: AppButtonVariant.ghost,
+                  onPressed: _creating ? null : () => Navigator.of(context).pop(),
+                ),
+                const SizedBox(width: 10),
+                AppButton(
+                  label: 'Criar canal',
+                  variant: AppButtonVariant.primary,
+                  loading: _creating,
+                  onPressed: _creating ? null : _create,
+                ),
+              ],
+            ),
           ],
         ),
       ),
-      actions: [
-        TextButton(
-          onPressed: _creating ? null : () => Navigator.of(context).pop(),
-          child: const Text('Cancelar'),
-        ),
-        FilledButton(
-          onPressed: _creating ? null : _create,
-          child: _creating
-              ? const SizedBox(
-                  height: 18,
-                  width: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Text('Criar'),
-        ),
-      ],
     );
   }
 }

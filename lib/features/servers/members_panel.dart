@@ -1,15 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/theme/app_theme.dart';
-import '../../core/ui/presence_dot.dart';
-import '../../core/ui/section_header.dart';
+import '../../core/ui/ui.dart';
 import '../../shared/models/servers.dart';
 import 'servers_providers.dart';
 
-/// Painel lateral de membros (wireframe v3 §4.4): 240px, só desktop ≥800,
-/// READ-ONLY — grupos ONLINE/OFFLINE caps + dot de presença. A ação de
-/// remoção de membro (OWNER) continua na tela push `members_screen.dart`.
+/// Painel lateral de membros estilo macOS Sidebar (240px, grupos ONLINE/OFFLINE).
 class MembersPanel extends ConsumerWidget {
   const MembersPanel({super.key, required this.serverId});
 
@@ -31,19 +27,27 @@ class MembersPanel extends ConsumerWidget {
     return Container(
       width: 240,
       decoration: const BoxDecoration(
-        color: AppThemeColors.card,
-        border: Border(left: BorderSide(color: AppThemeColors.hairline)),
+        color: AppTokens.surface1,
+        border: Border(
+          left: BorderSide(color: AppTokens.borderHairline, width: 1),
+        ),
       ),
       child: ListView(
-        padding: const EdgeInsets.symmetric(vertical: 12),
+        padding: const EdgeInsets.symmetric(vertical: 8),
         children: [
           if (onlineMembers.isNotEmpty) ...[
-            const SectionHeader('ONLINE'),
+            SectionHeader(
+              'ONLINE — ${onlineMembers.length}',
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+            ),
             for (final member in onlineMembers)
               _MemberRow(member: member, online: true),
           ],
           if (offlineMembers.isNotEmpty) ...[
-            const SectionHeader('OFFLINE'),
+            SectionHeader(
+              'OFFLINE — ${offlineMembers.length}',
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+            ),
             for (final member in offlineMembers)
               _MemberRow(member: member, online: false),
           ],
@@ -53,54 +57,67 @@ class MembersPanel extends ConsumerWidget {
   }
 }
 
-class _MemberRow extends StatelessWidget {
+class _MemberRow extends StatefulWidget {
   const _MemberRow({required this.member, required this.online});
 
   final ServerMember member;
   final bool online;
 
   @override
+  State<_MemberRow> createState() => _MemberRowState();
+}
+
+class _MemberRowState extends State<_MemberRow> {
+  bool _hovered = false;
+
+  @override
   Widget build(BuildContext context) {
-    final user = member.user;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
+    final user = widget.member.user;
+    final online = widget.online;
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
       child: Container(
-        height: 44,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        height: 40,
+        margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(6),
+          color: _hovered ? AppTokens.hoverOverlay : Colors.transparent,
+          borderRadius: BorderRadius.circular(AppRadius.sm),
         ),
         child: Row(
           children: [
-            // Avatar 32 com ring + dot de presença no canto (wireframe:
-            // .member .ava 32x32 radius 8, .dot 10px right/bottom -4).
             Stack(
               clipBehavior: Clip.none,
               children: [
                 Container(
-                  width: 32,
-                  height: 32,
+                  width: 30,
+                  height: 30,
                   decoration: BoxDecoration(
-                    color: AppThemeColors.card,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: AppThemeColors.hairline),
+                    color: AppTokens.surface2,
+                    borderRadius: BorderRadius.circular(AppRadius.sm),
+                    border: Border.all(color: AppTokens.borderHairline, width: 1),
                   ),
                   alignment: Alignment.center,
                   clipBehavior: Clip.antiAlias,
                   child: user.avatarUrl != null
                       ? Image.network(
                           user.avatarUrl!,
-                          width: 32,
-                          height: 32,
+                          width: 30,
+                          height: 30,
                           fit: BoxFit.cover,
                           errorBuilder: (_, _, _) => _initial(user.name),
                         )
                       : _initial(user.name),
                 ),
                 Positioned(
-                  right: -4,
-                  bottom: -4,
-                  child: PresenceDot(online: online, size: 10),
+                  right: -2,
+                  bottom: -2,
+                  child: PresenceDot(
+                    status: online ? PresenceStatus.online : PresenceStatus.offline,
+                    size: 9,
+                  ),
                 ),
               ],
             ),
@@ -110,11 +127,10 @@ class _MemberRow extends StatelessWidget {
                 user.name,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
+                  fontFamily: 'Geist',
                   fontSize: 13.5,
                   fontWeight: FontWeight.w500,
-                  color: online
-                      ? Theme.of(context).colorScheme.onSurface
-                      : Theme.of(context).colorScheme.secondary,
+                  color: online ? AppTokens.textPrimary : AppTokens.textMuted,
                 ),
               ),
             ),
@@ -127,7 +143,12 @@ class _MemberRow extends StatelessWidget {
   Widget _initial(String name) {
     return Text(
       name.isEmpty ? '?' : name[0].toUpperCase(),
-      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+      style: const TextStyle(
+        fontFamily: 'Geist',
+        fontSize: 12,
+        fontWeight: FontWeight.w600,
+        color: AppTokens.textPrimary,
+      ),
     );
   }
 }

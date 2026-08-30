@@ -1,14 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/theme/app_theme.dart';
+import '../../core/ui/ui.dart';
 import '../../shared/models/message.dart';
 import '../../shared/models/user.dart';
 import 'chat_providers.dart';
 
-/// Chat de um canal de texto (wireframe v3 §4.3): lista reversa (mais
-/// recente embaixo), paginação no topo, agrupamento por autor/tempo e
-/// composer flutuante (#121212, radius 8, sem borda).
+/// Chat de um canal de texto estilo macOS / Vercel:
+/// Lista reversa com paginação no topo, timestamps em Geist Mono e composer flutuante elegante.
 class ChatScreen extends ConsumerWidget {
   const ChatScreen({
     super.key,
@@ -28,7 +27,13 @@ class ChatScreen extends ConsumerWidget {
       children: [
         Expanded(
           child: chat.when(
-            loading: () => const Center(child: CircularProgressIndicator()),
+            loading: () => const Center(
+              child: SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
             error: (_, _) => _ChatError(
               onRetry: () => ref.invalidate(
                 chatControllerProvider(
@@ -65,11 +70,19 @@ class _ChatError extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Text('Não foi possível carregar as mensagens.'),
+          const Text(
+            'Não foi possível carregar as mensagens.',
+            style: TextStyle(
+              fontFamily: 'Geist',
+              fontSize: 13.5,
+              color: AppTokens.textSecondary,
+            ),
+          ),
           const SizedBox(height: 16),
-          FilledButton.tonal(
+          AppButton(
+            label: 'Tentar novamente',
+            variant: AppButtonVariant.secondary,
             onPressed: onRetry,
-            child: const Text('Tentar novamente'),
           ),
         ],
       ),
@@ -108,8 +121,6 @@ class _MessageListState extends State<_MessageList> {
     if (!_scrollController.hasClients) return;
     final position = _scrollController.position;
     final state = widget.state;
-    // reverse:true → offset 0 é o fim (mensagem mais recente); o topo
-    // (mensagens mais antigas) fica em maxScrollExtent.
     if (position.maxScrollExtent - position.pixels <= _loadMoreThreshold &&
         state.hasMore &&
         !state.loadingMore) {
@@ -122,10 +133,14 @@ class _MessageListState extends State<_MessageList> {
     final state = widget.state;
     final messages = state.messages;
     if (messages.isEmpty && !state.loadingMore) {
-      return Center(
+      return const Center(
         child: Text(
-          'Nenhuma mensagem ainda',
-          style: Theme.of(context).textTheme.bodyLarge,
+          'Nenhuma mensagem ainda. Inicie a conversa!',
+          style: TextStyle(
+            fontFamily: 'Geist',
+            fontSize: 14,
+            color: AppTokens.textMuted,
+          ),
         ),
       );
     }
@@ -133,23 +148,21 @@ class _MessageListState extends State<_MessageList> {
     return ListView.builder(
       controller: _scrollController,
       reverse: true,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
       itemCount: messages.length + (state.loadingMore ? 1 : 0),
       itemBuilder: (context, index) {
-        // Índice do item no topo (mais antigo) quando carregando mais.
         if (index == messages.length && state.loadingMore) {
           return const Padding(
             padding: EdgeInsets.symmetric(vertical: 12),
             child: Center(
               child: SizedBox(
-                width: 20,
-                height: 20,
+                width: 18,
+                height: 18,
                 child: CircularProgressIndicator(strokeWidth: 2),
               ),
             ),
           );
         }
-        // reverse:true → index 0 fica embaixo (mensagem mais recente).
         final message = messages[messages.length - 1 - index];
         return _MessageTile(
           message: message,
@@ -159,10 +172,8 @@ class _MessageListState extends State<_MessageList> {
     );
   }
 
-  /// Cabeçalho (autor + hora) quando o autor muda ou o gap com a mensagem
-  /// mais nova (a de baixo na lista reversa) passa de 5 minutos.
   bool _shouldShowHeader(List<ChatMessage> messages, int index) {
-    if (index == 0) return true; // mais recente: sempre mostra
+    if (index == 0) return true;
     final message = messages[messages.length - 1 - index];
     final newer = messages[messages.length - index];
     if (newer.author.id != message.author.id) return true;
@@ -186,15 +197,19 @@ class _MessageTileState extends State<_MessageTile> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final author = widget.message.author;
+    final authorColorIndex = author.id.codeUnits.fold(0, (a, b) => a + b) % 4;
+
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 120),
-        color: _hovered ? AppThemeColors.messageHover : Colors.transparent,
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+        decoration: BoxDecoration(
+          color: _hovered ? AppTokens.chatRowHover : Colors.transparent,
+          borderRadius: BorderRadius.circular(AppRadius.sm),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -203,66 +218,61 @@ class _MessageTileState extends State<_MessageTile> {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  // Avatar 40px quadrado com ring (wireframe: .msg .avatar
-                  // 40x40 radius 10, borda hairline, fundo bg-surface).
                   Container(
-                    width: 40,
-                    height: 40,
+                    width: 36,
+                    height: 36,
                     decoration: BoxDecoration(
-                      color: AppThemeColors.card,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: AppThemeColors.hairline),
+                      color: AppTokens.surface2,
+                      borderRadius: BorderRadius.circular(AppRadius.sm),
+                      border: Border.all(color: AppTokens.borderHairline, width: 1),
                     ),
                     alignment: Alignment.center,
                     clipBehavior: Clip.antiAlias,
                     child: author.avatarUrl != null
                         ? Image.network(
                             author.avatarUrl!,
-                            width: 40,
-                            height: 40,
+                            width: 36,
+                            height: 36,
                             fit: BoxFit.cover,
                             errorBuilder: (_, _, _) => _avatarInitial(author),
                           )
                         : _avatarInitial(author),
                   ),
-                  const SizedBox(width: 16),
+                  const SizedBox(width: 12),
                   Flexible(
                     child: Text(
                       author.name,
                       overflow: TextOverflow.ellipsis,
-                      // 4 tons por hash do id do autor (decoração, não
-                      // identidade — wireframe v3).
                       style: TextStyle(
-                        fontSize: 14.5,
+                        fontFamily: 'Geist',
+                        fontSize: 14,
                         fontWeight: FontWeight.w600,
-                        color: AppThemeColors.authorColors[
-                            author.id.codeUnits
-                                .fold(0, (a, b) => a + b) %
-                                4],
+                        color: AppTokens.authorColors[authorColorIndex],
                       ),
                     ),
                   ),
                   const SizedBox(width: 8),
                   Text(
                     _formatTime(widget.message.createdAt),
-                    // Wireframe: .msg .time Geist Mono 11px muted.
-                    style: theme.textTheme.bodySmall?.copyWith(
+                    style: const TextStyle(
+                      fontFamily: 'Geist Mono',
                       fontSize: 11,
-                      color: const Color(0xFF71717A),
+                      color: AppTokens.textMuted,
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 2),
+              const SizedBox(height: 4),
             ],
-            // Corpo a 56px (40 avatar + 16 gap) — .msg.compact .text.
             Padding(
-              padding: const EdgeInsets.only(left: 56),
+              padding: const EdgeInsets.only(left: 48),
               child: Text(
                 widget.message.content,
                 style: const TextStyle(
-                  fontSize: 14.5,
-                  height: 1.5,
+                  fontFamily: 'Geist',
+                  fontSize: 14,
+                  height: 1.45,
+                  color: AppTokens.textPrimary,
                 ),
               ),
             ),
@@ -275,7 +285,12 @@ class _MessageTileState extends State<_MessageTile> {
   Widget _avatarInitial(User author) {
     return Text(
       author.name.isEmpty ? '?' : author.name[0].toUpperCase(),
-      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+      style: const TextStyle(
+        fontFamily: 'Geist',
+        fontSize: 14,
+        fontWeight: FontWeight.w600,
+        color: AppTokens.textPrimary,
+      ),
     );
   }
 
@@ -306,11 +321,22 @@ class _ChatComposer extends ConsumerStatefulWidget {
 
 class _ChatComposerState extends ConsumerState<_ChatComposer> {
   final TextEditingController _controller = TextEditingController();
+  final FocusNode _focusNode = FocusNode();
   bool _sending = false;
+  bool _focused = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _focusNode.addListener(() {
+      setState(() => _focused = _focusNode.hasFocus);
+    });
+  }
 
   @override
   void dispose() {
     _controller.dispose();
+    _focusNode.dispose();
     super.dispose();
   }
 
@@ -326,9 +352,6 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
             ).notifier,
           )
           .send(content);
-      // O usuário pode ter saído da tela durante o await: o controller de
-      // texto já está disposed — clear() lançaria e o catch genérico
-      // reportaria falha de envio mesmo com o REST tendo sucesso.
       if (!mounted) return;
       _controller.clear();
     } catch (_) {
@@ -346,65 +369,70 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
     return SafeArea(
       top: false,
       child: Padding(
-        // Wireframe: .composer-wrap padding 0 20px 24px.
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-        child: Container(
-          // Wireframe: .composer — bg-surface, border hairline, radius 8,
-          // min-height 48, padding 6/8/6/16, shadow-md.
-          constraints: const BoxConstraints(minHeight: 48),
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          constraints: const BoxConstraints(minHeight: 46),
           decoration: BoxDecoration(
-            color: AppThemeColors.card,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: AppThemeColors.hairline),
+            color: AppTokens.surface2,
+            borderRadius: BorderRadius.circular(AppRadius.md),
+            border: Border.all(
+              color: _focused ? AppTokens.borderFocus : AppTokens.borderStrong,
+              width: _focused ? 1.2 : 1.0,
+            ),
             boxShadow: const [
               BoxShadow(
-                color: Color(0x80000000),
-                blurRadius: 12,
+                color: Color(0x44000000),
+                blurRadius: 10,
                 offset: Offset(0, 4),
               ),
             ],
           ),
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 6, 8, 6),
+            padding: const EdgeInsets.fromLTRB(14, 4, 6, 4),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 Expanded(
                   child: TextField(
                     controller: _controller,
+                    focusNode: _focusNode,
                     enabled: !_sending,
                     minLines: 1,
                     maxLines: 5,
+                    style: const TextStyle(
+                      fontFamily: 'Geist',
+                      fontSize: 13.5,
+                      color: AppTokens.textPrimary,
+                    ),
                     decoration: const InputDecoration(
-                      hintText: 'Enviar mensagem',
+                      hintText: 'Digite sua mensagem… (Enter para enviar)',
+                      hintStyle: TextStyle(
+                        fontFamily: 'Geist',
+                        fontSize: 13.5,
+                        color: AppTokens.textMuted,
+                      ),
                       border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
                       isDense: true,
                       contentPadding:
                           EdgeInsets.symmetric(horizontal: 0, vertical: 10),
                     ),
+                    onSubmitted: (_) => _handleSend(),
                   ),
                 ),
-                // Wireframe: .composer .send 32x32 radius 6, bg
-                // bg-surface-hover, border subtle.
-                InkWell(
-                  borderRadius: BorderRadius.circular(6),
-                  onTap: _sending ? null : _handleSend,
-                  child: Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF1A1A1A),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: AppThemeColors.hairline),
-                    ),
-                    alignment: Alignment.center,
-                    child: Icon(
-                      Icons.send,
-                      size: 14,
-                      color: _sending
-                          ? Theme.of(context).colorScheme.secondary
-                          : Theme.of(context).colorScheme.onSurface,
-                    ),
+                const SizedBox(width: 8),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: AppIconButton(
+                    icon: Icons.arrow_upward,
+                    tooltip: 'Enviar mensagem',
+                    minSize: 30,
+                    iconSize: 16,
+                    isActive: _controller.text.trim().isNotEmpty,
+                    activeColor: AppTokens.textInverse,
+                    onPressed: _sending ? null : _handleSend,
                   ),
                 ),
               ],

@@ -1,198 +1,219 @@
 import 'package:flutter/material.dart';
 
-/// Cores de status/presença (wireframe v3 §3) — fora do [ColorScheme]
-/// (papel semântico do produto, não role Material; mesma filosofia do
-/// Discord: verde = status/toggle, nunca ação).
-///
-/// REGRA v3: a paleta NÃO tem vermelho — dnd e error compartilham o roxo
-/// [#AppStatusColors.dnd] (error só aparece em validação de formulário,
-/// nunca ao lado de presence dot).
+import '../ui/ds_tokens.dart';
+
+export '../ui/ds_tokens.dart';
+
+/// Cores de status/presença (compatibilidade v3/v4).
 class AppStatusColors {
-  static const online = Color(0xFF46A758);
-  static const idle = Color(0xFFF5A623);
-  static const dnd = Color(0xFF8B5CF6);
-  static const offline = Color(0xFF4B5563);
+  static const online = AppTokens.accentGreen;
+  static const idle = AppTokens.accentAmber;
+  static const dnd = AppTokens.accentPurple;
+  static const offline = AppTokens.accentOffline;
 }
 
-/// Overlays de linha (hover/selected) — fora do ColorScheme, aplicados via
-/// `MaterialStateProperty`/cores diretas. v3: alphas BRANCOS translúcidos
-/// (substituem os alphas rosados do v1).
+/// Overlays de linha e interação.
 class AppOverlayColors {
-  static const hover = Color(0x0DFFFFFF); // rgba(255,255,255,0.05)
-  static const selected = Color(0x17FFFFFF); // rgba(255,255,255,0.09)
+  static const hover = AppTokens.hoverOverlay;
+  static const selected = AppTokens.activeOverlay;
 }
 
-/// Tokens de superfície do wireframe v3 (dark minimalista dev-tool) —
-/// hierarquia por coluna: rail < card < canvas.
-///
-/// Exportado para as SPECs seguintes (chat/rail/modal usam direto, sem
-/// reescrever o ColorScheme por coluna).
+/// Tokens de superfície e bordas (compatibilidade v3/v4).
 class AppThemeColors {
   AppThemeColors._();
 
-  /// Fundo do chat / canvas principal (mais escuro da hierarquia).
-  static const canvas = Color(0xFF000000);
-
-  /// Cards/sidebar (superfícies elevadas sobre o canvas).
-  static const card = Color(0xFF121212);
-
-  /// Card alternativo / dialogs sobre o card (mais alto).
-  static const cardRaised = Color(0xFF0A0A0A);
-
-  /// Rail de navegação (mais escuro que card — fundo "atrás" de tudo).
-  static const rail = Color(0xFF050505);
-
-  /// Borda fina translúcida (hairline do wireframe: rgba(255,255,255,.08)).
-  static const hairline = Color(0x14FFFFFF);
-
-  /// Borda estrutural opaca (separadores fortes, outlines de input).
-  static const border = Color(0xFF262626);
-
-  /// Hover de linha de mensagem (rgba(255,255,255,.03)) — usado no chat.
-  static const messageHover = Color(0x08FFFFFF);
-
-  /// 4 tons de autor (mensagens) — índice por hash do `author.id` % 4.
-  static const List<Color> authorColors = [
-    Color(0xFF0070F3),
-    Color(0xFF46A758),
-    Color(0xFFF5A623),
-    Color(0xFF8B5CF6),
-  ];
+  static const canvas = AppTokens.background;
+  static const card = AppTokens.surface1;
+  static const cardRaised = AppTokens.surface2;
+  static const rail = AppTokens.surfaceBase;
+  static const hairline = AppTokens.borderHairline;
+  static const border = AppTokens.borderStrong;
+  static const messageHover = AppTokens.chatRowHover;
+  static const List<Color> authorColors = AppTokens.authorColors;
 }
 
-/// Tema dark-only do 4fun_cod (wireframe v3 — dark minimalista dev-tool).
-///
-/// NOTA: a família Geist Sans está registrada no pubspec como **'Geist'**
-/// (nome interno do TTF v1.7.2 — conferido via fc-scan; "Geist Sans" é o
-/// nome de marca e NÃO resolve no ThemeData, cairia no fallback silencioso).
+/// Tema dark macOS-like + Vercel Dark do 4fun_cod.
 final ThemeData theme4funCod = ThemeData(
   useMaterial3: true,
   brightness: Brightness.dark,
   fontFamily: 'Geist',
   visualDensity: VisualDensity.standard,
+  scaffoldBackgroundColor: AppTokens.background,
+  canvasColor: AppTokens.background,
   colorScheme: const ColorScheme.dark(
-    primary: Color(0xFF0070F3),
-    onPrimary: Color(0xFFFFFFFF),
-    // Mantido: usado em voice_screen (volume ring do participante).
-    primaryContainer: Color(0xFF0A72EF),
-    secondary: Color(0xFFA1A1AA),
-    surface: Color(0xFF0A0A0A), // base/dialog/card alt (cardRaised)
-    surfaceContainerLowest: Color(0xFF050505), // rail
-    surfaceContainer: Color(0xFF121212), // cards/sidebar
-    surfaceContainerHighest: Color(0xFF000000), // chat canvas
-    onSurface: Color(0xFFFFFFFF),
-    outline: Color(0xFF262626),
-    outlineVariant: Color(0x14FFFFFF), // hairline
-    error: Color(0xFF8B5CF6), // v3: error = roxo (paleta sem vermelho)
-    onError: Color(0xFFFFFFFF),
+    primary: AppTokens.textPrimary, // Botões e ações em alto contraste Vercel
+    onPrimary: AppTokens.textInverse,
+    primaryContainer: AppTokens.surface2,
+    onPrimaryContainer: AppTokens.textPrimary,
+    secondary: AppTokens.textSecondary,
+    onSecondary: AppTokens.textInverse,
+    surface: AppTokens.surface2,
+    surfaceContainerLowest: AppTokens.surfaceBase,
+    surfaceContainerLow: AppTokens.surface1,
+    surfaceContainer: AppTokens.surface2,
+    surfaceContainerHigh: AppTokens.surface3,
+    surfaceContainerHighest: AppTokens.background,
+    onSurface: AppTokens.textPrimary,
+    onSurfaceVariant: AppTokens.textSecondary,
+    outline: AppTokens.borderStrong,
+    outlineVariant: AppTokens.borderHairline,
+    error: AppTokens.accentPurple,
+    onError: AppTokens.textPrimary,
   ),
   textTheme: const TextTheme(
     displayMedium: TextStyle(
       fontSize: 24,
       fontWeight: FontWeight.w600,
-      color: Color(0xFFFFFFFF),
-      letterSpacing: -0.5,
+      color: AppTokens.textPrimary,
+      letterSpacing: -0.6,
     ),
     headlineMedium: TextStyle(
-      fontSize: 24,
+      fontSize: 22,
       fontWeight: FontWeight.w600,
-      color: Color(0xFFFFFFFF),
+      color: AppTokens.textPrimary,
       letterSpacing: -0.5,
     ),
     headlineSmall: TextStyle(
-      fontSize: 24,
+      fontSize: 18,
       fontWeight: FontWeight.w600,
-      color: Color(0xFFFFFFFF),
+      color: AppTokens.textPrimary,
+      letterSpacing: -0.4,
     ),
     titleLarge: TextStyle(
-      fontSize: 16,
+      fontSize: 15,
       fontWeight: FontWeight.w600,
-      color: Color(0xFFFFFFFF),
+      color: AppTokens.textPrimary,
+      letterSpacing: -0.3,
     ),
     titleMedium: TextStyle(
-      fontSize: 16,
+      fontSize: 14,
       fontWeight: FontWeight.w600,
-      color: Color(0xFFFFFFFF),
+      color: AppTokens.textPrimary,
+      letterSpacing: -0.2,
+    ),
+    titleSmall: TextStyle(
+      fontSize: 13,
+      fontWeight: FontWeight.w600,
+      color: AppTokens.textSecondary,
     ),
     bodyLarge: TextStyle(
-      fontSize: 16,
+      fontSize: 14.5,
       fontWeight: FontWeight.w400,
-      color: Color(0xFFFFFFFF),
+      color: AppTokens.textPrimary,
+      height: 1.45,
     ),
     bodyMedium: TextStyle(
-      fontSize: 16,
+      fontSize: 13.5,
       fontWeight: FontWeight.w400,
-      color: Color(0xFFFFFFFF),
+      color: AppTokens.textPrimary,
+      height: 1.4,
     ),
     labelLarge: TextStyle(
-      fontSize: 14,
+      fontSize: 13,
       fontWeight: FontWeight.w500,
-      color: Color(0xFFFFFFFF),
+      color: AppTokens.textPrimary,
+    ),
+    labelMedium: TextStyle(
+      fontSize: 12,
+      fontWeight: FontWeight.w500,
+      color: AppTokens.textSecondary,
     ),
     labelSmall: TextStyle(
-      fontSize: 12,
+      fontFamily: 'Geist Mono',
+      fontSize: 11,
       fontWeight: FontWeight.w600,
-      color: Color(0xFFA1A1AA),
-      letterSpacing: 1.0,
+      color: AppTokens.textSecondary,
+      letterSpacing: 0.8,
     ),
-    // Timestamps/metadados técnicos em Geist Mono + tabular-nums.
     bodySmall: TextStyle(
       fontFamily: 'Geist Mono',
-      fontSize: 13,
-      color: Color(0xFFA1A1AA),
+      fontSize: 11.5,
+      color: AppTokens.textMuted,
       fontFeatures: [FontFeature.tabularFigures()],
     ),
   ),
   filledButtonTheme: FilledButtonThemeData(
     style: FilledButton.styleFrom(
-      backgroundColor: const Color(0xFF0070F3),
-      foregroundColor: const Color(0xFFFFFFFF),
-      minimumSize: const Size(64, 38),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9999)),
+      backgroundColor: AppTokens.textPrimary, // Vercel Signature: White on Dark
+      foregroundColor: AppTokens.textInverse, // Black text
+      minimumSize: const Size(64, 34),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 0),
+      textStyle: const TextStyle(
+        fontFamily: 'Geist',
+        fontSize: 13.5,
+        fontWeight: FontWeight.w600,
+      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.sm)),
+      elevation: 0,
+    ),
+  ),
+  textButtonTheme: TextButtonThemeData(
+    style: TextButton.styleFrom(
+      foregroundColor: AppTokens.textSecondary,
+      textStyle: const TextStyle(
+        fontFamily: 'Geist',
+        fontSize: 13.5,
+        fontWeight: FontWeight.w500,
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.sm)),
     ),
   ),
   inputDecorationTheme: InputDecorationTheme(
     filled: true,
-    fillColor: const Color(0xFF121212),
-    hintStyle: const TextStyle(color: Color(0xFF6E7681)),
-    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+    fillColor: AppTokens.surface2,
+    hintStyle: const TextStyle(color: AppTokens.textMuted, fontSize: 13.5),
+    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
     border: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(6),
-      borderSide: const BorderSide(color: Color(0xFF262626)),
+      borderRadius: BorderRadius.circular(AppRadius.sm),
+      borderSide: const BorderSide(color: AppTokens.borderStrong, width: 1),
     ),
     enabledBorder: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(6),
-      borderSide: const BorderSide(color: Color(0xFF262626)),
+      borderRadius: BorderRadius.circular(AppRadius.sm),
+      borderSide: const BorderSide(color: AppTokens.borderStrong, width: 1),
     ),
     focusedBorder: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(6),
-      borderSide: const BorderSide(color: Color(0xFF0070F3), width: 1),
+      borderRadius: BorderRadius.circular(AppRadius.sm),
+      borderSide: const BorderSide(color: AppTokens.borderFocus, width: 1.2),
     ),
   ),
   cardTheme: CardThemeData(
-    color: const Color(0xFF121212),
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+    color: AppTokens.surface2,
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(AppRadius.lg),
+      side: const BorderSide(color: AppTokens.borderHairline, width: 1),
+    ),
     elevation: 0,
     margin: EdgeInsets.zero,
   ),
   dialogTheme: DialogThemeData(
-    backgroundColor: const Color(0xFF121212),
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-    elevation: 8,
+    backgroundColor: AppTokens.surface2,
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(AppRadius.xl),
+      side: const BorderSide(color: AppTokens.borderSubtle, width: 1),
+    ),
+    elevation: 16,
   ),
   snackBarTheme: SnackBarThemeData(
-    backgroundColor: const Color(0xFF0A0A0A),
-    contentTextStyle: const TextStyle(color: Color(0xFFEDEDED)),
+    backgroundColor: AppTokens.surface2,
+    contentTextStyle: const TextStyle(color: AppTokens.textPrimary, fontSize: 13.5),
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(AppRadius.md),
+      side: const BorderSide(color: AppTokens.borderSubtle, width: 1),
+    ),
     behavior: SnackBarBehavior.floating,
   ),
   dividerTheme: const DividerThemeData(
-    color: Color(0x14FFFFFF),
+    color: AppTokens.borderHairline,
     thickness: 1,
     space: 1,
   ),
   chipTheme: ChipThemeData(
-    backgroundColor: const Color(0xFF0A0A0A),
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9999)),
+    backgroundColor: AppTokens.surface2,
+    labelStyle: const TextStyle(fontSize: 12, color: AppTokens.textSecondary),
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(AppRadius.full),
+      side: const BorderSide(color: AppTokens.borderHairline),
+    ),
   ),
 );

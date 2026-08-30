@@ -1,16 +1,19 @@
 import 'package:flutter/material.dart';
 
-/// Ícone de ação compacto com tooltip e alvo tocável — usado em headers,
-/// user panel e ações de linha. Default 44px (acessibilidade do wireframe
-/// v3); painéis densos podem reduzir via [minSize].
-class AppIconButton extends StatelessWidget {
+import 'ds_tokens.dart';
+
+/// Ícone de ação compacto estilo macOS com tooltip e feedback suave
+class AppIconButton extends StatefulWidget {
   const AppIconButton({
     super.key,
     required this.icon,
     required this.tooltip,
     this.onPressed,
-    this.iconSize = 18,
-    this.minSize = 44,
+    this.iconSize = 16,
+    this.minSize = 28,
+    this.color,
+    this.activeColor,
+    this.isActive = false,
     this.visualDensity = VisualDensity.compact,
   });
 
@@ -18,20 +21,55 @@ class AppIconButton extends StatelessWidget {
   final String tooltip;
   final VoidCallback? onPressed;
   final double iconSize;
-
-  /// Lado mínimo do alvo tocável (default 44px).
   final double minSize;
-
+  final Color? color;
+  final Color? activeColor;
+  final bool isActive;
   final VisualDensity visualDensity;
 
   @override
+  State<AppIconButton> createState() => _AppIconButtonState();
+}
+
+class _AppIconButtonState extends State<AppIconButton> {
+  bool _hovered = false;
+
+  @override
   Widget build(BuildContext context) {
-    return IconButton(
-      icon: Icon(icon, size: iconSize),
-      tooltip: tooltip,
-      visualDensity: visualDensity,
-      constraints: BoxConstraints(minWidth: minSize, minHeight: minSize),
-      onPressed: onPressed,
+    final effectiveColor = widget.isActive
+        ? (widget.activeColor ?? AppTokens.accentVercel)
+        : (_hovered ? AppTokens.textPrimary : (widget.color ?? AppTokens.textSecondary));
+
+    return Tooltip(
+      message: widget.tooltip,
+      child: MouseRegion(
+        cursor: widget.onPressed == null
+            ? SystemMouseCursors.basic
+            : SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() => _hovered = false),
+        child: GestureDetector(
+          onTap: widget.onPressed,
+          behavior: HitTestBehavior.opaque,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 120),
+            width: widget.minSize,
+            height: widget.minSize,
+            decoration: BoxDecoration(
+              color: widget.isActive
+                  ? AppTokens.activeOverlay
+                  : (_hovered ? AppTokens.hoverOverlay : Colors.transparent),
+              borderRadius: BorderRadius.circular(AppRadius.sm),
+            ),
+            alignment: Alignment.center,
+            child: Icon(
+              widget.icon,
+              size: widget.iconSize,
+              color: effectiveColor,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

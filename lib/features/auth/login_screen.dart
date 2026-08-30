@@ -4,13 +4,10 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/api/api_exception.dart';
 import '../../core/auth/auth_controller.dart';
+import '../../core/ui/ui.dart';
 import '../../core/ui/web_input.dart';
 
-/// Tela de login (e-mail/senha → sessão no backend).
-///
-/// Após o login: se veio de um deep link com `?redirect=/caminho-interno`
-/// (ex.: /invite/:code), volta para lá; senão o redirect do router (§7.2)
-/// leva para a home.
+/// Tela de login estilo Vercel / macOS (e-mail/senha → sessão no backend).
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
 
@@ -32,8 +29,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     super.dispose();
   }
 
-  /// Retorno pós-login vindo de deep link (apenas paths internos — sem open
-  /// redirect para URLs externas).
   String? get _redirectTarget {
     final raw = GoRouterState.of(context).uri.queryParameters['redirect'];
     if (raw == null || !raw.startsWith('/') || raw.startsWith('//')) {
@@ -69,77 +64,112 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppTokens.background,
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(24),
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 400),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(
-                      '4fun Cod',
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.headlineMedium,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Entre na sua conta',
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                    const SizedBox(height: 24),
-                    TextFormField(
-                      controller: _emailController,
-                      decoration: const InputDecoration(
-                        labelText: 'E-mail',
-                        border: OutlineInputBorder(),
+              constraints: const BoxConstraints(maxWidth: 380),
+              child: AppCard(
+                padding: const EdgeInsets.all(32),
+                backgroundColor: AppTokens.surface1,
+                borderColor: AppTokens.borderStrong,
+                borderRadius: BorderRadius.circular(AppRadius.xl),
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: AppTokens.textPrimary,
+                            borderRadius: BorderRadius.circular(AppRadius.md),
+                          ),
+                          alignment: Alignment.center,
+                          child: const Icon(
+                            Icons.terminal,
+                            color: AppTokens.textInverse,
+                            size: 26,
+                          ),
+                        ),
                       ),
-                      keyboardType: TextInputType.emailAddress,
-                      autofillHints: webAutofillHints(const [AutofillHints.email]),
-                      validator: _validateEmail,
-                    ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: _passwordController,
-                      decoration: const InputDecoration(
-                        labelText: 'Senha',
-                        border: OutlineInputBorder(),
+                      const SizedBox(height: 20),
+                      const Text(
+                        '4fun_cod',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontFamily: 'Geist',
+                          fontSize: 22,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: -0.6,
+                          color: AppTokens.textPrimary,
+                        ),
                       ),
-                      obscureText: true,
-                      autofillHints: webAutofillHints(const [AutofillHints.password]),
-                      validator: (value) =>
-                          (value == null || value.isEmpty) ? 'Informe sua senha.' : null,
-                      onFieldSubmitted: (_) => _submit(),
-                    ),
-                    if (_errorMessage != null) ...[
+                      const SizedBox(height: 6),
+                      const Text(
+                        'Entre na sua conta para continuar',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontFamily: 'Geist',
+                          fontSize: 13,
+                          color: AppTokens.textSecondary,
+                        ),
+                      ),
+                      const SizedBox(height: 28),
+                      AppTextField(
+                        controller: _emailController,
+                        label: 'E-mail',
+                        hintText: 'seu@email.com',
+                        keyboardType: TextInputType.emailAddress,
+                        autofillHints: webAutofillHints(const [AutofillHints.email]),
+                        validator: _validateEmail,
+                      ),
                       const SizedBox(height: 16),
-                      Text(
-                        _errorMessage!,
-                        style: TextStyle(color: Theme.of(context).colorScheme.error),
+                      AppTextField(
+                        controller: _passwordController,
+                        label: 'Senha',
+                        hintText: '••••••••',
+                        obscureText: true,
+                        autofillHints: webAutofillHints(const [AutofillHints.password]),
+                        validator: (value) =>
+                            (value == null || value.isEmpty) ? 'Informe sua senha.' : null,
+                        onFieldSubmitted: (_) => _submit(),
+                      ),
+                      if (_errorMessage != null) ...[
+                        const SizedBox(height: 16),
+                        Text(
+                          _errorMessage!,
+                          style: const TextStyle(
+                            fontFamily: 'Geist',
+                            fontSize: 12.5,
+                            color: AppTokens.accentPurple,
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 24),
+                      AppButton(
+                        label: 'Entrar',
+                        variant: AppButtonVariant.primary,
+                        size: AppButtonSize.lg,
+                        expanded: true,
+                        loading: _submitting,
+                        onPressed: _submitting ? null : _submit,
+                      ),
+                      const SizedBox(height: 14),
+                      AppButton(
+                        label: 'Criar conta',
+                        variant: AppButtonVariant.ghost,
+                        size: AppButtonSize.md,
+                        expanded: true,
+                        onPressed: _submitting ? null : () => context.go('/register'),
                       ),
                     ],
-                    const SizedBox(height: 24),
-                    FilledButton(
-                      onPressed: _submitting ? null : _submit,
-                      child: _submitting
-                          ? const SizedBox(
-                              height: 20,
-                              width: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Text('Entrar'),
-                    ),
-                    const SizedBox(height: 12),
-                    TextButton(
-                      onPressed: _submitting ? null : () => context.go('/register'),
-                      child: const Text('Criar conta'),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),

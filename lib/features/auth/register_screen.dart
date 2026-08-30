@@ -4,10 +4,10 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/api/api_exception.dart';
 import '../../core/auth/auth_controller.dart';
+import '../../core/ui/ui.dart';
 import '../../core/ui/web_input.dart';
 
-/// Tela de cadastro: cria a conta no backend (`POST /auth/register`) com
-/// e-mail/senha local (bcrypt no servidor).
+/// Tela de cadastro estilo Vercel / macOS.
 class RegisterScreen extends ConsumerStatefulWidget {
   const RegisterScreen({super.key});
 
@@ -50,7 +50,6 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
             email: _emailController.text.trim(),
             password: _passwordController.text,
           );
-      // Redirect do router leva para a home automaticamente.
     } on ApiException catch (e) {
       if (mounted) setState(() => _errorMessage = e.message);
     } catch (_) {
@@ -63,114 +62,150 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Criar conta')),
+      backgroundColor: AppTokens.background,
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(24),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 400),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    TextFormField(
-                      controller: _nameController,
-                      decoration: const InputDecoration(
-                        labelText: 'Nome',
-                        border: OutlineInputBorder(),
+              child: AppCard(
+                padding: const EdgeInsets.all(32),
+                backgroundColor: AppTokens.surface1,
+                borderColor: AppTokens.borderStrong,
+                borderRadius: BorderRadius.circular(AppRadius.xl),
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: AppTokens.textPrimary,
+                            borderRadius: BorderRadius.circular(AppRadius.md),
+                          ),
+                          alignment: Alignment.center,
+                          child: const Icon(
+                            Icons.terminal,
+                            color: AppTokens.textInverse,
+                            size: 26,
+                          ),
+                        ),
                       ),
-                      textCapitalization: TextCapitalization.words,
-                      validator: (value) =>
-                          (value == null || value.trim().isEmpty) ? 'Informe seu nome.' : null,
-                    ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: _usernameController,
-                      decoration: const InputDecoration(
-                        labelText: 'Username',
-                        helperText: '3-20 caracteres: letras minúsculas, números e _',
-                        border: OutlineInputBorder(),
+                      const SizedBox(height: 20),
+                      const Text(
+                        'Criar conta',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontFamily: 'Geist',
+                          fontSize: 22,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: -0.6,
+                          color: AppTokens.textPrimary,
+                        ),
                       ),
-                      validator: (value) {
-                        // Normaliza igual ao submit (toLowerCase): o usuário
-                        // pode digitar "Rodrigo" e ser aceito como "rodrigo".
-                        final username = value?.trim().toLowerCase() ?? '';
-                        if (!_usernameRegex.hasMatch(username)) {
-                          return 'Username inválido (a-z, 0-9, _; 3-20 caracteres).';
-                        }
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: _emailController,
-                      decoration: const InputDecoration(
-                        labelText: 'E-mail',
-                        border: OutlineInputBorder(),
+                      const SizedBox(height: 6),
+                      const Text(
+                        'Junte-se ao 4fun_cod',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontFamily: 'Geist',
+                          fontSize: 13,
+                          color: AppTokens.textSecondary,
+                        ),
                       ),
-                      keyboardType: TextInputType.emailAddress,
-                      autofillHints: webAutofillHints(const [AutofillHints.email]),
-                      validator: (value) {
-                        final email = value?.trim() ?? '';
-                        if (email.isEmpty) return 'Informe seu e-mail.';
-                        if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) {
-                          return 'E-mail inválido.';
-                        }
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: _passwordController,
-                      decoration: const InputDecoration(
-                        labelText: 'Senha',
-                        border: OutlineInputBorder(),
+                      const SizedBox(height: 24),
+                      AppTextField(
+                        controller: _nameController,
+                        label: 'NOME COMPLETO',
+                        hintText: 'Seu nome',
+                        validator: (value) =>
+                            (value == null || value.trim().isEmpty) ? 'Informe seu nome.' : null,
                       ),
-                      obscureText: true,
-                      autofillHints: webAutofillHints(const [AutofillHints.newPassword]),
-                      validator: (value) =>
-                          (value == null || value.length < 8) ? 'A senha deve ter pelo menos 8 caracteres.' : null,
-                    ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: _confirmPasswordController,
-                      decoration: const InputDecoration(
-                        labelText: 'Confirmar senha',
-                        border: OutlineInputBorder(),
+                      const SizedBox(height: 14),
+                      AppTextField(
+                        controller: _usernameController,
+                        label: 'USERNAME',
+                        hintText: 'usuario123',
+                        validator: (value) {
+                          final username = value?.trim().toLowerCase() ?? '';
+                          if (!_usernameRegex.hasMatch(username)) {
+                            return '3-20 caracteres: a-z, 0-9 e _';
+                          }
+                          return null;
+                        },
                       ),
-                      obscureText: true,
-                      validator: (value) => value != _passwordController.text
-                          ? 'As senhas não coincidem.'
-                          : null,
-                      onFieldSubmitted: (_) => _submit(),
-                    ),
-                    if (_errorMessage != null) ...[
-                      const SizedBox(height: 16),
-                      Text(
-                        _errorMessage!,
-                        style: TextStyle(color: Theme.of(context).colorScheme.error),
+                      const SizedBox(height: 14),
+                      AppTextField(
+                        controller: _emailController,
+                        label: 'E-MAIL',
+                        hintText: 'seu@email.com',
+                        keyboardType: TextInputType.emailAddress,
+                        autofillHints: webAutofillHints(const [AutofillHints.email]),
+                        validator: (value) {
+                          final email = value?.trim() ?? '';
+                          if (email.isEmpty) return 'Informe seu e-mail.';
+                          if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) {
+                            return 'E-mail inválido.';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 14),
+                      AppTextField(
+                        controller: _passwordController,
+                        label: 'SENHA',
+                        hintText: 'Mínimo 8 caracteres',
+                        obscureText: true,
+                        autofillHints: webAutofillHints(const [AutofillHints.newPassword]),
+                        validator: (value) =>
+                            (value == null || value.length < 8) ? 'Mínimo 8 caracteres.' : null,
+                      ),
+                      const SizedBox(height: 14),
+                      AppTextField(
+                        controller: _confirmPasswordController,
+                        label: 'CONFIRMAR SENHA',
+                        hintText: 'Repita a senha',
+                        obscureText: true,
+                        validator: (value) => value != _passwordController.text
+                            ? 'As senhas não coincidem.'
+                            : null,
+                        onFieldSubmitted: (_) => _submit(),
+                      ),
+                      if (_errorMessage != null) ...[
+                        const SizedBox(height: 16),
+                        Text(
+                          _errorMessage!,
+                          style: const TextStyle(
+                            fontFamily: 'Geist',
+                            fontSize: 12.5,
+                            color: AppTokens.accentPurple,
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 24),
+                      AppButton(
+                        label: 'Cadastrar',
+                        variant: AppButtonVariant.primary,
+                        size: AppButtonSize.lg,
+                        expanded: true,
+                        loading: _submitting,
+                        onPressed: _submitting ? null : _submit,
+                      ),
+                      const SizedBox(height: 12),
+                      AppButton(
+                        label: 'Já tenho uma conta — entrar',
+                        variant: AppButtonVariant.ghost,
+                        size: AppButtonSize.md,
+                        expanded: true,
+                        onPressed: _submitting ? null : () => context.go('/login'),
                       ),
                     ],
-                    const SizedBox(height: 24),
-                    FilledButton(
-                      onPressed: _submitting ? null : _submit,
-                      child: _submitting
-                          ? const SizedBox(
-                              height: 20,
-                              width: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Text('Cadastrar'),
-                    ),
-                    const SizedBox(height: 12),
-                    TextButton(
-                      onPressed: _submitting ? null : () => context.go('/login'),
-                      child: const Text('Já tenho conta — entrar'),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),

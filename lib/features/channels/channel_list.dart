@@ -1,17 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/theme/app_theme.dart';
-import '../../core/ui/section_header.dart';
+import '../../core/ui/ui.dart';
 import '../../shared/models/servers.dart';
 import '../servers/servers_providers.dart';
 import 'channels_providers.dart';
 import 'create_channel_dialog.dart';
 
-/// Lista de canais de um servidor (wireframe v3 §4.2): header com o NOME do
-/// servidor, seções caps CANAIS DE TEXTO/CANAIS DE VOZ agrupadas por
-/// `channel.type`, rows custom ~32px com ícone derivado do type, criação
-/// (OWNER) e exclusão com confirmação (OWNER, visível só no hover).
+/// Lista de canais de um servidor estilo macOS Sidebar:
+/// Header com nome do servidor + botão criar canal, seções em Geist Mono e rows ~32px.
 class ChannelList extends ConsumerWidget {
   const ChannelList({
     super.key,
@@ -42,7 +39,6 @@ class ChannelList extends ConsumerWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
-          // Wireframe: .sidebar-header height 48, padding 0 16px.
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: SizedBox(
             height: 48,
@@ -53,14 +49,16 @@ class ChannelList extends ConsumerWidget {
                     serverName ?? 'Servidor',
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
+                      fontFamily: 'Geist',
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
+                      color: AppTokens.textPrimary,
                     ),
                   ),
                 ),
                 if (isOwner)
-                  IconButton(
-                    icon: const Icon(Icons.add),
+                  AppIconButton(
+                    icon: Icons.add,
                     tooltip: 'Criar canal',
                     onPressed: () =>
                         showCreateChannelDialog(context, serverId: serverId),
@@ -69,19 +67,19 @@ class ChannelList extends ConsumerWidget {
             ),
           ),
         ),
-        const Divider(height: 1),
+        const Divider(height: 1, color: AppTokens.borderHairline),
         Expanded(
           child: channels.when(
             loading: () => const Center(
               child: SizedBox(
-                width: 24,
-                height: 24,
+                width: 20,
+                height: 20,
                 child: CircularProgressIndicator(strokeWidth: 2),
               ),
             ),
             error: (error, _) => Center(
               child: IconButton(
-                icon: const Icon(Icons.refresh),
+                icon: const Icon(Icons.refresh, size: 18),
                 tooltip: 'Tentar novamente',
                 onPressed: () =>
                     ref.invalidate(channelsControllerProvider(serverId)),
@@ -89,16 +87,22 @@ class ChannelList extends ConsumerWidget {
             ),
             data: (list) => list.isEmpty
                 ? const Center(
-                    child: Text('Nenhum canal ainda.'),
+                    child: Text(
+                      'Nenhum canal ainda.',
+                      style: TextStyle(
+                        fontFamily: 'Geist',
+                        fontSize: 13,
+                        color: AppTokens.textMuted,
+                      ),
+                    ),
                   )
                 : ListView(
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     children: [
                       if (textChannels.isNotEmpty) ...[
-                        // Wireframe: .channel-section padding 18px 16px 6px.
                         const SectionHeader(
                           'CANAIS DE TEXTO',
-                          padding: EdgeInsets.fromLTRB(16, 18, 16, 6),
+                          padding: EdgeInsets.fromLTRB(16, 14, 16, 6),
                         ),
                         for (final channel in textChannels)
                           _ChannelRow(
@@ -117,7 +121,7 @@ class ChannelList extends ConsumerWidget {
                       if (voiceChannels.isNotEmpty) ...[
                         const SectionHeader(
                           'CANAIS DE VOZ',
-                          padding: EdgeInsets.fromLTRB(16, 18, 16, 6),
+                          padding: EdgeInsets.fromLTRB(16, 14, 16, 6),
                         ),
                         for (final channel in voiceChannels)
                           _ChannelRow(
@@ -146,21 +150,44 @@ class ChannelList extends ConsumerWidget {
     WidgetRef ref,
     ServerChannel channel,
   ) async {
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showMacModalWindow<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Excluir canal'),
-        content: Text('Excluir o canal #${channel.name}?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancelar'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Excluir'),
-          ),
-        ],
+      title: 'Excluir canal',
+      maxWidth: 360,
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Tem certeza de que deseja excluir o canal #${channel.name}? Esta ação não pode ser desfeita.',
+              style: const TextStyle(
+                fontFamily: 'Geist',
+                fontSize: 13.5,
+                color: AppTokens.textSecondary,
+                height: 1.4,
+              ),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                AppButton(
+                  label: 'Cancelar',
+                  variant: AppButtonVariant.ghost,
+                  onPressed: () => Navigator.of(context).pop(false),
+                ),
+                const SizedBox(width: 8),
+                AppButton(
+                  label: 'Excluir',
+                  variant: AppButtonVariant.danger,
+                  onPressed: () => Navigator.of(context).pop(true),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
     if (confirmed != true) return;
@@ -168,10 +195,6 @@ class ChannelList extends ConsumerWidget {
   }
 }
 
-/// Row de canal custom (~32px): ícone por type + nome, hover branco 5%,
-/// ativo 9% + texto branco + pill 2px azul à esquerda; delete só no hover
-/// (OWNER). Ícone Material derivado de `channel.type` (contrato do model
-/// `ServerChannel.icon` intocado).
 class _ChannelRow extends StatefulWidget {
   const _ChannelRow({
     required this.channel,
@@ -196,74 +219,61 @@ class _ChannelRowState extends State<_ChannelRow> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final selected = widget.selected;
     final icon = widget.channel.type == ChannelType.text
         ? Icons.tag
         : Icons.volume_up_outlined;
     final baseColor = selected
-        ? theme.colorScheme.onSurface
-        : theme.colorScheme.secondary;
+        ? AppTokens.textPrimary
+        : (_hovered ? AppTokens.textPrimary : AppTokens.textSecondary);
 
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
-      child: InkWell(
+      child: GestureDetector(
         onTap: widget.onTap,
-        child: Container(
-          height: 30,
-          margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          height: 32,
+          margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 1.5),
+          padding: const EdgeInsets.symmetric(horizontal: 8),
           decoration: BoxDecoration(
             color: selected
-                ? AppOverlayColors.selected
-                : (_hovered ? AppOverlayColors.hover : Colors.transparent),
-            borderRadius: BorderRadius.circular(6),
+                ? AppTokens.surface3
+                : (_hovered ? AppTokens.hoverOverlay : Colors.transparent),
+            borderRadius: BorderRadius.circular(AppRadius.sm),
+            border: Border.all(
+              color: selected ? AppTokens.borderSubtle : Colors.transparent,
+              width: 1,
+            ),
           ),
           child: Row(
             children: [
-              // Pill azul 3px do canal ativo (wireframe: left -4, top/bottom 6).
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 150),
-                width: 3,
-                height: 18,
-                decoration: BoxDecoration(
-                  color: selected
-                      ? theme.colorScheme.primary
-                      : Colors.transparent,
-                  borderRadius: const BorderRadius.horizontal(
-                    right: Radius.circular(4),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Icon(icon, size: 16, color: baseColor),
+              Icon(icon, size: 15, color: baseColor),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
                   widget.channel.name,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontSize: 14,
+                    fontFamily: 'Geist',
+                    fontSize: 13.5,
                     color: baseColor,
                     fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
                   ),
                 ),
               ),
-              // Delete visível só no hover (OWNER).
               AnimatedOpacity(
                 duration: const Duration(milliseconds: 120),
                 opacity: widget.isOwner && _hovered ? 1 : 0,
-                child: IconButton(
-                  icon: const Icon(Icons.delete_outline, size: 16),
+                child: AppIconButton(
+                  icon: Icons.delete_outline,
                   tooltip: 'Excluir canal',
-                  visualDensity: VisualDensity.compact,
-                  padding: EdgeInsets.zero,
-                  constraints:
-                      const BoxConstraints(minWidth: 28, minHeight: 28),
+                  minSize: 22,
+                  iconSize: 14,
                   onPressed: widget.onDelete,
                 ),
               ),
-              const SizedBox(width: 4),
             ],
           ),
         ),

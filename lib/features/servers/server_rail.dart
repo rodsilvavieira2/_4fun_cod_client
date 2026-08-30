@@ -2,32 +2,24 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/theme/app_theme.dart';
+import '../../core/ui/ui.dart';
 import '../../shared/models/servers.dart';
 import 'servers_providers.dart';
 
-/// Coluna esquerda estilo Discord (wireframe v3 §4.1): item de Mensagens
-/// diretas no topo → divider → servidores (squircle 16→24 no hover) →
-/// divider → botão de criar.
+/// Coluna esquerda estilo macOS / Discord refinado (wireframe v4):
+/// Item de DMs no topo → divisor sutil → servidores → divisor → criar servidor.
 class ServerRail extends ConsumerWidget {
   const ServerRail({
     super.key,
     this.selectedServerId,
     this.dmActive = false,
-    this.width = 72,
+    this.width = 68,
     this.compact = false,
   });
 
-  /// Servidor em destaque (usado no shell); nulo na home.
   final String? selectedServerId;
-
-  /// Item de DM em estado ativo (usado pela visão DM — SPEC 3).
   final bool dmActive;
-
-  /// Largura da coluna: 72 desktop / 56 mobile (<800, wireframe §7).
   final double width;
-
-  /// Escala mobile (<800): itens 40x40 (SPEC 2 tarefa 8).
   final bool compact;
 
   @override
@@ -35,18 +27,23 @@ class ServerRail extends ConsumerWidget {
     final servers = ref.watch(serversProvider);
     return Container(
       width: width,
-      color: AppThemeColors.rail,
+      decoration: const BoxDecoration(
+        color: AppTokens.surfaceBase,
+        border: Border(
+          right: BorderSide(color: AppTokens.borderHairline, width: 1),
+        ),
+      ),
       child: servers.when(
         loading: () => const Center(
           child: SizedBox(
-            width: 24,
-            height: 24,
+            width: 20,
+            height: 20,
             child: CircularProgressIndicator(strokeWidth: 2),
           ),
         ),
         error: (error, _) => Center(
           child: IconButton(
-            icon: const Icon(Icons.refresh),
+            icon: const Icon(Icons.refresh, size: 18),
             tooltip: 'Tentar novamente',
             onPressed: () => ref.invalidate(serversProvider),
           ),
@@ -56,26 +53,20 @@ class ServerRail extends ConsumerWidget {
           children: [
             _DmRailItem(active: dmActive, compact: compact),
             const Padding(
-              padding: EdgeInsets.symmetric(vertical: 8),
-              child: Divider(height: 1),
+              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Divider(height: 1, color: AppTokens.borderHairline),
             ),
-            for (final server in list) _ServerRailItem(
-              server: server,
-              selected: server.id == selectedServerId,
-              compact: compact,
-            ),
-            const SizedBox(height: 8),
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 8),
-              child: Divider(height: 1),
-            ),
-            Center(
-              child: IconButton(
-                icon: const Icon(Icons.add),
-                tooltip: 'Criar servidor',
-                onPressed: () => context.push('/create-server'),
+            for (final server in list)
+              _ServerRailItem(
+                server: server,
+                selected: server.id == selectedServerId,
+                compact: compact,
               ),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Divider(height: 1, color: AppTokens.borderHairline),
             ),
+            _AddServerRailItem(compact: compact),
           ],
         ),
       ),
@@ -83,14 +74,10 @@ class ServerRail extends ConsumerWidget {
   }
 }
 
-/// Item de Mensagens diretas: balão SVG + pill branca esquerda
-/// (idle 8 / hover 20 / ativo 40), ativo = bg accent.
 class _DmRailItem extends StatefulWidget {
   const _DmRailItem({required this.active, this.compact = false});
 
   final bool active;
-
-  /// Escala mobile (<800): item 40x40 (SPEC 2 tarefa 8).
   final bool compact;
 
   @override
@@ -104,10 +91,11 @@ class _DmRailItemState extends State<_DmRailItem> {
   Widget build(BuildContext context) {
     final active = widget.active;
     final compact = widget.compact;
-    final itemSize = compact ? 40.0 : 44.0;
-    final radius = compact ? 10.0 : 12.0;
+    final itemSize = compact ? 36.0 : 42.0;
+    final radius = compact ? 8.0 : 10.0;
+
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(vertical: 3),
       child: MouseRegion(
         onEnter: (_) => setState(() => _hovered = true),
         onExit: (_) => setState(() => _hovered = false),
@@ -122,45 +110,50 @@ class _DmRailItemState extends State<_DmRailItem> {
                 alignment: Alignment.center,
                 clipBehavior: Clip.none,
                 children: [
-                  // Pill branca à esquerda (wireframe: 0 idle → 16 hover
-                  // → 32 ativo; left -14 absoluto, opacidade 0/0.5/1).
+                  // Pill branca Vercel à esquerda
                   Positioned(
-                    left: -14,
+                    left: 0,
                     top: 0,
                     bottom: 0,
                     child: Center(
-                      child: AnimatedOpacity(
-                        duration: const Duration(milliseconds: 120),
-                        opacity: active ? 1 : (_hovered ? 0.5 : 0),
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 150),
-                          curve: Curves.easeOut,
-                          width: 4,
-                          height: active ? 32 : (_hovered ? 16 : 0),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(999),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 150),
+                        curve: Curves.easeOutCubic,
+                        width: active ? 3.5 : (_hovered ? 3.5 : 0),
+                        height: active ? 28 : (_hovered ? 14 : 0),
+                        decoration: BoxDecoration(
+                          color: AppTokens.textPrimary,
+                          borderRadius: const BorderRadius.horizontal(
+                            right: Radius.circular(3),
                           ),
                         ),
                       ),
                     ),
                   ),
-                  Container(
-                    width: compact ? 32 : 40,
-                    height: compact ? 32 : 40,
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    curve: Curves.easeOutCubic,
+                    width: itemSize,
+                    height: itemSize,
                     decoration: BoxDecoration(
                       color: active
-                          ? AppThemeColors.authorColors.first
-                          : AppThemeColors.card,
-                      borderRadius: BorderRadius.circular(radius),
+                          ? AppTokens.textPrimary
+                          : (_hovered ? AppTokens.surface3 : AppTokens.surface1),
+                      borderRadius: BorderRadius.circular(
+                        active || _hovered ? radius + 4 : radius,
+                      ),
+                      border: Border.all(
+                        color: active
+                            ? Colors.transparent
+                            : (_hovered ? AppTokens.borderSubtle : AppTokens.borderHairline),
+                        width: 1,
+                      ),
                     ),
                     alignment: Alignment.center,
                     child: Icon(
                       active ? Icons.chat : Icons.chat_outlined,
-                      size: compact ? 16 : 20,
-                      color: active
-                          ? Colors.white
-                          : Theme.of(context).colorScheme.onSurface,
+                      size: compact ? 16 : 18,
+                      color: active ? AppTokens.textInverse : AppTokens.textPrimary,
                     ),
                   ),
                 ],
@@ -182,8 +175,6 @@ class _ServerRailItem extends StatefulWidget {
 
   final Server server;
   final bool selected;
-
-  /// Escala mobile (<800): item 40x40 (SPEC 2 tarefa 8).
   final bool compact;
 
   @override
@@ -195,14 +186,14 @@ class _ServerRailItemState extends State<_ServerRailItem> {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
     final server = widget.server;
     final selected = widget.selected;
     final compact = widget.compact;
-    final itemSize = compact ? 40.0 : 44.0;
-    final radius = compact ? 10.0 : 12.0;
+    final itemSize = compact ? 36.0 : 42.0;
+    final radius = compact ? 8.0 : 10.0;
+
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(vertical: 3),
       child: MouseRegion(
         onEnter: (_) => setState(() => _hovered = true),
         onExit: (_) => setState(() => _hovered = false),
@@ -217,42 +208,43 @@ class _ServerRailItemState extends State<_ServerRailItem> {
                 alignment: Alignment.center,
                 clipBehavior: Clip.none,
                 children: [
-                  // Pill branca à esquerda (wireframe: 0 idle → 16 hover
-                  // → 32 ativo; left -14 absoluto, opacidade 0/0.5/1).
+                  // Pill branca Vercel à esquerda
                   Positioned(
-                    left: -14,
+                    left: 0,
                     top: 0,
                     bottom: 0,
                     child: Center(
-                      child: AnimatedOpacity(
-                        duration: const Duration(milliseconds: 120),
-                        opacity: selected ? 1 : (_hovered ? 0.5 : 0),
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 150),
-                          curve: Curves.easeOut,
-                          width: 4,
-                          height: selected ? 32 : (_hovered ? 16 : 0),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(999),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 150),
+                        curve: Curves.easeOutCubic,
+                        width: selected ? 3.5 : (_hovered ? 3.5 : 0),
+                        height: selected ? 28 : (_hovered ? 14 : 0),
+                        decoration: BoxDecoration(
+                          color: AppTokens.textPrimary,
+                          borderRadius: const BorderRadius.horizontal(
+                            right: Radius.circular(3),
                           ),
                         ),
                       ),
                     ),
                   ),
-                  // Squircle: radius 12 sempre, 16 no hover/ativo.
                   AnimatedContainer(
                     duration: const Duration(milliseconds: 150),
-                    curve: Curves.easeOut,
-                    width: compact ? 36 : 44,
-                    height: compact ? 36 : 44,
-                    margin: EdgeInsets.symmetric(
-                      horizontal: compact ? 10 : 12,
-                    ),
+                    curve: Curves.easeOutCubic,
+                    width: itemSize,
+                    height: itemSize,
                     decoration: BoxDecoration(
-                      color: selected ? colorScheme.primary : AppThemeColors.card,
+                      color: selected
+                          ? AppTokens.textPrimary
+                          : (_hovered ? AppTokens.surface3 : AppTokens.surface1),
                       borderRadius: BorderRadius.circular(
                         selected || _hovered ? radius + 4 : radius,
+                      ),
+                      border: Border.all(
+                        color: selected
+                            ? Colors.transparent
+                            : (_hovered ? AppTokens.borderSubtle : AppTokens.borderHairline),
+                        width: 1,
                       ),
                     ),
                     alignment: Alignment.center,
@@ -263,14 +255,13 @@ class _ServerRailItemState extends State<_ServerRailItem> {
                             ),
                             child: Image.network(
                               server.iconUrl!,
-                              width: compact ? 36 : 44,
-                              height: compact ? 36 : 44,
+                              width: itemSize,
+                              height: itemSize,
                               fit: BoxFit.cover,
-                              errorBuilder: (_, _, _) =>
-                                  _initial(server, colorScheme, selected),
+                              errorBuilder: (_, _, _) => _initial(server, selected),
                             ),
                           )
-                        : _initial(server, colorScheme, selected),
+                        : _initial(server, selected),
                   ),
                 ],
               ),
@@ -281,12 +272,76 @@ class _ServerRailItemState extends State<_ServerRailItem> {
     );
   }
 
-  Widget _initial(Server server, ColorScheme colorScheme, bool selected) {
+  Widget _initial(Server server, bool selected) {
     return Text(
       server.name.isEmpty ? '?' : server.name[0].toUpperCase(),
       style: TextStyle(
-        color: selected ? colorScheme.onPrimary : colorScheme.onSurface,
-        fontWeight: FontWeight.bold,
+        fontFamily: 'Geist',
+        color: selected ? AppTokens.textInverse : AppTokens.textPrimary,
+        fontWeight: FontWeight.w700,
+        fontSize: 14,
+      ),
+    );
+  }
+}
+
+class _AddServerRailItem extends StatefulWidget {
+  const _AddServerRailItem({this.compact = false});
+
+  final bool compact;
+
+  @override
+  State<_AddServerRailItem> createState() => _AddServerRailItemState();
+}
+
+class _AddServerRailItemState extends State<_AddServerRailItem> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final compact = widget.compact;
+    final itemSize = compact ? 36.0 : 42.0;
+    final radius = compact ? 8.0 : 10.0;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: MouseRegion(
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() => _hovered = false),
+        child: Tooltip(
+          message: 'Criar servidor',
+          child: InkWell(
+            borderRadius: BorderRadius.circular(radius + 4),
+            onTap: () => context.push('/create-server'),
+            child: SizedBox(
+              height: itemSize,
+              child: Center(
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  curve: Curves.easeOutCubic,
+                  width: itemSize,
+                  height: itemSize,
+                  decoration: BoxDecoration(
+                    color: _hovered ? AppTokens.accentVercel : AppTokens.surface1,
+                    borderRadius: BorderRadius.circular(
+                      _hovered ? radius + 4 : radius,
+                    ),
+                    border: Border.all(
+                      color: _hovered ? Colors.transparent : AppTokens.borderHairline,
+                      width: 1,
+                    ),
+                  ),
+                  alignment: Alignment.center,
+                  child: Icon(
+                    Icons.add,
+                    size: compact ? 16 : 20,
+                    color: _hovered ? Colors.white : AppTokens.textSecondary,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
