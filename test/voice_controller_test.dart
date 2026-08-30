@@ -38,6 +38,10 @@ class FakeRtcService implements RtcService {
   // Contadores/listas do contrato de câmera (Fase 5) — mesmo padrão do mic.
   int enableCameraCalls = 0;
   int disableCameraCalls = 0;
+  int startCameraPreviewCalls = 0;
+  int stopCameraPreviewCalls = 0;
+  RtcVideoTrackRef? previewTrackRef;
+  bool failStartCameraPreview = false;
   final List<String> switchCameraCalls = [];
   final List<({String participantId, RtcVideoQuality quality})>
   setQualityCalls = [];
@@ -123,6 +127,18 @@ class FakeRtcService implements RtcService {
 
   @override
   Future<void> disableCamera() async => disableCameraCalls++;
+
+  @override
+  Future<RtcVideoTrackRef> startCameraPreview({String? deviceId}) async {
+    startCameraPreviewCalls++;
+    if (failStartCameraPreview) throw Exception('preview indisponível');
+    final track = previewTrackRef;
+    if (track == null) throw StateError('track de preview ausente');
+    return track;
+  }
+
+  @override
+  Future<void> stopCameraPreview() async => stopCameraPreviewCalls++;
 
   @override
   Future<void> setQuality(String participantId, RtcVideoQuality quality) async {
@@ -786,44 +802,48 @@ void main() {
       },
     );
 
-    test('selectCamera troca ao vivo só com a câmera ligada', () async {
-      repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
-      final notifier = buildVoice();
-      await notifier.join();
-      await settle();
+    test(
+      'selectCamera persiste a seleção e troca ao vivo quando necessário',
+      () async {
+        repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
+        final notifier = buildVoice();
+        await notifier.join();
+        await settle();
 
-      // Câmera desligada: apenas registra a seleção (o serviço não persiste
-      // deviceId pendente — o próximo enableCamera usa o device default).
-      await notifier.selectCamera('dev-1');
-      await settle();
-      expect(state().selectedCameraId, 'dev-1');
-      expect(rtc.switchCameraCalls, isEmpty);
+        // Mesmo desligada, a seleção segue para o serviço para valer no preview
+        // local e no próximo enableCamera().
+        expect(await notifier.selectCamera('dev-1'), isTrue);
+        await settle();
+        expect(state().selectedCameraId, 'dev-1');
+        expect(rtc.switchCameraCalls, ['dev-1']);
 
-      // Câmera ligada: aplica ao vivo via switchCamera.
-      await notifier.toggleCamera();
-      await settle();
-      await notifier.selectCamera('dev-2');
-      await settle();
-      expect(state().selectedCameraId, 'dev-2');
-      expect(rtc.switchCameraCalls, ['dev-2']);
+        // Câmera ligada: aplica ao vivo via switchCamera.
+        await notifier.toggleCamera();
+        await settle();
+        await notifier.selectCamera('dev-2');
+        await settle();
+        expect(state().selectedCameraId, 'dev-2');
+        expect(rtc.switchCameraCalls, ['dev-1', 'dev-2']);
 
-      // Falha de troca: mensagem de erro, sessão intacta.
-      rtc.failSwitchCamera = true;
-      await notifier.selectCamera('dev-3');
-      await settle();
-      expect(state().status, VoiceSessionStatus.connected);
-      expect(state().errorMessage, 'Não foi possível trocar a câmera.');
-      expect(rtc.disconnectCalls, 0);
+        // Falha de troca: mensagem de erro, sessão intacta.
+        rtc.failSwitchCamera = true;
+        await notifier.selectCamera('dev-3');
+        await settle();
+        expect(state().status, VoiceSessionStatus.connected);
+        expect(state().errorMessage, 'Não foi possível trocar a câmera.');
+        expect(state().selectedCameraId, 'dev-2');
+        expect(rtc.disconnectCalls, 0);
 
-      // Sucesso APÓS falha: limpa a mensagem — senão o SnackBar de uma
-      // falha antiga nunca reaparece (o listener só dispara em mudança).
-      rtc.failSwitchCamera = false;
-      await notifier.selectCamera('dev-4');
-      await settle();
-      expect(state().errorMessage, isNull);
-      expect(state().selectedCameraId, 'dev-4');
-      expect(rtc.switchCameraCalls, ['dev-2', 'dev-4']);
-    });
+        // Sucesso APÓS falha: limpa a mensagem — senão o SnackBar de uma
+        // falha antiga nunca reaparece (o listener só dispara em mudança).
+        rtc.failSwitchCamera = false;
+        await notifier.selectCamera('dev-4');
+        await settle();
+        expect(state().errorMessage, isNull);
+        expect(state().selectedCameraId, 'dev-4');
+        expect(rtc.switchCameraCalls, ['dev-1', 'dev-2', 'dev-4']);
+      },
+    );
 
     test(
       'applyTileQuality: remoto com setQuality, local ignorado, dedupe',

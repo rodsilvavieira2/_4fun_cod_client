@@ -108,6 +108,23 @@ class LiveKitRtcService implements RtcService {
   /// resetado no [_cleanupRoom] (sessão nova = auto).
   RtcScreenShareQuality _screenShareQuality = RtcScreenShareQuality.auto;
 
+  /// Câmera escolhida no sheet. Fica em memória durante a sessão para que a
+  /// seleção feita no preview também seja usada quando a câmera for publicada.
+  String? _selectedCameraId;
+
+  /// Track de preview criada fora da room. Ela nunca é publicada e só existe
+  /// enquanto o sheet de configurações está aberto.
+  LocalVideoTrack? _cameraPreviewTrack;
+
+  /// Serializa start/switch/stop do preview: fechar o sheet durante uma
+  /// abertura de câmera não pode deixar uma captura órfã no hardware.
+  Future<void> _cameraPreviewOperation = Future<void>.value();
+
+  /// Incrementado antes de cada abertura/fechamento. Uma abertura que termina
+  /// depois de o sheet ser fechado deve liberar a track recém-criada, sem
+  /// devolvê-la à UI nem mantê-la como captura ativa.
+  int _cameraPreviewGeneration = 0;
+
   /// Cópia dos encodings originais do sender do screen share, capturados logo
   /// após a publicação em Auto. A cópia evita que uma alteração posterior
   /// mutile o baseline usado para calcular as demais qualidades.
@@ -240,10 +257,24 @@ class LiveKitRtcService implements RtcService {
     if (room == null || _disposed) return;
     final localParticipant = room.localParticipant;
     if (localParticipant == null) return;
+    // Se o usuário pedir publicação enquanto há um preview temporário, nunca
+    // mantenha duas capturas da mesma webcam. O preview é local; a publicação
+    // assume o hardware agora.
+    await stopCameraPreview();
+    final existingTrack = localParticipant
+        .getTrackPublicationBySource(TrackSource.camera)
+        ?.track;
+    if (_selectedCameraId != null && existingTrack is LocalVideoTrack) {
+      await existingTrack.switchCamera(_selectedCameraId!);
+    }
     // A câmera segue integralmente os defaults de captura/publicação do SDK e
-    // do dispositivo. O controle de qualidade pertence apenas ao screen
-    // share e nunca recria nem republica esta track.
-    await localParticipant.setCameraEnabled(true);
+    // do dispositivo, exceto pelo device escolhido no sheet. O controle de
+    // qualidade pertence apenas ao screen share e nunca recria nem republica
+    // esta track.
+    await localParticipant.setCameraEnabled(
+      true,
+      cameraCaptureOptions: _cameraCaptureOptions(),
+    );
   }
 
   @override
@@ -256,6 +287,84 @@ class LiveKitRtcService implements RtcService {
     // (participant/local.dart:797-814): a publicação PERMANECE publicada
     // (como o mic); o estado é reconciliado pelos eventos já ouvidos.
     await localParticipant.setCameraEnabled(false);
+  }
+
+  @override
+  Future<RtcVideoTrackRef> startCameraPreview({String? deviceId}) {
+    final generation = ++_cameraPreviewGeneration;
+    return _runCameraPreviewOperation(() async {
+      if (!_isCurrentCameraPreviewGeneration(generation)) {
+        throw StateError('Preview da câmera cancelado.');
+      }
+      final room = _room;
+      final localParticipant = room?.localParticipant;
+      if (room == null || localParticipant == null || _disposed) {
+        throw StateError(
+          'Não há sessão de voz ativa para pré-visualizar a câmera.',
+        );
+      }
+
+      final publication = localParticipant.getTrackPublicationBySource(
+        TrackSource.camera,
+      );
+      final publishedTrack = publication?.track;
+      if (publication != null &&
+          !publication.muted &&
+          publishedTrack is VideoTrack) {
+        // Já existe uma captura PUBLICADA. Reutilizá-la evita abrir a webcam
+        // duas vezes e mantém a privacidade/estado exatamente como estavam.
+        await _stopCameraPreviewUnlocked();
+        if (!_isCurrentCameraPreviewGeneration(generation)) {
+          throw StateError('Preview da câmera cancelado.');
+        }
+        return LiveKitVideoTrackRef(publishedTrack as VideoTrack);
+      }
+
+      final desiredDeviceId = deviceId ?? _selectedCameraId;
+      final preview = _cameraPreviewTrack;
+      if (preview != null) {
+        if (desiredDeviceId != null && desiredDeviceId != _selectedCameraId) {
+          await preview.switchCamera(desiredDeviceId);
+          _selectedCameraId = desiredDeviceId;
+        }
+        if (!_isCurrentCameraPreviewGeneration(generation)) {
+          throw StateError('Preview da câmera cancelado.');
+        }
+        return LiveKitVideoTrackRef(preview);
+      }
+
+      LocalVideoTrack? createdTrack;
+      try {
+        createdTrack = await LocalVideoTrack.createCameraTrack(
+          _cameraCaptureOptions(deviceId: desiredDeviceId),
+        );
+        if (!_isCurrentCameraPreviewGeneration(generation)) {
+          await _discardCameraPreviewTrack(createdTrack);
+          throw StateError('Preview da câmera cancelado.');
+        }
+        await createdTrack.start();
+        if (!_isCurrentCameraPreviewGeneration(generation)) {
+          await _discardCameraPreviewTrack(createdTrack);
+          throw StateError('Preview da câmera cancelado.');
+        }
+        _cameraPreviewTrack = createdTrack;
+        if (desiredDeviceId != null) _selectedCameraId = desiredDeviceId;
+        return LiveKitVideoTrackRef(createdTrack);
+      } catch (_) {
+        if (createdTrack != null) {
+          await _discardCameraPreviewTrack(createdTrack);
+        }
+        rethrow;
+      }
+    });
+  }
+
+  @override
+  Future<void> stopCameraPreview() {
+    // Invalida ANTES de aguardar a fila. Assim, se getUserMedia concluir
+    // depois do fechamento do sheet, a abertura descarta a track na hora.
+    _cameraPreviewGeneration++;
+    return _runCameraPreviewOperation(_stopCameraPreviewUnlocked);
   }
 
   @override
@@ -550,22 +659,30 @@ class LiveKitRtcService implements RtcService {
 
   @override
   Future<void> switchCamera(String deviceId) async {
-    final room = _room;
-    if (room == null || _disposed) return;
-    final localParticipant = room.localParticipant;
-    if (localParticipant == null) return;
-    final track =
-        localParticipant.getTrackPublicationBySource(TrackSource.camera)?.track
-            as LocalVideoTrack?;
-    if (track == null) {
-      // Câmera OFF: sem track local para trocar — no-op. switchCamera só
-      // tem efeito com a câmera ligada; a 1ª enableCamera() usa o device
-      // default (ou o deviceId configurado em defaultCameraCaptureOptions).
-      return;
-    }
-    // API nativa 2.11.0 (track/local/video.dart:299-315): restartTrack
-    // interno — NUNCA despublicar/republicar para trocar de câmera.
-    await track.switchCamera(deviceId);
+    await _runCameraPreviewOperation(() async {
+      final room = _room;
+      if (room == null || _disposed) return;
+      final localParticipant = room.localParticipant;
+      if (localParticipant == null) return;
+
+      final preview = _cameraPreviewTrack;
+      if (preview != null) {
+        // API nativa 2.11.0: restartTrack interno, sem republicar nada.
+        await preview.switchCamera(deviceId);
+        _selectedCameraId = deviceId;
+        return;
+      }
+
+      final track = localParticipant
+          .getTrackPublicationBySource(TrackSource.camera)
+          ?.track;
+      if (track is LocalVideoTrack) {
+        await track.switchCamera(deviceId);
+      }
+      // Com a câmera OFF e sem preview, a seleção ainda precisa sobreviver
+      // para o próximo enableCamera().
+      _selectedCameraId = deviceId;
+    });
   }
 
   @override
@@ -998,7 +1115,47 @@ class LiveKitRtcService implements RtcService {
     _livekitUrl = null;
     _screenShareQuality = RtcScreenShareQuality.auto;
     _screenShareEncodingBaseline = null;
+    _selectedCameraId = null;
     await _teardownRoom();
+  }
+
+  CameraCaptureOptions _cameraCaptureOptions({String? deviceId}) {
+    final selectedDeviceId = deviceId ?? _selectedCameraId;
+    final defaults = _roomOptions.defaultCameraCaptureOptions;
+    if (selectedDeviceId == null) return defaults;
+    return defaults.copyWith(deviceId: selectedDeviceId);
+  }
+
+  Future<T> _runCameraPreviewOperation<T>(Future<T> Function() operation) {
+    final run = _cameraPreviewOperation.then((_) => operation());
+    // A fila deve sobreviver a uma falha de permissão: a próxima tentativa do
+    // usuário (ou o fechamento do sheet) ainda precisa executar.
+    _cameraPreviewOperation = run.then<void>(
+      (_) {},
+      onError: (Object error, StackTrace stackTrace) {},
+    );
+    return run;
+  }
+
+  bool _isCurrentCameraPreviewGeneration(int generation) {
+    return !_disposed && generation == _cameraPreviewGeneration;
+  }
+
+  Future<void> _discardCameraPreviewTrack(LocalVideoTrack track) async {
+    try {
+      // LocalVideoTrack.stop também faz dispose da MediaStream; é isso que
+      // alcança trackDispose/streamDispose no plugin e libera o V4L2.
+      await track.stop();
+    } catch (error) {
+      debugPrint('[rtc] falha ao descartar preview da câmera: $error');
+    }
+  }
+
+  Future<void> _stopCameraPreviewUnlocked() async {
+    final preview = _cameraPreviewTrack;
+    _cameraPreviewTrack = null;
+    if (preview == null) return;
+    await _discardCameraPreviewTrack(preview);
   }
 
   /// Descarta o [Room] atual SEM mexer em [_tokenGenerator]/[_livekitUrl] —
@@ -1007,6 +1164,9 @@ class LiveKitRtcService implements RtcService {
   /// recursos WebRTC — retornar antes deixaria dois [Room]/PeerConnection
   /// vivos num reconnect rápido.
   Future<void> _teardownRoom() async {
+    // Pode ser chamado tanto no disconnect quanto na reconexão automática.
+    // Em ambos os casos, preview local não pode sobreviver à room antiga.
+    await stopCameraPreview();
     // Invalida publicações de áudio de sistema pendentes DESTA sala: a sala
     // nova (reconexão/join) não pode herdar no-op silencioso nem ver a fila
     // da sala antiga (review codex — fix por época, não flag global).

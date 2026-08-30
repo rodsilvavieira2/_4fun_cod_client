@@ -296,6 +296,19 @@ abstract class RtcService {
   /// publicada, como o mic).
   Future<void> disableCamera();
 
+  /// Inicia um preview LOCAL da câmera, sem publicar vídeo na sala.
+  ///
+  /// Quando a câmera já está transmitindo, devolve a própria track publicada
+  /// para evitar uma segunda captura do hardware. Quando está desligada,
+  /// cria uma track temporária, que deve ser liberada com
+  /// [stopCameraPreview]. Erros de permissão/hardware propagam sem afetar a
+  /// sessão de voz nem o estado de publicação da câmera.
+  Future<RtcVideoTrackRef> startCameraPreview({String? deviceId});
+
+  /// Libera a captura temporária criada por [startCameraPreview]. Nunca para
+  /// nem muta uma câmera que já esteja publicada na sala.
+  Future<void> stopCameraPreview();
+
   /// Publica a tela local (track de screenShareVideo). Quando [sourceId] é
   /// nulo, o SDK delega a escolha de janela/display ao portal nativo do SO.
   /// No-op quando o share já está ativo. A câmera NÃO é afetada — share e
@@ -333,9 +346,11 @@ abstract class RtcService {
   /// `type: 'videoinput'`). Labels podem vir vazias antes da permissão.
   Future<List<RtcVideoDevice>> listCameraDevices();
 
-  /// Troca a câmera local em uso para [deviceId] (id de [RtcVideoDevice]).
-  /// Sem efeito quando a câmera está OFF — a primeira [enableCamera] usa o
-  /// device default.
+  /// Seleciona a câmera usada pelo preview e pela publicação local.
+  ///
+  /// Com preview temporário, aplica a troca nele. Com a câmera publicada,
+  /// troca a track ao vivo. Sem captura ativa, apenas registra a escolha para
+  /// o próximo [enableCamera].
   Future<void> switchCamera(String deviceId);
 
   /// Define o teto de qualidade do compartilhamento de tela/janela.

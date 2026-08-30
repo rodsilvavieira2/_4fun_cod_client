@@ -103,8 +103,8 @@ class VoiceState {
   /// Cache da lista de câmeras do dispositivo (sheet de settings).
   final List<RtcVideoDevice> cameraDevices;
 
-  /// Última seleção de câmera do sheet (persistida só no estado; o serviço
-  /// não guarda deviceId pendente com a câmera desligada).
+  /// Última seleção de câmera do sheet, persistida durante a sessão e usada
+  /// tanto pelo preview local quanto pela próxima publicação da câmera.
   final String? selectedCameraId;
 
   /// Perfil de qualidade de PUBLICAÇÃO do compartilhamento local (default
@@ -233,9 +233,9 @@ class VoiceController
       errorMessage: null,
       // Sessão nova = perfil de screen share default (decisão: por sessão).
       screenShareQuality: RtcScreenShareQuality.auto,
-      // Preferência de áudio de sistema também é por sessão (padrão do
-      // projeto: selectedCameraId idem).
+      // Preferências de mídia são por sessão.
       includeSystemAudio: false,
+      selectedCameraId: null,
     );
     try {
       final info = await _freshJoinInfo();
@@ -273,6 +273,7 @@ class VoiceController
       autoSpotlightActive: false,
       savedSpotlightParticipantId: null,
       spotlightParticipantId: null,
+      selectedCameraId: null,
       errorMessage: null,
     );
   }
@@ -496,28 +497,28 @@ class VoiceController
     );
   }
 
-  /// Seleciona uma câmera no sheet. Com a câmera LIGADA aplica ao vivo via
-  /// [RtcService.switchCamera]; com a câmera DESLIGADA apenas registra a
-  /// seleção — o serviço não persiste deviceId pendente (o próximo
-  /// [RtcService.enableCamera] usa o device default; fato do contrato).
-  Future<void> selectCamera(String deviceId) async {
+  /// Seleciona uma câmera no sheet. O serviço aplica no preview local ou na
+  /// track publicada e persiste a escolha para o próximo enableCamera().
+  /// Retorna false quando a troca falha, para a UI preservar o radio anterior.
+  Future<bool> selectCamera(String deviceId) async {
     final current = state;
-    if (current.status != VoiceSessionStatus.connected) return;
-    // Sucesso (com ou sem câmera ligada) limpa mensagem de erro anterior —
-    // senão o SnackBar de uma falha antiga nunca mais reaparece (o listener
-    // só dispara quando a mensagem muda).
-    state = state.copyWith(selectedCameraId: deviceId, errorMessage: null);
-    if (!current.isCameraEnabled) return;
+    if (current.status != VoiceSessionStatus.connected) return false;
     final rtc = ref.read(rtcServiceProvider);
     try {
       await rtc.switchCamera(deviceId);
     } catch (_) {
-      if (_disposed) return;
+      if (_disposed) return false;
       state = state.copyWith(
         status: VoiceSessionStatus.connected,
         errorMessage: 'Não foi possível trocar a câmera.',
       );
+      return false;
     }
+    if (_disposed) return false;
+    // Só move o radio após o serviço confirmar: uma falha preserva a escolha
+    // anterior, que é a única que sabemos estar realmente em uso.
+    state = state.copyWith(selectedCameraId: deviceId, errorMessage: null);
+    return true;
   }
 
   /// Define o perfil de qualidade do compartilhamento de tela/janela.
@@ -705,6 +706,7 @@ class VoiceController
           autoSpotlightActive: false,
           savedSpotlightParticipantId: null,
           spotlightParticipantId: null,
+          selectedCameraId: null,
           errorMessage: null,
         );
       case AudioPlaybackBlockedEvent():

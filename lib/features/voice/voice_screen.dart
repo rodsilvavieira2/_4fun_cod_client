@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/rtc/rtc_providers.dart';
 import '../../core/rtc/rtc_service.dart';
+import '../../core/rtc/rtc_video_view.dart';
 import '../../core/rtc/screen_share_picker.dart';
 import 'voice_providers.dart';
 import 'voice_video_tile.dart';
@@ -102,18 +103,25 @@ class VoiceScreen extends ConsumerWidget {
 
   /// Abre o sheet de settings de câmera; ao abrir, atualiza a lista de
   /// dispositivos (best-effort — falha de enumeração mantém o cache).
-  void _openCameraSettings(
+  Future<void> _openCameraSettings(
     BuildContext context,
     WidgetRef ref,
     ({String serverId, String channelId}) arg,
-  ) {
+  ) async {
     unawaited(
       ref.read(voiceControllerProvider(arg).notifier).refreshCameraDevices(),
     );
-    showModalBottomSheet<void>(
-      context: context,
-      builder: (_) => _CameraSettingsSheet(arg: arg),
-    );
+    final rtc = ref.read(rtcServiceProvider);
+    try {
+      await showModalBottomSheet<void>(
+        context: context,
+        builder: (_) => _CameraSettingsSheet(arg: arg),
+      );
+    } finally {
+      // Idempotente: só para a track de preview temporária. Uma câmera já
+      // publicada continua transmitindo normalmente depois de fechar o sheet.
+      await rtc.stopCameraPreview();
+    }
   }
 
   /// Abre o sheet de qualidade do screen share. Não precisa de
@@ -871,30 +879,93 @@ class _Controls extends StatelessWidget {
   }
 }
 
-/// Sheet de settings de câmera: preview local ao vivo + lista de câmeras
-/// (RadioGroup). O estado vem do [voiceControllerProvider] — o sheet apenas
-/// lê; nenhum provider novo.
-class _CameraSettingsSheet extends ConsumerWidget {
+/// Sheet de settings de câmera: abre uma captura LOCAL e temporária para o
+/// preview, sem publicar vídeo na sala. A track é liberada pelo método que
+/// abriu o modal; este state só controla loading, erro e renderização.
+class _CameraSettingsSheet extends ConsumerStatefulWidget {
   const _CameraSettingsSheet({required this.arg});
 
   final ({String serverId, String channelId}) arg;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
-    final state = ref.watch(voiceControllerProvider(arg));
-    final notifier = ref.read(voiceControllerProvider(arg).notifier);
-    final localId = ref.read(rtcServiceProvider).localParticipantId;
+  ConsumerState<_CameraSettingsSheet> createState() =>
+      _CameraSettingsSheetState();
+}
 
-    // Preview = tile local (placeholder de avatar quando a câmera está OFF).
-    RtcParticipant? local;
-    for (final p in state.participants) {
-      if (p.id == localId) {
-        local = p;
-        break;
-      }
+class _CameraSettingsSheetState extends ConsumerState<_CameraSettingsSheet> {
+  RtcVideoTrackRef? _previewTrack;
+  bool _loadingPreview = true;
+  bool _selectingCamera = false;
+  String? _previewError;
+
+  @override
+  void initState() {
+    super.initState();
+    // Não inicie getUserMedia no mesmo ciclo que monta o bottom sheet: o
+    // plugin pode demorar para abrir a webcam. Deixar o primeiro frame passar
+    // garante que o usuário veja o spinner imediatamente.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(_startPreviewAfterFirstFrame());
+    });
+  }
+
+  Future<void> _startPreviewAfterFirstFrame() async {
+    // Cede também a próxima volta do event loop para o frame do modal ser
+    // apresentado pelo compositor antes da inicialização nativa da câmera.
+    await Future<void>.delayed(Duration.zero);
+    if (!mounted) return;
+    await _startPreview();
+  }
+
+  Future<void> _startPreview() async {
+    final selectedCameraId = ref
+        .read(voiceControllerProvider(widget.arg))
+        .selectedCameraId;
+    if (mounted) {
+      setState(() {
+        _loadingPreview = true;
+        _previewError = null;
+      });
     }
+    try {
+      final track = await ref
+          .read(rtcServiceProvider)
+          .startCameraPreview(deviceId: selectedCameraId);
+      if (!mounted) return;
+      setState(() {
+        _previewTrack = track;
+        _loadingPreview = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _previewTrack = null;
+        _loadingPreview = false;
+        _previewError = 'Não foi possível iniciar o preview da câmera.';
+      });
+    }
+  }
 
+  Future<void> _selectCamera(VoiceController notifier, String deviceId) async {
+    setState(() => _selectingCamera = true);
+    final changed = await notifier.selectCamera(deviceId);
+    if (!mounted) return;
+    setState(() {
+      _selectingCamera = false;
+      if (!changed) {
+        _previewError = 'Não foi possível trocar a câmera selecionada.';
+      } else {
+        _previewError = null;
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final state = ref.watch(voiceControllerProvider(widget.arg));
+    final notifier = ref.read(voiceControllerProvider(widget.arg).notifier);
     final devices = state.cameraDevices;
 
     return SafeArea(
@@ -913,23 +984,20 @@ class _CameraSettingsSheet extends ConsumerWidget {
                   aspectRatio: 16 / 9,
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(8),
-                    child: local == null
-                        ? ColoredBox(
-                            color: theme.colorScheme.surfaceContainerHighest,
-                          )
-                        : VoiceVideoTile(
-                            arg: arg,
-                            participant: local,
-                            role: VoiceVideoTileRole.grid,
-                          ),
+                    child: CameraPreviewSurface(
+                      trackRef: _previewTrack,
+                      loading: _loadingPreview,
+                      error: _previewError,
+                      onRetry: _loadingPreview ? null : _startPreview,
+                    ),
                   ),
                 ),
               ),
             ),
             const SizedBox(height: 8),
             Text(
-              'Ative a câmera para ver o preview e trocar de dispositivo '
-              'ao vivo.',
+              'Este preview é visível apenas para você. Ative a câmera nos '
+              'controles da chamada para transmitir aos participantes.',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.outline,
               ),
@@ -946,7 +1014,8 @@ class _CameraSettingsSheet extends ConsumerWidget {
               RadioGroup<String>(
                 groupValue: state.selectedCameraId,
                 onChanged: (id) {
-                  if (id != null) notifier.selectCamera(id);
+                  if (_selectingCamera || id == null) return;
+                  unawaited(_selectCamera(notifier, id));
                 },
                 child: Column(
                   children: [
@@ -968,6 +1037,78 @@ class _CameraSettingsSheet extends ConsumerWidget {
               ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Superfície compartilhável do preview, exposta para manter o estado de
+/// loading verificável sem precisar abrir uma sessão LiveKit em widget tests.
+class CameraPreviewSurface extends StatelessWidget {
+  const CameraPreviewSurface({
+    super.key,
+    required this.trackRef,
+    required this.loading,
+    required this.error,
+    required this.onRetry,
+  });
+
+  final RtcVideoTrackRef? trackRef;
+  final bool loading;
+  final String? error;
+  final VoidCallback? onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return ColoredBox(
+      color: theme.colorScheme.surfaceContainerHighest,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          if (trackRef != null) RtcVideoView(trackRef: trackRef),
+          if (!loading && trackRef == null)
+            Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.videocam_off,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                  if (error != null) ...[
+                    const SizedBox(height: 8),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Text(
+                        error!,
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.bodySmall,
+                      ),
+                    ),
+                  ],
+                  if (onRetry != null) ...[
+                    const SizedBox(height: 4),
+                    TextButton(
+                      onPressed: onRetry,
+                      child: const Text('Tentar novamente'),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          if (loading)
+            const ColoredBox(
+              color: Color(0x66000000),
+              child: Center(
+                child: SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }

@@ -1,6 +1,9 @@
 #include "flutter_media_stream.h"
 
 #include "flutter_utf8_sanitize.h"
+#include "task_runner.h"
+
+#include <thread>
 
 #define DEFAULT_WIDTH 1280
 #define DEFAULT_HEIGHT 720
@@ -10,27 +13,29 @@ namespace flutter_webrtc_plugin {
 
 namespace {
 
-std::string SanitizeDeviceIdFromAudioBuffers(const char* name, const char* guid) {
+std::string SanitizeDeviceIdFromAudioBuffers(const char *name,
+                                             const char *guid) {
   const std::string raw = (guid != nullptr && strlen(guid) > 0)
                               ? std::string(guid)
                               : std::string(name != nullptr ? name : "");
   return SanitizeUtf8ForFlutter(raw);
 }
 
-std::string SanitizeLabel(const char* name) {
+std::string SanitizeLabel(const char *name) {
   return SanitizeUtf8ForFlutter(std::string(name != nullptr ? name : ""));
 }
 
-std::string SanitizeDeviceIdFromVideoBuffers(const char* name, const char* guid) {
+std::string SanitizeDeviceIdFromVideoBuffers(const char *name,
+                                             const char *guid) {
   const std::string raw = (guid != nullptr && strlen(guid) > 0)
                               ? std::string(guid)
                               : std::string(name != nullptr ? name : "");
   return SanitizeUtf8ForFlutter(raw);
 }
 
-}  // namespace
+} // namespace
 
-FlutterMediaStream::FlutterMediaStream(FlutterWebRTCBase* base) : base_(base) {
+FlutterMediaStream::FlutterMediaStream(FlutterWebRTCBase *base) : base_(base) {
   base_->audio_device_->OnDeviceChange([&] {
     EncodableMap info;
     info[EncodableValue("event")] = "onDeviceChange";
@@ -39,7 +44,7 @@ FlutterMediaStream::FlutterMediaStream(FlutterWebRTCBase* base) : base_(base) {
 }
 
 void FlutterMediaStream::GetUserMedia(
-    const EncodableMap& constraints,
+    const EncodableMap &constraints,
     std::unique_ptr<MethodResultProxy> result) {
   std::string uuid = base_->GenerateUUID();
   scoped_refptr<RTCMediaStream> stream =
@@ -70,10 +75,14 @@ void FlutterMediaStream::GetUserMedia(
     EncodableValue video = it->second;
     if (TypeIs<bool>(video)) {
       if (true == GetValue<bool>(video)) {
-        GetUserVideo(constraints, stream, params);
+        GetUserVideo(constraints, stream, uuid, std::move(params),
+                     std::move(result));
+        return;
       }
     } else if (TypeIs<EncodableMap>(video)) {
-      GetUserVideo(constraints, stream, params);
+      GetUserVideo(constraints, stream, uuid, std::move(params),
+                   std::move(result));
+      return;
     }
   }
 
@@ -95,20 +104,23 @@ void addDefaultAudioConstraints(
 // (each a single-pair map, the format used by the LiveKit SDK and others).
 // Accepts bool values or "true"/"false" strings. Falls back to defaultValue
 // when the key is absent (W3C default is true for AEC/NS/AGC).
-static bool getAudioProcessingFlag(const EncodableMap& audioMap,
-                                   const std::vector<std::string>& keys,
+static bool getAudioProcessingFlag(const EncodableMap &audioMap,
+                                   const std::vector<std::string> &keys,
                                    bool defaultValue) {
-  auto readBoolValue = [](const EncodableValue& v, bool def) -> bool {
-    if (TypeIs<bool>(v)) return GetValue<bool>(v);
+  auto readBoolValue = [](const EncodableValue &v, bool def) -> bool {
+    if (TypeIs<bool>(v))
+      return GetValue<bool>(v);
     if (TypeIs<std::string>(v)) {
-      const std::string& s = GetValue<std::string>(v);
-      if (s == "true") return true;
-      if (s == "false") return false;
+      const std::string &s = GetValue<std::string>(v);
+      if (s == "true")
+        return true;
+      if (s == "false")
+        return false;
     }
     return def;
   };
 
-  for (const std::string& key : keys) {
+  for (const std::string &key : keys) {
     // Flat W3C key at the top level.
     auto it = audioMap.find(EncodableValue(key));
     if (it != audioMap.end()) {
@@ -119,7 +131,7 @@ static bool getAudioProcessingFlag(const EncodableMap& audioMap,
     auto mandatoryIt = audioMap.find(EncodableValue("mandatory"));
     if (mandatoryIt != audioMap.end() &&
         TypeIs<EncodableMap>(mandatoryIt->second)) {
-      const EncodableMap& mandatory =
+      const EncodableMap &mandatory =
           GetValue<EncodableMap>(mandatoryIt->second);
       auto mit = mandatory.find(EncodableValue(key));
       if (mit != mandatory.end()) {
@@ -131,10 +143,11 @@ static bool getAudioProcessingFlag(const EncodableMap& audioMap,
     auto optionalIt = audioMap.find(EncodableValue("optional"));
     if (optionalIt != audioMap.end() &&
         TypeIs<EncodableList>(optionalIt->second)) {
-      const EncodableList& list = GetValue<EncodableList>(optionalIt->second);
-      for (const EncodableValue& item : list) {
-        if (!TypeIs<EncodableMap>(item)) continue;
-        const EncodableMap& entry = GetValue<EncodableMap>(item);
+      const EncodableList &list = GetValue<EncodableList>(optionalIt->second);
+      for (const EncodableValue &item : list) {
+        if (!TypeIs<EncodableMap>(item))
+          continue;
+        const EncodableMap &entry = GetValue<EncodableMap>(item);
         auto eit = entry.find(EncodableValue(key));
         if (eit != entry.end()) {
           return readBoolValue(eit->second, defaultValue);
@@ -145,7 +158,7 @@ static bool getAudioProcessingFlag(const EncodableMap& audioMap,
   return defaultValue;
 }
 
-std::string getSourceIdConstraint(const EncodableMap& mediaConstraints) {
+std::string getSourceIdConstraint(const EncodableMap &mediaConstraints) {
   auto it = mediaConstraints.find(EncodableValue("optional"));
   if (it != mediaConstraints.end() && TypeIs<EncodableList>(it->second)) {
     EncodableList optional = GetValue<EncodableList>(it->second);
@@ -162,7 +175,7 @@ std::string getSourceIdConstraint(const EncodableMap& mediaConstraints) {
   return "";
 }
 
-std::string getDeviceIdConstraint(const EncodableMap& mediaConstraints) {
+std::string getDeviceIdConstraint(const EncodableMap &mediaConstraints) {
   auto it = mediaConstraints.find(EncodableValue("deviceId"));
   if (it != mediaConstraints.end() && TypeIs<std::string>(it->second)) {
     return GetValue<std::string>(it->second);
@@ -170,9 +183,9 @@ std::string getDeviceIdConstraint(const EncodableMap& mediaConstraints) {
   return "";
 }
 
-void FlutterMediaStream::GetUserAudio(const EncodableMap& constraints,
+void FlutterMediaStream::GetUserAudio(const EncodableMap &constraints,
                                       scoped_refptr<RTCMediaStream> stream,
-                                      EncodableMap& params) {
+                                      EncodableMap &params) {
   bool enable_audio = false;
   scoped_refptr<RTCMediaConstraints> audioConstraints;
   RTCAudioOptions audio_options;
@@ -225,9 +238,8 @@ void FlutterMediaStream::GetUserAudio(const EncodableMap& constraints,
       base_->audio_device_->RecordingDeviceName(i, strRecordingName,
                                                 strRecordingGuid);
       if (sourceId != "" &&
-          sourceId ==
-              SanitizeDeviceIdFromAudioBuffers(strRecordingName,
-                                               strRecordingGuid)) {
+          sourceId == SanitizeDeviceIdFromAudioBuffers(strRecordingName,
+                                                       strRecordingGuid)) {
         base_->audio_device_->SetRecordingDevice(i);
       }
     }
@@ -235,8 +247,8 @@ void FlutterMediaStream::GetUserAudio(const EncodableMap& constraints,
     if (sourceId == "") {
       base_->audio_device_->RecordingDeviceName(0, strRecordingName,
                                                 strRecordingGuid);
-      sourceId = SanitizeDeviceIdFromAudioBuffers(strRecordingName,
-                                                  strRecordingGuid);
+      sourceId =
+          SanitizeDeviceIdFromAudioBuffers(strRecordingName, strRecordingGuid);
       base_->audio_device_->SetRecordingDevice(0);
     }
 
@@ -245,10 +257,8 @@ void FlutterMediaStream::GetUserAudio(const EncodableMap& constraints,
     for (uint16_t i = 0; i < playout_devices; i++) {
       base_->audio_device_->PlayoutDeviceName(i, strPlayoutName,
                                               strPlayoutGuid);
-      if (deviceId != "" &&
-          deviceId ==
-              SanitizeDeviceIdFromAudioBuffers(strPlayoutName,
-                                               strPlayoutGuid)) {
+      if (deviceId != "" && deviceId == SanitizeDeviceIdFromAudioBuffers(
+                                            strPlayoutName, strPlayoutGuid)) {
         base_->audio_device_->SetPlayoutDevice(i);
       }
     }
@@ -292,7 +302,7 @@ void FlutterMediaStream::GetUserAudio(const EncodableMap& constraints,
   }
 }
 
-std::string getFacingMode(const EncodableMap& mediaConstraints) {
+std::string getFacingMode(const EncodableMap &mediaConstraints) {
   return mediaConstraints.find(EncodableValue("facingMode")) !=
                  mediaConstraints.end()
              ? GetValue<std::string>(
@@ -300,8 +310,8 @@ std::string getFacingMode(const EncodableMap& mediaConstraints) {
              : "";
 }
 
-EncodableValue getConstrainInt(const EncodableMap& constraints,
-                               const std::string& key) {
+EncodableValue getConstrainInt(const EncodableMap &constraints,
+                               const std::string &key) {
   EncodableValue value;
   auto it = constraints.find(EncodableValue(key));
   if (it != constraints.end()) {
@@ -321,9 +331,10 @@ EncodableValue getConstrainInt(const EncodableMap& constraints,
   return EncodableValue();
 }
 
-void FlutterMediaStream::GetUserVideo(const EncodableMap& constraints,
-                                      scoped_refptr<RTCMediaStream> stream,
-                                      EncodableMap& params) {
+void FlutterMediaStream::GetUserVideo(
+    const EncodableMap &constraints, scoped_refptr<RTCMediaStream> stream,
+    const std::string &stream_id, EncodableMap params,
+    std::unique_ptr<MethodResultProxy> result) {
   EncodableMap video_constraints;
   EncodableMap video_mandatory;
   auto it = constraints.find(EncodableValue("video"));
@@ -364,73 +375,115 @@ void FlutterMediaStream::GetUserVideo(const EncodableMap& constraints,
   if (fpsValue == EncodableValue())
     fpsValue = findEncodableValue(video_mandatory, "frameRate");
 
-  scoped_refptr<RTCVideoCapturer> video_capturer;
-  char strNameUTF8[256];
-  char strGuidUTF8[256];
-  int nb_video_devices = base_->video_device_->NumberOfDevices();
-
   int32_t width = toInt(widthValue, DEFAULT_WIDTH);
   int32_t height = toInt(heightValue, DEFAULT_HEIGHT);
   int32_t fps = toInt(fpsValue, DEFAULT_FPS);
+  // A enumeração e a abertura V4L2 podem bloquear no primeiro acesso à
+  // webcam. Não toque nelas na thread da plataforma: o bottom sheet precisa
+  // continuar pintando e respondendo enquanto a câmera inicializa.
+  auto *base = base_;
+  auto video_device = base_->video_device_;
+  auto result_ptr = std::shared_ptr<MethodResultProxy>(result.release());
+  std::thread([base, video_device, stream, stream_id,
+               video_constraints = std::move(video_constraints),
+               source_id = std::move(sourceId), width, height, fps,
+               params = std::move(params), result_ptr]() mutable {
+    scoped_refptr<RTCVideoCapturer> video_capturer;
+    char device_name[256] = {0};
+    char device_guid[256] = {0};
+    const uint32_t device_count = video_device->NumberOfDevices();
 
-  for (int i = 0; i < nb_video_devices; i++) {
-    base_->video_device_->GetDeviceName(i, strNameUTF8, 256, strGuidUTF8, 256);
-    if (sourceId != "" &&
-        sourceId ==
-            SanitizeDeviceIdFromVideoBuffers(strNameUTF8, strGuidUTF8)) {
-      video_capturer =
-          base_->video_device_->Create(strNameUTF8, i, width, height, fps);
-      break;
+    for (uint32_t i = 0; i < device_count; ++i) {
+      video_device->GetDeviceName(i, device_name, sizeof(device_name),
+                                  device_guid, sizeof(device_guid));
+      if (!source_id.empty() &&
+          source_id == SanitizeDeviceIdFromVideoBuffers(device_name,
+                                                         device_guid)) {
+        video_capturer =
+            video_device->Create(device_name, i, width, height, fps);
+        break;
+      }
     }
-  }
 
-  if (nb_video_devices == 0)
-    return;
+    if (video_capturer == nullptr && device_count > 0) {
+      video_device->GetDeviceName(0, device_name, sizeof(device_name),
+                                  device_guid, sizeof(device_guid));
+      source_id = SanitizeDeviceIdFromVideoBuffers(device_name, device_guid);
+      video_capturer =
+          video_device->Create(device_name, 0, width, height, fps);
+    }
 
-  if (!video_capturer.get()) {
-    base_->video_device_->GetDeviceName(0, strNameUTF8, 128, strGuidUTF8, 128);
-    sourceId = SanitizeDeviceIdFromVideoBuffers(strNameUTF8, strGuidUTF8);
-    video_capturer =
-        base_->video_device_->Create(strNameUTF8, 0, width, height, fps);
-  }
+    const bool capture_started =
+        video_capturer != nullptr && video_capturer->StartCapture();
+    auto finish_on_platform_thread =
+        [base, video_capturer, capture_started, stream, stream_id,
+         video_constraints = std::move(video_constraints),
+         source_id = std::move(source_id), width, height, fps,
+         params = std::move(params), result_ptr]() mutable {
+      if (!capture_started) {
+        if (video_capturer != nullptr && video_capturer->CaptureStarted()) {
+          video_capturer->StopCapture();
+        }
+        result_ptr->Error("GetUserMedia",
+                          "Não foi possível iniciar a câmera.");
+        return;
+      }
 
-  if (!video_capturer.get())
-    return;
+      const char *video_source_label = "video_input";
+      scoped_refptr<RTCVideoSource> source = base->factory_->CreateVideoSource(
+          video_capturer, video_source_label,
+          base->ParseMediaConstraints(video_constraints));
+      if (source == nullptr) {
+        video_capturer->StopCapture();
+        result_ptr->Error("GetUserMedia",
+                          "Não foi possível criar a source de vídeo.");
+        return;
+      }
 
-  video_capturer->StartCapture();
+      std::string uuid = base->GenerateUUID();
+      scoped_refptr<RTCVideoTrack> track =
+          base->factory_->CreateVideoTrack(source, uuid.c_str());
+      if (track == nullptr) {
+        video_capturer->StopCapture();
+        result_ptr->Error("GetUserMedia",
+                          "Não foi possível criar a track de vídeo.");
+        return;
+      }
 
-  const char* video_source_label = "video_input";
-  scoped_refptr<RTCVideoSource> source = base_->factory_->CreateVideoSource(
-      video_capturer, video_source_label,
-      base_->ParseMediaConstraints(video_constraints));
+      EncodableList videoTracks;
+      EncodableMap info;
+      info[EncodableValue("id")] = EncodableValue(track->id().std_string());
+      info[EncodableValue("label")] = EncodableValue(track->id().std_string());
+      info[EncodableValue("kind")] = EncodableValue(track->kind().std_string());
+      info[EncodableValue("enabled")] = EncodableValue(track->enabled());
 
-  std::string uuid = base_->GenerateUUID();
-  scoped_refptr<RTCVideoTrack> track =
-      base_->factory_->CreateVideoTrack(source, uuid.c_str());
+      EncodableMap settings;
+      settings[EncodableValue("deviceId")] =
+          EncodableValue(SanitizeUtf8ForFlutter(source_id));
+      settings[EncodableValue("kind")] = EncodableValue("videoinput");
+      settings[EncodableValue("width")] = EncodableValue(width);
+      settings[EncodableValue("height")] = EncodableValue(height);
+      settings[EncodableValue("frameRate")] = EncodableValue(fps);
+      info[EncodableValue("settings")] = EncodableValue(settings);
 
-  EncodableList videoTracks;
-  EncodableMap info;
-  info[EncodableValue("id")] = EncodableValue(track->id().std_string());
-  info[EncodableValue("label")] = EncodableValue(track->id().std_string());
-  info[EncodableValue("kind")] = EncodableValue(track->kind().std_string());
-  info[EncodableValue("enabled")] = EncodableValue(track->enabled());
+      videoTracks.push_back(EncodableValue(info));
+      params[EncodableValue("videoTracks")] = EncodableValue(videoTracks);
 
-  EncodableMap settings;
-  settings[EncodableValue("deviceId")] =
-      EncodableValue(SanitizeUtf8ForFlutter(sourceId));
-  settings[EncodableValue("kind")] = EncodableValue("videoinput");
-  settings[EncodableValue("width")] = EncodableValue(width);
-  settings[EncodableValue("height")] = EncodableValue(height);
-  settings[EncodableValue("frameRate")] = EncodableValue(fps);
-  info[EncodableValue("settings")] = EncodableValue(settings);
+      stream->AddTrack(track);
+      // O renderer e o disposal local localizam a stream por este mapa. Sem
+      // ele o preview fica preto e StopCapture nunca é alcançado no close.
+      base->local_streams_[stream_id] = stream;
+      base->local_tracks_[track->id().std_string()] = track;
+      base->video_capturers_[track->id().std_string()] = video_capturer;
+      result_ptr->Success(EncodableValue(params));
+    };
 
-  videoTracks.push_back(EncodableValue(info));
-  params[EncodableValue("videoTracks")] = EncodableValue(videoTracks);
-
-  stream->AddTrack(track);
-
-  base_->local_tracks_[track->id().std_string()] = track;
-  base_->video_capturers_[track->id().std_string()] = video_capturer;
+    if (base->task_runner_ != nullptr) {
+      base->task_runner_->EnqueueTask(std::move(finish_on_platform_thread));
+    } else {
+      finish_on_platform_thread();
+    }
+  }).detach();
 }
 
 void FlutterMediaStream::GetSources(std::unique_ptr<MethodResultProxy> result) {
@@ -482,8 +535,7 @@ void FlutterMediaStream::GetSources(std::unique_ptr<MethodResultProxy> result) {
 }
 
 void FlutterMediaStream::SelectAudioOutput(
-    const std::string& device_id,
-    std::unique_ptr<MethodResultProxy> result) {
+    const std::string &device_id, std::unique_ptr<MethodResultProxy> result) {
   char deviceName[256];
   char deviceGuid[256];
   int playout_devices = base_->audio_device_->PlayoutDevices();
@@ -507,8 +559,7 @@ void FlutterMediaStream::SelectAudioOutput(
 }
 
 void FlutterMediaStream::SelectAudioInput(
-    const std::string& device_id,
-    std::unique_ptr<MethodResultProxy> result) {
+    const std::string &device_id, std::unique_ptr<MethodResultProxy> result) {
   char deviceName[256];
   char deviceGuid[256];
   int playout_devices = base_->audio_device_->RecordingDevices();
@@ -532,8 +583,7 @@ void FlutterMediaStream::SelectAudioInput(
 }
 
 void FlutterMediaStream::MediaStreamGetTracks(
-    const std::string& stream_id,
-    std::unique_ptr<MethodResultProxy> result) {
+    const std::string &stream_id, std::unique_ptr<MethodResultProxy> result) {
   scoped_refptr<RTCMediaStream> stream = base_->MediaStreamForId(stream_id);
 
   if (stream) {
@@ -578,8 +628,7 @@ void FlutterMediaStream::MediaStreamGetTracks(
 }
 
 void FlutterMediaStream::MediaStreamDispose(
-    const std::string& stream_id,
-    std::unique_ptr<MethodResultProxy> result) {
+    const std::string &stream_id, std::unique_ptr<MethodResultProxy> result) {
   scoped_refptr<RTCMediaStream> stream = base_->MediaStreamForId(stream_id);
 
   if (!stream) {
@@ -627,20 +676,17 @@ void FlutterMediaStream::CreateLocalMediaStream(
 }
 
 void FlutterMediaStream::MediaStreamTrackSetEnable(
-    const std::string& track_id,
-    std::unique_ptr<MethodResultProxy> result) {
+    const std::string &track_id, std::unique_ptr<MethodResultProxy> result) {
   result->NotImplemented();
 }
 
 void FlutterMediaStream::MediaStreamTrackSwitchCamera(
-    const std::string& track_id,
-    std::unique_ptr<MethodResultProxy> result) {
+    const std::string &track_id, std::unique_ptr<MethodResultProxy> result) {
   result->NotImplemented();
 }
 
 void FlutterMediaStream::MediaStreamTrackDispose(
-    const std::string& track_id,
-    std::unique_ptr<MethodResultProxy> result) {
+    const std::string &track_id, std::unique_ptr<MethodResultProxy> result) {
   for (auto it : base_->local_streams_) {
     auto stream = it.second;
     auto audio_tracks = stream->audio_tracks();
@@ -668,4 +714,4 @@ void FlutterMediaStream::MediaStreamTrackDispose(
   base_->RemoveMediaTrackForId(track_id);
   result->Success();
 }
-}  // namespace flutter_webrtc_plugin
+} // namespace flutter_webrtc_plugin
