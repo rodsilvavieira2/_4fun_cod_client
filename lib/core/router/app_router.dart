@@ -6,7 +6,7 @@ import '../../features/auth/login_screen.dart';
 import '../../features/auth/register_screen.dart';
 import '../../features/dms/dm_shell_screen.dart';
 import '../../features/home/home_screen.dart';
-import '../../features/profile/profile_screen.dart';
+import '../../features/profile/profile_settings_redirect_screen.dart';
 import '../../features/servers/create_server_screen.dart';
 import '../../features/servers/invite_screen.dart';
 import '../../features/servers/invites_screen.dart';
@@ -26,21 +26,26 @@ class RouterLogObserver extends NavigatorObserver {
 
   @override
   void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
-    _log.i('navegação → ${route.settings.name ?? route.settings.toString()}',
-        tag: 'router');
+    _log.i(
+      'navegação → ${route.settings.name ?? route.settings.toString()}',
+      tag: 'router',
+    );
   }
 
   @override
   void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
-    _log.i('navegação ← ${route.settings.name ?? route.settings.toString()}',
-        tag: 'router');
+    _log.i(
+      'navegação ← ${route.settings.name ?? route.settings.toString()}',
+      tag: 'router',
+    );
   }
 
   @override
   void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
     _log.i(
-        'navegação ⇄ ${newRoute?.settings.name ?? newRoute?.settings.toString()}',
-        tag: 'router');
+      'navegação ⇄ ${newRoute?.settings.name ?? newRoute?.settings.toString()}',
+      tag: 'router',
+    );
   }
 }
 
@@ -74,7 +79,8 @@ final routerProvider = Provider<GoRouter>((ref) {
       final location = state.matchedLocation;
       // Rotas públicas: fluxo de auth + deep link de convite (resolve sem
       // sessão; o aceite exige login e volta para cá).
-      final isPublicRoute = location == '/login' ||
+      final isPublicRoute =
+          location == '/login' ||
           location == '/register' ||
           location.startsWith('/invite/');
 
@@ -128,42 +134,37 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/servers/:serverId',
         name: 'server-shell',
-        builder: (context, state) => ServerShellScreen(
-          serverId: state.pathParameters['serverId']!,
-        ),
+        builder: (context, state) =>
+            ServerShellScreen(serverId: state.pathParameters['serverId']!),
       ),
       GoRoute(
         path: '/servers/:serverId/settings',
         name: 'server-settings',
-        builder: (context, state) => ServerSettingsScreen(
-          serverId: state.pathParameters['serverId']!,
-        ),
+        builder: (context, state) =>
+            ServerSettingsScreen(serverId: state.pathParameters['serverId']!),
       ),
       GoRoute(
         path: '/servers/:serverId/members',
         name: 'server-members',
-        builder: (context, state) => MembersScreen(
-          serverId: state.pathParameters['serverId']!,
-        ),
+        builder: (context, state) =>
+            MembersScreen(serverId: state.pathParameters['serverId']!),
       ),
       GoRoute(
         path: '/servers/:serverId/invites',
         name: 'server-invites',
-        builder: (context, state) => InvitesScreen(
-          serverId: state.pathParameters['serverId']!,
-        ),
+        builder: (context, state) =>
+            InvitesScreen(serverId: state.pathParameters['serverId']!),
       ),
       GoRoute(
         path: '/invite/:code',
         name: 'invite',
-        builder: (context, state) => InviteScreen(
-          code: state.pathParameters['code']!,
-        ),
+        builder: (context, state) =>
+            InviteScreen(code: state.pathParameters['code']!),
       ),
       GoRoute(
         path: '/profile',
         name: 'profile',
-        builder: (context, state) => const ProfileScreen(),
+        builder: (context, state) => const ProfileSettingsRedirectScreen(),
       ),
     ],
   );

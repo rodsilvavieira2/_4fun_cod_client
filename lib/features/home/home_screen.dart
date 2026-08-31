@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../shared/models/servers.dart';
+import '../../core/ui/settings_modal.dart';
 import '../servers/server_rail.dart';
 import '../servers/servers_providers.dart';
 
@@ -21,7 +22,7 @@ class HomeScreen extends ConsumerWidget {
           IconButton(
             icon: const Icon(Icons.account_circle),
             tooltip: 'Perfil',
-            onPressed: () => context.go('/profile'),
+            onPressed: () => showSettingsModal(context),
           ),
         ],
       ),

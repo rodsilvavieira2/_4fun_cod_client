@@ -16,6 +16,7 @@ class AppTextField extends StatefulWidget {
     this.obscureText = false,
     this.autofocus = false,
     this.keyboardType,
+    this.textCapitalization = TextCapitalization.none,
     this.autofillHints,
     this.validator,
     this.onChanged,
@@ -34,6 +35,7 @@ class AppTextField extends StatefulWidget {
   final bool obscureText;
   final bool autofocus;
   final TextInputType? keyboardType;
+  final TextCapitalization textCapitalization;
   final Iterable<String>? autofillHints;
   final FormFieldValidator<String>? validator;
   final ValueChanged<String>? onChanged;
@@ -100,6 +102,7 @@ class _AppTextFieldState extends State<AppTextField> {
             autofocus: widget.autofocus,
             obscureText: widget.obscureText,
             keyboardType: widget.keyboardType,
+            textCapitalization: widget.textCapitalization,
             autofillHints: widget.autofillHints,
             validator: widget.validator,
             onChanged: widget.onChanged,
@@ -121,7 +124,10 @@ class _AppTextFieldState extends State<AppTextField> {
               ),
               prefixIcon: widget.prefixIcon,
               suffixIcon: widget.suffixIcon,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 10,
+              ),
               border: InputBorder.none,
               enabledBorder: InputBorder.none,
               focusedBorder: InputBorder.none,

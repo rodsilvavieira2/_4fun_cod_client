@@ -113,7 +113,9 @@ class AuthRepository {
       '/auth/refresh',
       data: {'refreshToken': refreshToken},
     );
-    final tokens = SessionTokens.fromJson(response.data as Map<String, dynamic>);
+    final tokens = SessionTokens.fromJson(
+      response.data as Map<String, dynamic>,
+    );
     await _tokenStorage.saveTokens(tokens);
     _accessTokenCache = tokens.accessToken;
     return tokens.accessToken;
@@ -125,7 +127,10 @@ class AuthRepository {
     try {
       final refreshToken = await _tokenStorage.readRefreshToken();
       if (refreshToken != null) {
-        await _bareDio.post('/auth/logout', data: {'refreshToken': refreshToken});
+        await _bareDio.post(
+          '/auth/logout',
+          data: {'refreshToken': refreshToken},
+        );
       }
     } catch (_) {
       // Best-effort: backend indisponível não impede o logout local.
@@ -156,10 +161,7 @@ class AuthRepository {
     if (clearAvatar) {
       await _ref.read(storageServiceProvider).deleteAvatar();
     }
-    final data = <String, dynamic>{
-      'name': ?name,
-      'username': ?username,
-    };
+    final data = <String, dynamic>{'name': ?name, 'username': ?username};
     try {
       final response = await _dio.patch('/users/me', data: data);
       return User.fromJson(response.data as Map<String, dynamic>);
@@ -178,11 +180,25 @@ class AuthRepository {
     try {
       await _dio.post(
         '/auth/change-password',
-        data: {
-          'currentPassword': currentPassword,
-          'newPassword': newPassword,
-        },
+        data: {'currentPassword': currentPassword, 'newPassword': newPassword},
       );
+    } on DioException catch (e) {
+      throw ApiException.fromDio(e);
+    }
+  }
+
+  /// Altera o e-mail de login após confirmar a senha atual. O backend mantém
+  /// as sessões existentes, pois os tokens identificam somente o usuário.
+  Future<User> changeEmail({
+    required String currentPassword,
+    required String newEmail,
+  }) async {
+    try {
+      final response = await _dio.post(
+        '/auth/change-email',
+        data: {'currentPassword': currentPassword, 'newEmail': newEmail},
+      );
+      return User.fromJson(response.data as Map<String, dynamic>);
     } on DioException catch (e) {
       throw ApiException.fromDio(e);
     }

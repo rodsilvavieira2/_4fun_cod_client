@@ -9,10 +9,11 @@ import '../api/api_exception.dart';
 /// O client envia o arquivo e o backend gera a chave no R2 e persiste o
 /// `avatarUrl`; o client nunca constrói URLs nem conhece a chave do objeto.
 abstract class StorageService {
-  /// Faz upload do avatar (`PATCH /users/me/avatar`, multipart `file`) e
-  /// retorna o `avatarUrl` persistido pelo backend.
+  /// Faz upload do avatar (`PATCH /users/me/avatar`, multipart `file`) a
+  /// partir de bytes, o que funciona tanto em browser quanto em desktop.
   Future<String> uploadAvatar({
-    required String filePath,
+    required List<int> bytes,
+    required String fileName,
     required String contentType,
   });
 
@@ -29,13 +30,15 @@ class ApiStorageService implements StorageService {
 
   @override
   Future<String> uploadAvatar({
-    required String filePath,
+    required List<int> bytes,
+    required String fileName,
     required String contentType,
   }) async {
     try {
       final formData = FormData.fromMap({
-        'file': await MultipartFile.fromFile(
-          filePath,
+        'file': MultipartFile.fromBytes(
+          bytes,
+          filename: fileName,
           contentType: DioMediaType.parse(contentType),
         ),
       });

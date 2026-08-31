@@ -23,14 +23,16 @@ class AuthController extends AsyncNotifier<AuthState> {
     // reconectar; só desloga se o refresh falhar (revogação real).
     final socket = ref.read(socketServiceProvider);
     final authFailures = socket.authFailures;
-    final authFailureSub =
-        authFailures.listen((_) => _handleSocketAuthFailure());
+    final authFailureSub = authFailures.listen(
+      (_) => _handleSocketAuthFailure(),
+    );
     ref.onDispose(authFailureSub.cancel);
     // Conexão bem-sucedida após recuperação: o teto de tentativas deixa de
     // ser um orçamento global da sessão (expiração normal de access token
     // não pode consumir tentativas de recuperação).
-    final reconnectedSub =
-        socket.reconnected.listen((_) => _socketAuthRetries = 0);
+    final reconnectedSub = socket.reconnected.listen(
+      (_) => _socketAuthRetries = 0,
+    );
     ref.onDispose(reconnectedSub.cancel);
 
     // Bootstrap de sessão: se existe refresh token no storage, tenta
@@ -51,7 +53,12 @@ class AuthController extends AsyncNotifier<AuthState> {
       log.i('bootstrap: autenticado (${user.username})', tag: 'auth');
       return Authenticated(user: user);
     } catch (e, st) {
-      log.e('bootstrap: sessão inválida', error: e, stackTrace: st, tag: 'auth');
+      log.e(
+        'bootstrap: sessão inválida',
+        error: e,
+        stackTrace: st,
+        tag: 'auth',
+      );
       // Falha de storage (ex.: Keystore Android invalidada após restore) ou
       // de refresh: trata como "sem sessão" — NUNCA deixa o app preso na
       // splash (o router manda para /login).
@@ -65,10 +72,7 @@ class AuthController extends AsyncNotifier<AuthState> {
     }
   }
 
-  Future<void> login({
-    required String email,
-    required String password,
-  }) async {
+  Future<void> login({required String email, required String password}) async {
     final repo = ref.read(authRepositoryProvider);
     final session = await repo.login(email: email, password: password);
     ref
@@ -167,6 +171,24 @@ class AuthController extends AsyncNotifier<AuthState> {
     state = const AsyncData(Unauthenticated());
   }
 
+  /// Altera o e-mail de login sem invalidar a sessão atual.
+  Future<void> changeEmail({
+    required String currentPassword,
+    required String newEmail,
+  }) async {
+    final updated = await ref
+        .read(authRepositoryProvider)
+        .changeEmail(currentPassword: currentPassword, newEmail: newEmail);
+    state = AsyncData(Authenticated(user: updated));
+  }
+
+  /// Recarrega o usuário após uma operação que altera um recurso associado,
+  /// como o avatar retornado pelo endpoint de storage.
+  Future<void> refreshCurrentUser() async {
+    final updated = await ref.read(authRepositoryProvider).getMe();
+    state = AsyncData(Authenticated(user: updated));
+  }
+
   /// Reflete no estado o logout forçado pelo interceptor (refresh falhou) ou
   /// pelo socket (handshake rejeitado) e encerra a conexão realtime.
   void setUnauthenticated() {
@@ -196,5 +218,6 @@ class AuthController extends AsyncNotifier<AuthState> {
 }
 
 /// Provider do estado de autenticação.
-final authControllerProvider =
-    AsyncNotifierProvider<AuthController, AuthState>(AuthController.new);
+final authControllerProvider = AsyncNotifierProvider<AuthController, AuthState>(
+  AuthController.new,
+);

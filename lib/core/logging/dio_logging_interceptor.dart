@@ -19,6 +19,7 @@ class DioLoggingInterceptor extends Interceptor {
     '/auth/register',
     '/auth/refresh',
     '/auth/logout',
+    '/auth/change-email',
     '/auth/change-password',
   ];
 
@@ -31,10 +32,18 @@ class DioLoggingInterceptor extends Interceptor {
   }
 
   @override
-  void onResponse(Response<dynamic> response, ResponseInterceptorHandler handler) {
+  void onResponse(
+    Response<dynamic> response,
+    ResponseInterceptorHandler handler,
+  ) {
     final start = response.requestOptions.extra['_logStart'] as DateTime?;
-    final elapsed = start == null ? '' : ' (${DateTime.now().difference(start).inMilliseconds}ms)';
-    _log.d('← ${response.statusCode} ${response.requestOptions.path}$elapsed', tag: _tag);
+    final elapsed = start == null
+        ? ''
+        : ' (${DateTime.now().difference(start).inMilliseconds}ms)';
+    _log.d(
+      '← ${response.statusCode} ${response.requestOptions.path}$elapsed',
+      tag: _tag,
+    );
     handler.next(response);
   }
 
@@ -42,7 +51,9 @@ class DioLoggingInterceptor extends Interceptor {
   void onError(DioException err, ErrorInterceptorHandler handler) {
     final options = err.requestOptions;
     final start = options.extra['_logStart'] as DateTime?;
-    final elapsed = start == null ? '' : ' (${DateTime.now().difference(start).inMilliseconds}ms)';
+    final elapsed = start == null
+        ? ''
+        : ' (${DateTime.now().difference(start).inMilliseconds}ms)';
     final isSensitive = _sensitivePaths.any(options.path.startsWith);
     final status = err.response?.statusCode;
     // Corpo apenas para rotas NÃO sensíveis e erros não-401 (401 de auth tem

@@ -23,7 +23,10 @@ Future<void> showSettingsModal(
     barrierColor: Colors.black.withValues(alpha: 0.65),
     transitionDuration: const Duration(milliseconds: 180),
     transitionBuilder: (context, animation, secondaryAnimation, child) {
-      final curved = CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
+      final curved = CurvedAnimation(
+        parent: animation,
+        curve: Curves.easeOutCubic,
+      );
       return FadeTransition(
         opacity: curved,
         child: ScaleTransition(
@@ -132,7 +135,9 @@ class _SettingsBody extends StatelessWidget {
           height: 48,
           padding: const EdgeInsets.symmetric(horizontal: 16),
           decoration: const BoxDecoration(
-            border: Border(bottom: BorderSide(color: AppTokens.borderHairline, width: 1)),
+            border: Border(
+              bottom: BorderSide(color: AppTokens.borderHairline, width: 1),
+            ),
           ),
           child: Row(
             children: [
@@ -159,7 +164,9 @@ class _SettingsBody extends StatelessWidget {
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(20),
             child: switch (section) {
-              SettingsSection.account => const AccountSection(),
+              SettingsSection.account => AccountSection(
+                onCloseSettings: onClose,
+              ),
               SettingsSection.appearance => const AppearanceSection(),
               SettingsSection.voiceVideo => const VoiceVideoSection(),
               SettingsSection.notifications => const NotificationsSection(),
