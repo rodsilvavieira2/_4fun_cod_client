@@ -9,7 +9,7 @@ import 'package:flutter_webrtc/flutter_webrtc.dart' as rtc;
 import 'package:livekit_client/livekit_client.dart'
     hide SpeakingChangedEvent, ReconnectingEvent;
 
-import 'audio_device_normalizer.dart';
+import '../native/native_media_backend.dart';
 import 'rtc_service.dart';
 
 /// Implementação de [RtcService] sobre o LiveKit.
@@ -50,8 +50,15 @@ import 'rtc_service.dart';
 ///   delega a seleção de janela/display ao portal nativo do SO via
 ///   `navigator.mediaDevices.getDisplayMedia`;
 class LiveKitRtcService implements RtcService {
-  LiveKitRtcService({RoomOptions? roomOptions})
-    : _roomOptions = roomOptions ?? defaultRoomOptions;
+  LiveKitRtcService({
+    RoomOptions? roomOptions,
+    NativeMediaServices? nativeMediaServices,
+  }) : _roomOptions = roomOptions ?? defaultRoomOptions,
+       _nativeMediaServices =
+           nativeMediaServices ??
+           const DefaultNativeMediaServicesFactory().create(
+             currentRuntimePlatform,
+           );
 
   /// Configuração de áudio da Fase 4 (default do serviço — a UI nunca
   /// configura isso): echo cancellation + noise suppression + AGC na
@@ -97,6 +104,7 @@ class LiveKitRtcService implements RtcService {
   /// Opções da sala. O microfone é publicado conforme a preferência global
   /// pendente, que no primeiro uso é ativa.
   final RoomOptions _roomOptions;
+  final NativeMediaServices _nativeMediaServices;
 
   Room? _room;
   RtcTokenGenerator? _tokenGenerator;
@@ -361,7 +369,7 @@ class LiveKitRtcService implements RtcService {
 
       LocalVideoTrack? createdTrack;
       try {
-        createdTrack = await LocalVideoTrack.createCameraTrack(
+        createdTrack = await _nativeMediaServices.camera.createCameraTrack(
           _cameraCaptureOptions(deviceId: desiredDeviceId),
         );
         if (!_isCurrentCameraPreviewGeneration(generation)) {
@@ -729,34 +737,34 @@ class LiveKitRtcService implements RtcService {
 
   @override
   Future<List<RtcAudioDevice>> listAudioInputDevices() async {
-    final devices = await Hardware.instance.audioInputs();
-    return normalizeAudioDevices([
+    final devices = await _nativeMediaServices.audioDevices.listInputs();
+    return [
       for (final device in devices)
         RtcAudioDevice(
           id: device.deviceId,
           label: device.label,
           kind: RtcMediaDeviceKind.audioInput,
         ),
-    ]);
+    ];
   }
 
   @override
   Future<List<RtcAudioDevice>> listAudioOutputDevices() async {
-    final devices = await Hardware.instance.audioOutputs();
-    return normalizeAudioDevices([
+    final devices = await _nativeMediaServices.audioDevices.listOutputs();
+    return [
       for (final device in devices)
         RtcAudioDevice(
           id: device.deviceId,
           label: device.label,
           kind: RtcMediaDeviceKind.audioOutput,
         ),
-    ]);
+    ];
   }
 
   @override
   Future<void> selectAudioInput(String? deviceId) async {
     if (_disposed) return;
-    final devices = await Hardware.instance.audioInputs();
+    final devices = await _nativeMediaServices.audioDevices.listInputs();
     final device = _resolveAudioDevice(devices, deviceId);
     if (device == null) {
       if (deviceId != null) {
@@ -769,7 +777,7 @@ class LiveKitRtcService implements RtcService {
     if (room != null) {
       await room.setAudioInputDevice(device);
     } else if (!kIsWeb) {
-      await Hardware.instance.selectAudioInput(device);
+      await _nativeMediaServices.audioDevices.selectInput(device);
     }
     _selectedAudioInputId = deviceId;
   }
@@ -777,7 +785,7 @@ class LiveKitRtcService implements RtcService {
   @override
   Future<void> selectAudioOutput(String? deviceId) async {
     if (_disposed) return;
-    final devices = await Hardware.instance.audioOutputs();
+    final devices = await _nativeMediaServices.audioDevices.listOutputs();
     final device = _resolveAudioDevice(devices, deviceId);
     if (device == null) {
       if (deviceId != null) {
@@ -790,7 +798,7 @@ class LiveKitRtcService implements RtcService {
     if (room != null) {
       await room.setAudioOutputDevice(device);
     } else if (!kIsWeb) {
-      await Hardware.instance.selectAudioOutput(device);
+      await _nativeMediaServices.audioDevices.selectOutput(device);
     }
     _selectedAudioOutputId = deviceId;
   }

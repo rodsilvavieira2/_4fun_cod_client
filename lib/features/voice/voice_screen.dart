@@ -94,7 +94,10 @@ class VoiceScreen extends ConsumerWidget {
       await notifier.stopScreenShare();
       return;
     }
-    final selection = await RtcScreenSharePicker.show(context);
+    final selection = await RtcScreenSharePicker.show(
+      context,
+      backend: ref.read(nativeMediaServicesProvider).screenShare,
+    );
     if (selection == null) return;
     await notifier.startScreenShare(
       selection.sourceId,

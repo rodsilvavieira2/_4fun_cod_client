@@ -1,30 +1,9 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:flutter_webrtc/flutter_webrtc.dart' as rtc;
 
-/// Tipo de fonte que o usuário quer compartilhar.
-enum RtcScreenShareSourceKind { window, display }
-
-/// Resultado do modal próprio do 4fun.
-///
-/// [sourceId] é o id aceito pelo `ScreenShareCaptureOptions.sourceId`.
-/// Quando ele vier nulo, o fluxo deve delegar a escolha final ao backend
-/// nativo/portal do SO.
-class RtcScreenShareSelection {
-  const RtcScreenShareSelection({
-    required this.kind,
-    required this.sourceId,
-    required this.usesSystemPicker,
-  });
-
-  final RtcScreenShareSourceKind kind;
-  final String? sourceId;
-  final bool usesSystemPicker;
-}
+import '../native/native_media_backend.dart';
 
 /// Modal Flutter próprio para seleção de compartilhamento de tela.
 ///
@@ -42,13 +21,14 @@ class RtcScreenSharePicker {
 
   static Future<RtcScreenShareSelection?> show(
     BuildContext context, {
+    required NativeScreenShareBackend backend,
     String titleText = 'Compartilhar tela',
     String screenTabText = 'Display',
     String windowTabText = 'Janela',
     String cancelText = 'Cancelar',
     String shareText = 'Compartilhar',
   }) {
-    if (kIsWeb || Platform.isLinux) {
+    if (backend.capabilities.usesSystemPicker) {
       return Future.value(
         const RtcScreenShareSelection(
           kind: RtcScreenShareSourceKind.display,
@@ -62,7 +42,7 @@ class RtcScreenSharePicker {
       context: context,
       barrierDismissible: true,
       builder: (context) => _ScreenShareDialog(
-        provider: _ScreenShareSourceProvider.current(),
+        backend: backend,
         titleText: titleText,
         screenTabText: screenTabText,
         windowTabText: windowTabText,
@@ -73,77 +53,9 @@ class RtcScreenSharePicker {
   }
 }
 
-class _ScreenShareSource {
-  const _ScreenShareSource({
-    required this.id,
-    required this.name,
-    required this.kind,
-    this.thumbnail,
-  });
-
-  final String id;
-  final String name;
-  final RtcScreenShareSourceKind kind;
-  final Uint8List? thumbnail;
-}
-
-class _ScreenShareSourceSnapshot {
-  const _ScreenShareSourceSnapshot({required this.sources});
-
-  final List<_ScreenShareSource> sources;
-}
-
-abstract class _ScreenShareSourceProvider {
-  const _ScreenShareSourceProvider();
-
-  factory _ScreenShareSourceProvider.current() = _DesktopCapturerSourceProvider;
-
-  Future<_ScreenShareSourceSnapshot> loadSources();
-
-  bool canUseKind(RtcScreenShareSourceKind kind);
-
-  String? disabledReasonFor(RtcScreenShareSourceKind kind);
-}
-
-class _DesktopCapturerSourceProvider implements _ScreenShareSourceProvider {
-  const _DesktopCapturerSourceProvider();
-
-  @override
-  bool canUseKind(RtcScreenShareSourceKind kind) => true;
-
-  @override
-  String? disabledReasonFor(RtcScreenShareSourceKind kind) => null;
-
-  @override
-  Future<_ScreenShareSourceSnapshot> loadSources() async {
-    final sources = await rtc.desktopCapturer.getSources(
-      types: const [rtc.SourceType.Window, rtc.SourceType.Screen],
-    );
-    return _ScreenShareSourceSnapshot(
-      sources: sources.map(_fromWebRtcSource).toList(growable: false),
-    );
-  }
-}
-
-_ScreenShareSource _fromWebRtcSource(rtc.DesktopCapturerSource source) {
-  final kind = source.type == rtc.SourceType.Window
-      ? RtcScreenShareSourceKind.window
-      : RtcScreenShareSourceKind.display;
-  final fallbackName = kind == RtcScreenShareSourceKind.window
-      ? 'Janela'
-      : 'Display';
-  final thumbnail = source.thumbnail;
-  return _ScreenShareSource(
-    id: source.id,
-    name: source.name.isEmpty ? fallbackName : source.name,
-    kind: kind,
-    thumbnail: thumbnail == null || thumbnail.isEmpty ? null : thumbnail,
-  );
-}
-
 class _ScreenShareDialog extends StatefulWidget {
   const _ScreenShareDialog({
-    required this.provider,
+    required this.backend,
     required this.titleText,
     required this.screenTabText,
     required this.windowTabText,
@@ -151,7 +63,7 @@ class _ScreenShareDialog extends StatefulWidget {
     required this.shareText,
   });
 
-  final _ScreenShareSourceProvider provider;
+  final NativeScreenShareBackend backend;
   final String titleText;
   final String screenTabText;
   final String windowTabText;
@@ -164,7 +76,7 @@ class _ScreenShareDialog extends StatefulWidget {
 
 class _ScreenShareDialogState extends State<_ScreenShareDialog> {
   RtcScreenShareSourceKind _activeKind = RtcScreenShareSourceKind.window;
-  List<_ScreenShareSource> _sources = const [];
+  List<RtcScreenShareSource> _sources = const [];
   String? _selectedId;
   String? _error;
   bool _loading = true;
@@ -172,7 +84,7 @@ class _ScreenShareDialogState extends State<_ScreenShareDialog> {
   @override
   void initState() {
     super.initState();
-    if (!widget.provider.canUseKind(_activeKind)) {
+    if (!widget.backend.canUseKind(_activeKind)) {
       _activeKind = RtcScreenShareSourceKind.display;
     }
     unawaited(_loadSources());
@@ -184,10 +96,10 @@ class _ScreenShareDialogState extends State<_ScreenShareDialog> {
       _error = null;
     });
     try {
-      final snapshot = await widget.provider.loadSources();
+      final sources = await widget.backend.loadSources();
       if (!mounted) return;
       setState(() {
-        _sources = snapshot.sources;
+        _sources = sources;
         if (_selectedId != null &&
             !_sources.any((source) => source.id == _selectedId)) {
           _selectedId = null;
@@ -204,7 +116,7 @@ class _ScreenShareDialogState extends State<_ScreenShareDialog> {
   }
 
   void _changeKind(RtcScreenShareSourceKind kind) {
-    if (!widget.provider.canUseKind(kind)) {
+    if (!widget.backend.canUseKind(kind)) {
       setState(() {
         _activeKind = kind;
         _selectedId = null;
@@ -220,7 +132,7 @@ class _ScreenShareDialogState extends State<_ScreenShareDialog> {
     });
   }
 
-  _ScreenShareSource? get _selectedSource {
+  RtcScreenShareSource? get _selectedSource {
     final selectedId = _selectedId;
     if (selectedId == null) return null;
     for (final source in _sources) {
@@ -229,7 +141,7 @@ class _ScreenShareDialogState extends State<_ScreenShareDialog> {
     return null;
   }
 
-  List<_ScreenShareSource> get _visibleSources {
+  List<RtcScreenShareSource> get _visibleSources {
     final sources = _sources
         .where((source) => source.kind == _activeKind)
         .toList(growable: false);
@@ -253,9 +165,9 @@ class _ScreenShareDialogState extends State<_ScreenShareDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final canUseActiveKind = widget.provider.canUseKind(_activeKind);
+    final canUseActiveKind = widget.backend.canUseKind(_activeKind);
     final selected = _selectedSource;
-    final disabledReason = widget.provider.disabledReasonFor(_activeKind);
+    final disabledReason = widget.backend.disabledReasonFor(_activeKind);
 
     return Dialog(
       insetPadding: const EdgeInsets.symmetric(horizontal: 32, vertical: 32),
@@ -291,10 +203,10 @@ class _ScreenShareDialogState extends State<_ScreenShareDialog> {
                 activeKind: _activeKind,
                 screenTabText: widget.screenTabText,
                 windowTabText: widget.windowTabText,
-                canUseWindow: widget.provider.canUseKind(
+                canUseWindow: widget.backend.canUseKind(
                   RtcScreenShareSourceKind.window,
                 ),
-                canUseDisplay: widget.provider.canUseKind(
+                canUseDisplay: widget.backend.canUseKind(
                   RtcScreenShareSourceKind.display,
                 ),
                 onChanged: _changeKind,
@@ -520,11 +432,11 @@ class _SourcePanel extends StatelessWidget {
   final bool loading;
   final String? error;
   final String? disabledReason;
-  final List<_ScreenShareSource> sources;
+  final List<RtcScreenShareSource> sources;
   final String? selectedId;
   final RtcScreenShareSourceKind activeKind;
   final Future<void> Function() onRetry;
-  final ValueChanged<_ScreenShareSource> onSelect;
+  final ValueChanged<RtcScreenShareSource> onSelect;
 
   @override
   Widget build(BuildContext context) {
@@ -627,7 +539,7 @@ class _WindowSourceTile extends StatelessWidget {
     required this.onTap,
   });
 
-  final _ScreenShareSource source;
+  final RtcScreenShareSource source;
   final bool selected;
   final VoidCallback onTap;
 
@@ -673,7 +585,7 @@ class _DisplaySourceCard extends StatelessWidget {
     required this.onTap,
   });
 
-  final _ScreenShareSource source;
+  final RtcScreenShareSource source;
   final bool selected;
   final VoidCallback onTap;
 

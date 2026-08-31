@@ -4,6 +4,8 @@ import 'package:flutter/services.dart';
 /// Tipo de entrada aceito pelo Push to Talk.
 enum PushToTalkBindingKind { keyboard, mouse }
 
+enum PushToTalkInputEvent { pressed, released, failed }
+
 /// Atalho persistível e independente da UI para Push to Talk.
 ///
 /// Teclas são identificadas pelo uso USB HID para não mudarem quando o layout
@@ -109,19 +111,14 @@ class PushToTalkBinding {
       other.shift == shift;
 
   @override
-  int get hashCode => Object.hash(
-    kind,
-    physicalKeyUsage,
-    mouseButton,
-    control,
-    alt,
-    shift,
-  );
+  int get hashCode =>
+      Object.hash(kind, physicalKeyUsage, mouseButton, control, alt, shift);
 }
 
 PushToTalkBinding? bindingFromKeyEvent(KeyEvent event) {
   if (event is! KeyDownEvent || event is KeyRepeatEvent) return null;
-  if (_isModifier(event.logicalKey) || HardwareKeyboard.instance.isMetaPressed) {
+  if (_isModifier(event.logicalKey) ||
+      HardwareKeyboard.instance.isMetaPressed) {
     return null;
   }
   final label = event.logicalKey.keyLabel;

@@ -4,6 +4,7 @@
 #include <flutter/method_channel.h>
 #include <flutter/standard_method_codec.h>
 
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <variant>
@@ -20,7 +21,14 @@ using flutter::MethodResult;
 using flutter::StreamHandlerError;
 using flutter::StreamHandlerFunctions;
 
-int virtual_key_for_hid_usage(int usage) {
+int virtual_key_for_hid_usage(uint32_t usage) {
+  // Flutter PhysicalKeyboardKey.usbHidUsage includes the HID usage page
+  // (keyboard A is 0x00070004). Keep accepting the legacy page-less value
+  // so persisted bindings from older builds remain usable.
+  if ((usage & 0xffff0000) != 0) {
+    if ((usage & 0xffff0000) != 0x00070000) return 0;
+    usage &= 0xffff;
+  }
   if (usage >= 0x04 && usage <= 0x1d) return 'A' + usage - 0x04;
   if (usage >= 0x1e && usage <= 0x26) return '1' + usage - 0x1e;
   if (usage == 0x27) return '0';
@@ -50,10 +58,14 @@ std::optional<std::string> value_string(const EncodableMap& map,
 
 std::optional<int64_t> value_int(const EncodableMap& map, const char* key) {
   const auto it = map.find(EncodableValue(key));
-  if (it == map.end() || !std::holds_alternative<int64_t>(it->second)) {
-    return std::nullopt;
+  if (it == map.end()) return std::nullopt;
+  if (std::holds_alternative<int32_t>(it->second)) {
+    return std::get<int32_t>(it->second);
   }
-  return std::get<int64_t>(it->second);
+  if (std::holds_alternative<int64_t>(it->second)) {
+    return std::get<int64_t>(it->second);
+  }
+  return std::nullopt;
 }
 
 }  // namespace
@@ -121,7 +133,8 @@ class PushToTalkInput {
     if (*kind == "keyboard") {
       const auto physical_key_usage = value_int(map, "physicalKeyUsage");
       key_ = physical_key_usage
-          ? virtual_key_for_hid_usage(static_cast<int>(*physical_key_usage))
+          ? virtual_key_for_hid_usage(
+                static_cast<uint32_t>(*physical_key_usage))
           : 0;
       if (key_ == 0) {
         result->Success(EncodableValue(false));

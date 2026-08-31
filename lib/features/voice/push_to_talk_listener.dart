@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'push_to_talk.dart';
 import 'push_to_talk_input.dart';
 import 'voice_controls_provider.dart';
 
@@ -15,8 +16,7 @@ class PushToTalkListener extends ConsumerStatefulWidget {
   final Widget child;
 
   @override
-  ConsumerState<PushToTalkListener> createState() =>
-      _PushToTalkListenerState();
+  ConsumerState<PushToTalkListener> createState() => _PushToTalkListenerState();
 }
 
 class _PushToTalkListenerState extends ConsumerState<PushToTalkListener>

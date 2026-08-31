@@ -53,15 +53,20 @@
  void TaskRunnerWindows::ProcessTasks() {
    // Even though it would usually be sufficient to process only a single task
    // whenever we receive the message, if the message queue happens to be full,
-   // we might not receive a message for each individual task.
-   for (;;) {
-     std::lock_guard<std::mutex> lock(tasks_mutex_);
-     if (tasks_.empty()) break;
-     TaskClosure task = tasks_.front();
-     tasks_.pop();
-     task();
-   }
- }
+  // we might not receive a message for each individual task.
+  for (;;) {
+    TaskClosure task;
+    {
+      std::lock_guard<std::mutex> lock(tasks_mutex_);
+      if (tasks_.empty()) break;
+      task = tasks_.front();
+      tasks_.pop();
+    }
+    // A task can complete a MethodResult or emit an event, both of which may
+    // enqueue a follow-up task. Never invoke user code under the queue lock.
+    task();
+  }
+}
  
  WNDCLASS TaskRunnerWindows::RegisterWindowClass() {
    window_class_name_ = L"FlutterWebRTCWindowsTaskRunnerWindow";
