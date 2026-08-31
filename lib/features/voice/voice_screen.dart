@@ -7,6 +7,7 @@ import '../../core/rtc/rtc_providers.dart';
 import '../../core/rtc/rtc_service.dart';
 import '../../core/rtc/rtc_video_view.dart';
 import '../../core/rtc/screen_share_picker.dart';
+import '../../core/ui/ui.dart';
 import 'voice_providers.dart';
 import 'voice_video_tile.dart';
 
@@ -542,16 +543,16 @@ class _ParticipantTile extends ConsumerWidget {
             participant.isCameraEnabled ? Icons.videocam : Icons.videocam_off,
             size: 18,
             color: participant.isCameraEnabled
-                ? theme.colorScheme.primary
-                : theme.colorScheme.outline,
+                ? AppTokens.accentGreen
+                : AppTokens.textMuted,
           ),
           const SizedBox(width: 10),
           Icon(
             participant.isMicrophoneEnabled ? Icons.mic : Icons.mic_off,
             size: 18,
             color: participant.isMicrophoneEnabled
-                ? theme.colorScheme.primary
-                : theme.colorScheme.outline,
+                ? AppTokens.accentGreen
+                : AppTokens.accentPurple,
           ),
         ],
       ),

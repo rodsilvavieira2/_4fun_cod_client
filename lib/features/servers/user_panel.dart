@@ -107,9 +107,14 @@ class UserPanel extends ConsumerWidget {
                 activeColor: AppTokens.accentPurple,
                 tooltip: controls.isDeafened
                     ? 'Desative o ensurdecer para usar o microfone'
-                    : (controls.isMuted
-                          ? 'Ativar microfone'
-                          : 'Desativar microfone'),
+                    : (controls.isPushToTalkEnabled &&
+                              !controls.isPushToTalkPressed &&
+                              !controls.isMuted &&
+                              controls.isPushToTalkRegistered
+                          ? 'Push to Talk ativo: segure ${controls.pushToTalkBinding?.displayLabel ?? 'o atalho'} para transmitir'
+                          : (controls.isMuted
+                                ? 'Ativar microfone'
+                                : 'Desativar microfone')),
                 onMainPressed: controls.isDeafened || controls.isApplying
                     ? null
                     : () => unawaited(_toggleMicrophone(context, ref)),

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -249,6 +250,15 @@ class _PushToTalkSettings extends ConsumerWidget {
               : 'No navegador, o Push to Talk funciona enquanto esta aba estiver focada.',
           style: Theme.of(context).textTheme.bodySmall,
         ),
+        if (!kIsWeb &&
+            defaultTargetPlatform == TargetPlatform.linux &&
+            binding?.kind.name == 'mouse') ...[
+          const SizedBox(height: 4),
+          Text(
+            'No Linux, botões globais do mouse exigem instalar a regra de acesso do aplicativo.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ],
         const SizedBox(height: 8),
         Row(
           children: [
@@ -316,11 +326,27 @@ class _PushToTalkSettings extends ConsumerWidget {
                   controller.setPushToTalkReleaseDelay(value.round()),
                 ),
         ),
-        if (state.isPushToTalkEnabled && !state.isPushToTalkPressed) ...[
+        if (state.isPushToTalkEnabled && !state.isPushToTalkRegistered) ...[
+          const SizedBox(height: 2),
+          Text(
+            'O atalho global não está disponível; o microfone permanece fechado.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ] else if (state.isPushToTalkEnabled && !state.isPushToTalkPressed) ...[
           const SizedBox(height: 2),
           Text(
             'Pronto: segure ${binding?.displayLabel ?? 'o atalho'} para transmitir.',
             style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ],
+        if (state.errorMessage case final message?) ...[
+          const SizedBox(height: 8),
+          Text(
+            message,
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.error,
+              fontSize: 12,
+            ),
           ),
         ],
       ],

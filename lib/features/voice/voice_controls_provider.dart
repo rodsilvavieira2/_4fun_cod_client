@@ -320,6 +320,11 @@ class VoiceControlsController extends Notifier<VoiceControlsState> {
     }
     if (!state.isPushToTalkPressed) return;
     _releaseTimer?.cancel();
+    if (state.pushToTalkReleaseDelayMs == 0) {
+      state = state.copyWith(isPushToTalkPressed: false);
+      await _applyToRtc();
+      return;
+    }
     _releaseTimer = Timer(
       Duration(milliseconds: state.pushToTalkReleaseDelayMs),
       () {
@@ -337,6 +342,23 @@ class VoiceControlsController extends Notifier<VoiceControlsState> {
     await _applyToRtc();
   }
 
+  /// O runner informa esta condição quando uma permissão de atalho global é
+  /// recusada depois da configuração inicial (por exemplo, pelo portal Linux).
+  /// Mantemos o microfone fechado e preservamos a configuração para que ela
+  /// possa ser registrada novamente quando a permissão for corrigida.
+  Future<void> handlePushToTalkRegistrationFailure() async {
+    await ensureInitialized();
+    _cancelPress();
+    state = state.copyWith(
+      isPushToTalkPressed: false,
+      isPushToTalkRegistered: false,
+      errorMessage:
+          'O atalho global foi recusado ou não está disponível. O microfone permaneceu fechado.',
+    );
+    await _savePushToTalk();
+    await _applyToRtc();
+  }
+
   void _cancelPress() {
     _releaseTimer?.cancel();
     _releaseTimer = null;
@@ -348,11 +370,11 @@ class VoiceControlsController extends Notifier<VoiceControlsState> {
     if (_disposed) return false;
     if (!registered) {
       state = state.copyWith(
-        isPushToTalkEnabled: false,
         isPushToTalkRegistered: false,
         errorMessage:
             'Não foi possível registrar o atalho global. O microfone permaneceu fechado.',
       );
+      await _savePushToTalk();
       await _applyToRtc();
       return false;
     }

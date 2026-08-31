@@ -6,6 +6,7 @@
 
 #include <optional>
 #include <string>
+#include <variant>
 
 namespace {
 
@@ -19,22 +20,23 @@ using flutter::MethodResult;
 using flutter::StreamHandlerError;
 using flutter::StreamHandlerFunctions;
 
-int virtual_key_for_label(const std::string& label) {
-  if (label.size() == 1) return VkKeyScanA(label[0]) & 0xff;
-  if (label == "SPACE" || label == "Space") return VK_SPACE;
-  if (label == "ENTER" || label == "Enter") return VK_RETURN;
-  if (label == "TAB" || label == "Tab") return VK_TAB;
-  if (label == "ESCAPE" || label == "Escape") return VK_ESCAPE;
-  if (label.size() >= 2 && label[0] == 'F') {
-    const int index = atoi(label.c_str() + 1);
-    if (index >= 1 && index <= 24) return VK_F1 + index - 1;
-  }
+int virtual_key_for_hid_usage(int usage) {
+  if (usage >= 0x04 && usage <= 0x1d) return 'A' + usage - 0x04;
+  if (usage >= 0x1e && usage <= 0x26) return '1' + usage - 0x1e;
+  if (usage == 0x27) return '0';
+  if (usage == 0x28) return VK_RETURN;
+  if (usage == 0x29) return VK_ESCAPE;
+  if (usage == 0x2b) return VK_TAB;
+  if (usage == 0x2c) return VK_SPACE;
+  if (usage >= 0x3a && usage <= 0x45) return VK_F1 + usage - 0x3a;
+  if (usage >= 0x68 && usage <= 0x73) return VK_F13 + usage - 0x68;
   return 0;
 }
 
 bool value_bool(const EncodableMap& map, const char* key) {
   const auto it = map.find(EncodableValue(key));
-  return it != map.end() && std::holds_alternative<bool>(it->second);
+  return it != map.end() && std::holds_alternative<bool>(it->second) &&
+         std::get<bool>(it->second);
 }
 
 std::optional<std::string> value_string(const EncodableMap& map,
@@ -117,8 +119,10 @@ class PushToTalkInput {
     alt_ = value_bool(map, "alt");
     shift_ = value_bool(map, "shift");
     if (*kind == "keyboard") {
-      const auto label = value_string(map, "label");
-      key_ = label ? virtual_key_for_label(*label) : 0;
+      const auto physical_key_usage = value_int(map, "physicalKeyUsage");
+      key_ = physical_key_usage
+          ? virtual_key_for_hid_usage(static_cast<int>(*physical_key_usage))
+          : 0;
       if (key_ == 0) {
         result->Success(EncodableValue(false));
         return;

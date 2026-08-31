@@ -32,6 +32,12 @@ struct PttInput {
 };
 
 PttInput* input = nullptr;
+std::atomic_uint portal_token_counter{0};
+
+std::string next_portal_token(const char* prefix) {
+  return std::string(prefix) + "_" +
+         std::to_string(portal_token_counter.fetch_add(1) + 1);
+}
 
 void send_event(const char* state) {
   if (input == nullptr || !input->listening) return;
@@ -199,8 +205,10 @@ void on_shortcut_signal(GDBusConnection*, const gchar*, const gchar*,
   const bool pressed = GPOINTER_TO_INT(user_data) != 0;
   const gchar* session = nullptr;
   const gchar* shortcut_id = nullptr;
-  g_variant_get(parameters, "(&o&st@a{sv})", &session, &shortcut_id, nullptr,
-                nullptr);
+  guint64 timestamp = 0;
+  g_autoptr(GVariant) options = nullptr;
+  g_variant_get(parameters, "(&o&st@a{sv})", &session, &shortcut_id,
+                &timestamp, &options);
   if (input != nullptr && input->session != nullptr &&
       g_strcmp0(session, input->session) == 0 &&
       g_strcmp0(shortcut_id, kPttId) == 0) {
@@ -213,6 +221,11 @@ void bind_response(GDBusConnection*, const gchar*, const gchar*, const gchar*,
   guint32 response = 2;
   g_autoptr(GVariant) results = nullptr;
   g_variant_get(parameters, "(u@a{sv})", &response, &results);
+  if (input != nullptr && input->request_subscription != 0) {
+    g_dbus_connection_signal_unsubscribe(input->bus,
+                                         input->request_subscription);
+    input->request_subscription = 0;
+  }
   if (response != 0) send_event("failed");
 }
 
@@ -233,6 +246,9 @@ void bind_shortcut(const std::string& trigger) {
                         g_variant_builder_end(&shortcut_options));
   GVariantBuilder options;
   g_variant_builder_init(&options, G_VARIANT_TYPE_VARDICT);
+  const std::string handle_token = next_portal_token("fourfun_ptt_bind");
+  g_variant_builder_add(&options, "{sv}", "handle_token",
+                        g_variant_new_string(handle_token.c_str()));
   g_autoptr(GError) error = nullptr;
   g_autoptr(GVariant) reply = g_dbus_connection_call_sync(
       input->bus, kPortalBus, kPortalPath, kPortalInterface, "BindShortcuts",
@@ -274,6 +290,11 @@ void create_response(GDBusConnection*, const gchar*, const gchar*, const gchar*,
     return;
   }
   input->session = g_strdup(session);
+  if (input->request_subscription != 0) {
+    g_dbus_connection_signal_unsubscribe(input->bus,
+                                         input->request_subscription);
+    input->request_subscription = 0;
+  }
   bind_shortcut(static_cast<const char*>(user_data));
 }
 
@@ -286,9 +307,12 @@ bool configure_keyboard(FlValue* arguments) {
   }
   GVariantBuilder options;
   g_variant_builder_init(&options, G_VARIANT_TYPE_VARDICT);
-  const gchar* token = "fourfun_ptt";
-  g_variant_builder_add(&options, "{sv}", "handle_token", g_variant_new_string(token));
-  g_variant_builder_add(&options, "{sv}", "session_handle_token", g_variant_new_string("fourfun_ptt_session"));
+  const std::string handle_token = next_portal_token("fourfun_ptt");
+  const std::string session_token = next_portal_token("fourfun_ptt_session");
+  g_variant_builder_add(&options, "{sv}", "handle_token",
+                        g_variant_new_string(handle_token.c_str()));
+  g_variant_builder_add(&options, "{sv}", "session_handle_token",
+                        g_variant_new_string(session_token.c_str()));
   g_autoptr(GVariant) reply = g_dbus_connection_call_sync(
       input->bus, kPortalBus, kPortalPath, kPortalInterface, "CreateSession",
       g_variant_new("(@a{sv})", g_variant_builder_end(&options)),

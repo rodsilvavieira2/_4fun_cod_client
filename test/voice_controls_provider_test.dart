@@ -183,5 +183,28 @@ void main() {
       expect(state.isMuted, isTrue);
       expect(state.isMicrophoneEnabled, isFalse);
     });
+
+    test(
+      'falha posterior do atalho global mantém PTT fechado',
+      () async {
+        await start();
+        final controls = container.read(voiceControlsProvider.notifier);
+        await controls.recordPushToTalkMouse(4);
+        await controls.setPushToTalkEnabled(true);
+        await controls.setPushToTalkPressed(true);
+        rtc.calls.clear();
+
+        await controls.handlePushToTalkRegistrationFailure();
+
+        final state = container.read(voiceControlsProvider);
+        final preferences = await SharedPreferences.getInstance();
+        expect(state.isPushToTalkEnabled, isTrue);
+        expect(state.isPushToTalkRegistered, isFalse);
+        expect(state.isMicrophoneEnabled, isFalse);
+        expect(state.errorMessage, contains('atalho global'));
+        expect(preferences.getBool('voice.push_to_talk.enabled'), isTrue);
+        expect(rtc.calls, ['remote:true', 'mic:off']);
+      },
+    );
   });
 }

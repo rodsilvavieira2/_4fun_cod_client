@@ -1,14 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/theme/app_theme.dart';
-import '../../core/ui/presence_dot.dart';
-import '../../core/ui/section_header.dart';
+import '../../core/ui/ui.dart';
 import 'dms_providers.dart';
 
-/// Lista de conversas DM (wireframe v3 §4.5): busca local + conversas
-/// derivadas de membros online reais. Row ativa com pill/bg do token
-/// hover/selected.
+/// Lista de conversas DM estilo macOS Sidebar:
+/// Busca local + conversas com avatares estilizados, PresenceDot e alto contraste.
 class DmConversationList extends ConsumerStatefulWidget {
   const DmConversationList({super.key, required this.serverId});
 
@@ -41,37 +38,61 @@ class _DmConversationListState extends ConsumerState<DmConversationList> {
             .toList();
 
     return Container(
-      color: AppThemeColors.card,
+      color: AppTokens.surface1,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
-            child: TextField(
-              controller: _searchController,
-              onChanged: (value) => setState(() => _query = value),
-              decoration: const InputDecoration(
-                hintText: 'Buscar conversas',
-                isDense: true,
-                prefixIcon: Icon(Icons.search, size: 18),
-                contentPadding:
-                    EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            child: Container(
+              height: 34,
+              decoration: BoxDecoration(
+                color: AppTokens.surface2,
+                borderRadius: BorderRadius.circular(AppRadius.sm),
+                border: Border.all(color: AppTokens.borderStrong, width: 1),
+              ),
+              child: TextField(
+                controller: _searchController,
+                onChanged: (value) => setState(() => _query = value),
+                style: const TextStyle(
+                  fontFamily: 'Geist',
+                  fontSize: 13,
+                  color: AppTokens.textPrimary,
+                ),
+                decoration: const InputDecoration(
+                  hintText: 'Buscar conversas…',
+                  hintStyle: TextStyle(
+                    fontFamily: 'Geist',
+                    fontSize: 13,
+                    color: AppTokens.textMuted,
+                  ),
+                  prefixIcon: Icon(Icons.search, size: 16, color: AppTokens.textSecondary),
+                  prefixIconConstraints: BoxConstraints(minWidth: 32, minHeight: 32),
+                  border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                  isDense: true,
+                  contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                ),
               ),
             ),
           ),
-          const Divider(height: 1),
+          const Divider(height: 1, color: AppTokens.borderHairline),
           const SectionHeader('MENSAGENS'),
           Expanded(
             child: filtered.isEmpty
-                ? Center(
+                ? const Center(
                     child: Text(
                       'Nenhuma conversa.',
                       style: TextStyle(
-                        color: Theme.of(context).colorScheme.secondary,
+                        fontFamily: 'Geist',
+                        fontSize: 13,
+                        color: AppTokens.textMuted,
                       ),
                     ),
                   )
                 : ListView.builder(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
                     itemCount: filtered.length,
                     itemBuilder: (context, index) {
                       final conversation = filtered[index];
@@ -115,51 +136,84 @@ class _ConversationRowState extends State<_ConversationRow> {
   Widget build(BuildContext context) {
     final conversation = widget.conversation;
     final selected = widget.selected;
+    final fgColor = selected
+        ? AppTokens.textPrimary
+        : (_hovered ? AppTokens.textPrimary : AppTokens.textSecondary);
+
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
-      child: InkWell(
+      child: GestureDetector(
         onTap: widget.onTap,
-        child: Container(
-          height: 44,
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          color: selected
-              ? AppOverlayColors.selected
-              : (_hovered ? AppOverlayColors.hover : Colors.transparent),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          height: 38,
+          margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 1.5),
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          decoration: BoxDecoration(
+            color: selected
+                ? AppTokens.surface3
+                : (_hovered ? AppTokens.hoverOverlay : Colors.transparent),
+            borderRadius: BorderRadius.circular(AppRadius.sm),
+            border: Border.all(
+              color: selected ? AppTokens.borderSubtle : Colors.transparent,
+              width: 1,
+            ),
+          ),
           child: Row(
             children: [
-              CircleAvatar(
-                radius: 16,
-                foregroundImage: conversation.avatarUrl != null
-                    ? NetworkImage(conversation.avatarUrl!)
-                    : null,
-                child: conversation.avatarUrl == null
-                    ? Text(
-                        conversation.name.isEmpty
-                            ? '?'
-                            : conversation.name[0].toUpperCase(),
-                        style: const TextStyle(fontSize: 11),
+              Container(
+                width: 26,
+                height: 26,
+                decoration: BoxDecoration(
+                  color: AppTokens.surface2,
+                  borderRadius: BorderRadius.circular(AppRadius.xs),
+                  border: Border.all(color: AppTokens.borderHairline, width: 1),
+                ),
+                alignment: Alignment.center,
+                clipBehavior: Clip.antiAlias,
+                child: conversation.avatarUrl != null
+                    ? Image.network(
+                        conversation.avatarUrl!,
+                        width: 26,
+                        height: 26,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, _, _) => _initial(conversation.name),
                       )
-                    : null,
+                    : _initial(conversation.name),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 10),
               Expanded(
                 child: Text(
                   conversation.name,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontSize: 14,
+                    fontFamily: 'Geist',
+                    fontSize: 13.5,
                     fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-                    color: selected
-                        ? Theme.of(context).colorScheme.onSurface
-                        : Theme.of(context).colorScheme.secondary,
+                    color: fgColor,
                   ),
                 ),
               ),
-              PresenceDot(online: conversation.online, size: 8),
+              PresenceDot(
+                status: conversation.online ? PresenceStatus.online : PresenceStatus.offline,
+                size: 8,
+              ),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _initial(String name) {
+    return Text(
+      name.isEmpty ? '?' : name[0].toUpperCase(),
+      style: const TextStyle(
+        fontFamily: 'Geist',
+        fontSize: 11,
+        fontWeight: FontWeight.w600,
+        color: AppTokens.textPrimary,
       ),
     );
   }

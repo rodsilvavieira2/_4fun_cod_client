@@ -28,18 +28,20 @@ class _PushToTalkListenerState extends ConsumerState<PushToTalkListener>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     HardwareKeyboard.instance.addHandler(_onKeyEvent);
-    _nativeEvents = ref.read(pushToTalkInputServiceProvider).events.listen(
-      (event) {
-        final controls = ref.read(voiceControlsProvider.notifier);
-        switch (event) {
-          case PushToTalkInputEvent.pressed:
-            unawaited(controls.setPushToTalkPressed(true));
-          case PushToTalkInputEvent.released:
-          case PushToTalkInputEvent.failed:
-            unawaited(controls.setPushToTalkPressed(false));
-        }
-      },
-    );
+    _nativeEvents = ref.read(pushToTalkInputServiceProvider).events.listen((
+      event,
+    ) {
+      final controls = ref.read(voiceControlsProvider.notifier);
+      if (ref.read(voiceControlsProvider).isRecordingPushToTalk) return;
+      switch (event) {
+        case PushToTalkInputEvent.pressed:
+          unawaited(controls.setPushToTalkPressed(true));
+        case PushToTalkInputEvent.released:
+          unawaited(controls.setPushToTalkPressed(false));
+        case PushToTalkInputEvent.failed:
+          unawaited(controls.handlePushToTalkRegistrationFailure());
+      }
+    });
   }
 
   @override
@@ -87,6 +89,11 @@ class _PushToTalkListenerState extends ConsumerState<PushToTalkListener>
         !binding.matchesKey(event)) {
       return false;
     }
+    if (!kIsWeb && state.isPushToTalkRegistered) {
+      // O runner já recebe o evento global; aqui apenas evitamos que a tecla
+      // configurada seja escrita no chat quando a janela estiver focada.
+      return true;
+    }
     if (event is KeyDownEvent) {
       unawaited(controls.setPushToTalkPressed(true));
     } else if (event is KeyUpEvent) {
@@ -104,6 +111,7 @@ class _PushToTalkListenerState extends ConsumerState<PushToTalkListener>
       return;
     }
     final binding = state.pushToTalkBinding;
+    if (!kIsWeb && state.isPushToTalkRegistered) return;
     if (state.isPushToTalkEnabled &&
         binding != null &&
         binding.matchesPointer(event)) {
@@ -114,6 +122,7 @@ class _PushToTalkListenerState extends ConsumerState<PushToTalkListener>
   void _onPointerUp(PointerUpEvent event) {
     final state = ref.read(voiceControlsProvider);
     final binding = state.pushToTalkBinding;
+    if (!kIsWeb && state.isPushToTalkRegistered) return;
     if (state.isPushToTalkEnabled &&
         binding != null &&
         binding.mouseButton != null) {

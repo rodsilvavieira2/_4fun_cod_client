@@ -1,14 +1,12 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/theme/app_theme.dart';
-import '../../core/ui/app_icon_button.dart';
+import '../../core/ui/ui.dart';
 import 'dms_providers.dart';
 
-/// Área de chat de uma conversa DM (wireframe v3 §4.5): header `@nome`
-/// com ações (busca/chamada/vídeo — sem efeito), placeholder de mensagens
-/// e composer no padrão visual do chat de canal. Enviar → SnackBar
-/// "em breve" (não grava nada).
+/// Área de chat de uma conversa DM estilo macOS / Vercel:
+/// Header translúcido com ações, placeholder de mensagens de alto contraste e composer integrado.
 class DmChatArea extends ConsumerWidget {
   const DmChatArea({
     super.key,
@@ -18,11 +16,7 @@ class DmChatArea extends ConsumerWidget {
   });
 
   final String serverId;
-
-  /// Id do usuário da conversa ativa; nulo = nenhuma selecionada.
   final String? userId;
-
-  /// Mobile: volta para a lista de conversas (reseta a seleção).
   final VoidCallback? onBack;
 
   @override
@@ -33,64 +27,78 @@ class DmChatArea extends ConsumerWidget {
         : conversations.where((c) => c.userId == userId).firstOrNull;
 
     return Container(
-      color: AppThemeColors.canvas,
+      color: AppTokens.background,
       child: Column(
         children: [
-          // Header 48px com o nome da conversa (ou placeholder).
-          Container(
-            height: 48,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            decoration: const BoxDecoration(
-              color: AppThemeColors.canvas,
-              border: Border(
-                bottom: BorderSide(color: AppThemeColors.hairline),
+          // Header estilo macOS Toolbar
+          ClipRect(
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+              child: Container(
+                height: 48,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                decoration: const BoxDecoration(
+                  color: Color(0xCC000000),
+                  border: Border(
+                    bottom: BorderSide(color: AppTokens.borderHairline, width: 1),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    if (userId != null && onBack != null) ...[
+                      AppIconButton(
+                        icon: Icons.arrow_back,
+                        tooltip: 'Voltar para conversas',
+                        onPressed: onBack,
+                      ),
+                      const SizedBox(width: 6),
+                    ],
+                    Text(
+                      conversation != null ? '@${conversation.name}' : 'Mensagens Diretas',
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontFamily: 'Geist',
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.w600,
+                        color: AppTokens.textPrimary,
+                        letterSpacing: -0.2,
+                      ),
+                    ),
+                    const Spacer(),
+                    AppIconButton(
+                      icon: Icons.search,
+                      tooltip: 'Buscar',
+                      onPressed: () {},
+                    ),
+                    const SizedBox(width: 4),
+                    AppIconButton(
+                      icon: Icons.call_outlined,
+                      tooltip: 'Chamada de voz',
+                      onPressed: () {},
+                    ),
+                    const SizedBox(width: 4),
+                    AppIconButton(
+                      icon: Icons.videocam_outlined,
+                      tooltip: 'Chamada de vídeo',
+                      onPressed: () {},
+                    ),
+                  ],
+                ),
               ),
             ),
-            child: Row(
-              children: [
-                if (userId != null && onBack != null)
-                  AppIconButton(
-                    icon: Icons.arrow_back,
-                    tooltip: 'Voltar para conversas',
-                    onPressed: onBack,
-                  ),
-                Text(
-                  conversation != null ? '@${conversation.name}' : 'DM',
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const Spacer(),
-                AppIconButton(
-                  icon: Icons.search,
-                  tooltip: 'Buscar',
-                  onPressed: () {},
-                ),
-                AppIconButton(
-                  icon: Icons.call_outlined,
-                  tooltip: 'Chamada de voz',
-                  onPressed: () {},
-                ),
-                AppIconButton(
-                  icon: Icons.videocam_outlined,
-                  tooltip: 'Chamada de vídeo',
-                  onPressed: () {},
-                ),
-              ],
-            ),
           ),
-          // Corpo: mensagens vazias (placeholder).
+          // Placeholder com contraste nítido
           Expanded(
             child: Center(
               child: Text(
                 conversation == null
-                    ? 'Selecione uma conversa'
-                    : 'Nenhuma mensagem ainda',
-                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                      color: AppThemeColors.hairline,
-                    ),
+                    ? 'Selecione uma conversa para começar'
+                    : 'Nenhuma mensagem ainda com @${conversation.name}',
+                style: const TextStyle(
+                  fontFamily: 'Geist',
+                  fontSize: 14,
+                  color: AppTokens.textMuted,
+                ),
               ),
             ),
           ),
@@ -112,10 +120,21 @@ class _DmComposer extends StatefulWidget {
 
 class _DmComposerState extends State<_DmComposer> {
   final TextEditingController _controller = TextEditingController();
+  final FocusNode _focusNode = FocusNode();
+  bool _focused = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _focusNode.addListener(() {
+      setState(() => _focused = _focusNode.hasFocus);
+    });
+  }
 
   @override
   void dispose() {
     _controller.dispose();
+    _focusNode.dispose();
     super.dispose();
   }
 
@@ -123,7 +142,6 @@ class _DmComposerState extends State<_DmComposer> {
     final content = _controller.text.trim();
     if (content.isEmpty) return;
     _controller.clear();
-    // UI shell: DMs não existem no backend — feedback claro, nada persiste.
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Mensagens diretas em breve')),
     );
@@ -134,57 +152,71 @@ class _DmComposerState extends State<_DmComposer> {
     return SafeArea(
       top: false,
       child: Padding(
-        // Mesmo padrão do composer de canal (wireframe .composer-wrap).
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-        child: Container(
-          constraints: const BoxConstraints(minHeight: 48),
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          constraints: const BoxConstraints(minHeight: 46),
           decoration: BoxDecoration(
-            color: AppThemeColors.card,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: AppThemeColors.hairline),
+            color: AppTokens.surface2,
+            borderRadius: BorderRadius.circular(AppRadius.md),
+            border: Border.all(
+              color: _focused ? AppTokens.borderFocus : AppTokens.borderStrong,
+              width: _focused ? 1.2 : 1.0,
+            ),
             boxShadow: const [
               BoxShadow(
-                color: Color(0x80000000),
-                blurRadius: 12,
+                color: Color(0x44000000),
+                blurRadius: 10,
                 offset: Offset(0, 4),
               ),
             ],
           ),
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 6, 8, 6),
+            padding: const EdgeInsets.fromLTRB(14, 4, 6, 4),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 Expanded(
                   child: TextField(
                     controller: _controller,
+                    focusNode: _focusNode,
                     minLines: 1,
                     maxLines: 5,
+                    style: const TextStyle(
+                      fontFamily: 'Geist',
+                      fontSize: 13.5,
+                      color: AppTokens.textPrimary,
+                    ),
                     decoration: InputDecoration(
                       hintText: widget.hintName != null
-                          ? 'Mensagem para @${widget.hintName}'
-                          : 'Mensagem',
+                          ? 'Mensagem para @${widget.hintName}…'
+                          : 'Digite sua mensagem…',
+                      hintStyle: const TextStyle(
+                        fontFamily: 'Geist',
+                        fontSize: 13.5,
+                        color: AppTokens.textMuted,
+                      ),
                       border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
                       isDense: true,
                       contentPadding:
                           const EdgeInsets.symmetric(horizontal: 0, vertical: 10),
                     ),
+                    onSubmitted: (_) => _handleSend(),
                   ),
                 ),
-                // Wireframe: .composer .send 32x32 radius 6.
-                InkWell(
-                  borderRadius: BorderRadius.circular(6),
-                  onTap: _handleSend,
-                  child: Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF1A1A1A),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: AppThemeColors.hairline),
-                    ),
-                    alignment: Alignment.center,
-                    child: const Icon(Icons.send, size: 14),
+                const SizedBox(width: 8),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: AppIconButton(
+                    icon: Icons.arrow_upward,
+                    tooltip: 'Enviar mensagem',
+                    minSize: 30,
+                    iconSize: 16,
+                    isActive: _controller.text.trim().isNotEmpty,
+                    activeColor: AppTokens.textInverse,
+                    onPressed: _handleSend,
                   ),
                 ),
               ],

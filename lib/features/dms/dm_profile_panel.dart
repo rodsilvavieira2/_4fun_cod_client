@@ -1,18 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/theme/app_theme.dart';
+import '../../core/ui/ui.dart';
 import '../servers/servers_providers.dart';
 
-/// Painel de perfil do contato (wireframe v3 §4.5): avatar 80, "Membro
-/// desde" (data real do membership), "Sobre" placeholder e botão "Ver
-/// perfil" sem ação. Só desktop ≥800 com conversa selecionada.
+/// Painel de perfil do contato estilo macOS Sidebar:
+/// Avatar 80, username com alto contraste, dados de adesão e ação de perfil.
 class DmProfilePanel extends ConsumerWidget {
   const DmProfilePanel({super.key, required this.serverId, this.userId});
 
   final String serverId;
-
-  /// Id do usuário da conversa ativa; nulo = nenhuma selecionada.
   final String? userId;
 
   @override
@@ -20,7 +17,6 @@ class DmProfilePanel extends ConsumerWidget {
     final userId = this.userId;
     if (userId == null) return const SizedBox.shrink();
 
-    // Nome/avatar/data via membros reais do servidor (mesma fonte da lista).
     final detail = ref.watch(serverDetailProvider(serverId)).valueOrNull;
     final member = detail?.members
         .where((m) => m.userId == userId)
@@ -29,68 +25,94 @@ class DmProfilePanel extends ConsumerWidget {
     return Container(
       width: 240,
       decoration: const BoxDecoration(
-        color: AppThemeColors.card,
-        border: Border(left: BorderSide(color: AppThemeColors.hairline)),
+        color: AppTokens.surface1,
+        border: Border(
+          left: BorderSide(color: AppTokens.borderHairline, width: 1),
+        ),
       ),
       child: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Center(
-              child: CircleAvatar(
-                radius: 40,
-                foregroundImage: member?.user.avatarUrl != null
-                    ? NetworkImage(member!.user.avatarUrl!)
-                    : null,
-                child: member?.user.avatarUrl == null
-                    ? Text(
-                        (member?.user.name.isNotEmpty ?? false)
-                            ? member!.user.name[0].toUpperCase()
-                            : '?',
-                        style: const TextStyle(fontSize: 24),
+              child: Container(
+                width: 72,
+                height: 72,
+                decoration: BoxDecoration(
+                  color: AppTokens.surface2,
+                  borderRadius: BorderRadius.circular(AppRadius.lg),
+                  border: Border.all(color: AppTokens.borderSubtle, width: 1),
+                ),
+                alignment: Alignment.center,
+                clipBehavior: Clip.antiAlias,
+                child: member?.user.avatarUrl != null
+                    ? Image.network(
+                        member!.user.avatarUrl!,
+                        width: 72,
+                        height: 72,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, _, _) => _initial(member.user.name),
                       )
-                    : null,
+                    : _initial(member?.user.name ?? '?'),
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 14),
             Center(
               child: Text(
                 member?.user.name ?? 'Contato',
                 style: const TextStyle(
-                  fontSize: 18,
+                  fontFamily: 'Geist',
+                  fontSize: 16,
                   fontWeight: FontWeight.w600,
+                  color: AppTokens.textPrimary,
+                  letterSpacing: -0.2,
                 ),
               ),
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 3),
             Center(
               child: Text(
                 '@${member?.user.username ?? ''}',
                 style: const TextStyle(
-                  color: AppThemeColors.hairline,
+                  fontFamily: 'Geist',
+                  color: AppTokens.textSecondary,
                   fontSize: 13,
                 ),
               ),
             ),
-            const SizedBox(height: 16),
-            const Divider(height: 1),
-            const SizedBox(height: 12),
+            const SizedBox(height: 18),
+            const Divider(height: 1, color: AppTokens.borderHairline),
+            const SizedBox(height: 14),
             _InfoRow(
-              label: 'Membro desde',
+              label: 'MEMBRO DESDE',
               value: member?.joinedAt != null
                   ? _formatDate(member!.joinedAt)
                   : '—',
             ),
-            const SizedBox(height: 12),
-            _InfoRow(label: 'Sobre', value: 'Sem descrição'),
-            const SizedBox(height: 20),
-            OutlinedButton(
+            const SizedBox(height: 14),
+            const _InfoRow(label: 'SOBRE', value: 'Sem descrição'),
+            const SizedBox(height: 22),
+            AppButton(
+              label: 'Ver perfil completo',
+              variant: AppButtonVariant.secondary,
+              size: AppButtonSize.sm,
               onPressed: () {},
-              child: const Text('Ver perfil'),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _initial(String name) {
+    return Text(
+      name.isEmpty ? '?' : name[0].toUpperCase(),
+      style: const TextStyle(
+        fontFamily: 'Geist',
+        fontSize: 24,
+        fontWeight: FontWeight.w600,
+        color: AppTokens.textPrimary,
       ),
     );
   }
@@ -116,10 +138,23 @@ class _InfoRow extends StatelessWidget {
       children: [
         Text(
           label,
-          style: Theme.of(context).textTheme.labelSmall,
+          style: const TextStyle(
+            fontFamily: 'Geist Mono',
+            fontSize: 10.5,
+            fontWeight: FontWeight.w600,
+            color: AppTokens.textMuted,
+            letterSpacing: 0.8,
+          ),
         ),
-        const SizedBox(height: 2),
-        Text(value, style: const TextStyle(fontSize: 14)),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          style: const TextStyle(
+            fontFamily: 'Geist',
+            fontSize: 13.5,
+            color: AppTokens.textPrimary,
+          ),
+        ),
       ],
     );
   }
