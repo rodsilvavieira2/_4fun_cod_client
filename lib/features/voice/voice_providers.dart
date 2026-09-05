@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/logging/app_logger.dart';
 import '../../core/rtc/media_devices_provider.dart';
 import '../../core/rtc/rtc_providers.dart';
 import '../../core/rtc/rtc_service.dart';
@@ -643,13 +644,22 @@ class VoiceController
   /// cobre reconexões futuras do mesmo jeito).
   Future<void> _connect(VoiceJoinInfo info) async {
     final rtc = ref.read(rtcServiceProvider);
+    final log = ref.read(appLoggerProvider);
     try {
       await rtc.connect(
         info.livekitUrl,
         info.token,
         tokenGenerator: _tokenGenerator,
       );
-    } catch (_) {
+    } catch (e, st) {
+      // Sem este log, falhas de `room.connect` (LiveKit fora, rede, token)
+      // viravam a mensagem genérica da UI sem rastro em disco.
+      log.e(
+        'voice connect falhou (url=${info.livekitUrl}) — tentando com token fresco',
+        error: e,
+        stackTrace: st,
+        tag: 'voice',
+      );
       if (_disposed) return;
       try {
         final fresh = await _freshJoinInfo();
@@ -658,7 +668,13 @@ class VoiceController
           fresh.token,
           tokenGenerator: _tokenGenerator,
         );
-      } catch (_) {
+      } catch (e2, st2) {
+        log.e(
+          'voice connect falhou (token fresco)',
+          error: e2,
+          stackTrace: st2,
+          tag: 'voice',
+        );
         if (_disposed) return;
         state = state.copyWith(
           status: VoiceSessionStatus.error,

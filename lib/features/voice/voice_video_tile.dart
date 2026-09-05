@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/rtc/rtc_providers.dart';
 import '../../core/rtc/rtc_service.dart';
 import '../../core/rtc/rtc_video_view.dart';
+import '../../core/ui/ds_tokens.dart';
 import 'voice_providers.dart';
 
 /// Papel de um tile de vídeo no painel — define a qualidade de recepção
@@ -291,28 +292,76 @@ class _AvatarPlaceholder extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final name = participant.name;
-    return ColoredBox(
-      color: theme.colorScheme.surfaceContainerHighest,
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+    return Container(
+      key: const ValueKey('voice-video-placeholder'),
+      decoration: BoxDecoration(
+        color: AppTokens.surface1,
+        border: Border.all(color: AppTokens.borderHairline),
+      ),
+      child: Stack(
         children: [
-          CircleAvatar(
-            radius: 24,
-            backgroundColor: theme.colorScheme.secondaryContainer,
-            child: Text(
-              name.isEmpty ? '?' : name[0].toUpperCase(),
-              style: theme.textTheme.titleLarge?.copyWith(
-                color: theme.colorScheme.onSecondaryContainer,
-              ),
+          const Positioned(left: 12, top: 12, child: _NoVideoBadge()),
+          Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircleAvatar(
+                  radius: 32,
+                  backgroundColor: AppTokens.surface3,
+                  child: Text(
+                    name.isEmpty ? '?' : name[0].toUpperCase(),
+                    style: theme.textTheme.headlineMedium?.copyWith(
+                      color: AppTokens.textPrimary,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Câmera desligada',
+                  style: TextStyle(
+                    fontFamily: 'Geist',
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: AppTokens.textMuted,
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 6),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Text(
-              name,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodySmall,
+        ],
+      ),
+    );
+  }
+}
+
+class _NoVideoBadge extends StatelessWidget {
+  const _NoVideoBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppTokens.surface2,
+        borderRadius: AppRadius.brSm,
+        border: Border.all(color: AppTokens.borderSubtle),
+      ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.videocam_off_outlined,
+            size: 13,
+            color: AppTokens.textSecondary,
+          ),
+          SizedBox(width: 5),
+          Text(
+            'Sem vídeo',
+            style: TextStyle(
+              fontFamily: 'Geist',
+              fontSize: 10.5,
+              fontWeight: FontWeight.w500,
+              color: AppTokens.textSecondary,
             ),
           ),
         ],

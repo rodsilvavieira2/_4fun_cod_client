@@ -444,13 +444,7 @@ class _VideoGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     final items = _mediaItems(state.participants);
     if (items.isEmpty) {
-      return const Center(
-        child: SizedBox(
-          width: 24,
-          height: 24,
-          child: CircularProgressIndicator(strokeWidth: 2),
-        ),
-      );
+      return const _EmptyVoiceStage();
     }
 
     return LayoutBuilder(
@@ -513,6 +507,53 @@ class _VideoGrid extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+class _EmptyVoiceStage extends StatelessWidget {
+  const _EmptyVoiceStage();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 320),
+        margin: const EdgeInsets.fromLTRB(20, 14, 20, 104),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 22),
+        decoration: BoxDecoration(
+          color: AppTokens.surface1,
+          borderRadius: AppRadius.brLg,
+          border: Border.all(color: AppTokens.borderSubtle),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.videocam_off_outlined,
+              size: 30,
+              color: AppTokens.textSecondary,
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'Nenhuma transmissão disponível',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Quando uma câmera ou tela for compartilhada, a prévia aparecerá aqui.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontFamily: 'Geist',
+                fontSize: 12,
+                height: 1.35,
+                color: AppTokens.textMuted,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
