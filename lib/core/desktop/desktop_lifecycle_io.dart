@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:dbus/dbus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
@@ -9,6 +10,7 @@ import 'desktop_lifecycle_controller.dart';
 
 const _showWindowMenuKey = 'show_window';
 const _quitMenuKey = 'quit';
+const _statusNotifierWatcherName = 'org.kde.StatusNotifierWatcher';
 
 DesktopLifecycleController? _desktopLifecycleController;
 
@@ -49,7 +51,9 @@ class _WindowManagerPort with WindowListener implements DesktopWindowPort {
   @override
   void onWindowClose() {
     final onClose = _onClose;
-    if (onClose != null) unawaited(onClose());
+    if (onClose != null) {
+      _runGuarded('ocultar a janela', onClose);
+    }
   }
 
   @override
@@ -96,6 +100,12 @@ class _TrayManagerPort with TrayListener implements DesktopTrayPort {
     required DesktopTrayActivationHandler onActivate,
     required DesktopTrayActionHandler onAction,
   }) async {
+    if (!_isWindows && !await _hasUsableLinuxTray()) {
+      throw UnsupportedError(
+        'O ambiente Linux atual não possui um host de system tray acessível.',
+      );
+    }
+
     _onActivate = onActivate;
     _onAction = onAction;
     trayManager.addListener(this);
@@ -104,7 +114,7 @@ class _TrayManagerPort with TrayListener implements DesktopTrayPort {
     await trayManager.setIcon(
       _isWindows
           ? 'windows/runner/resources/app_icon.ico'
-          : 'web/icons/Icon-192.png',
+          : _linuxTrayIconPath(),
     );
     if (_isWindows) {
       await trayManager.setToolTip('4fun Cod');
@@ -126,12 +136,16 @@ class _TrayManagerPort with TrayListener implements DesktopTrayPort {
     // no Windows, onde o clique esquerdo restaura a janela diretamente.
     if (!_isWindows) return;
     final onActivate = _onActivate;
-    if (onActivate != null) unawaited(onActivate());
+    if (onActivate != null) {
+      _runGuarded('restaurar a janela', onActivate);
+    }
   }
 
   @override
   void onTrayIconRightMouseDown() {
-    if (_isWindows) unawaited(trayManager.popUpContextMenu());
+    if (_isWindows) {
+      _runGuarded('abrir o menu da bandeja', trayManager.popUpContextMenu);
+    }
   }
 
   @override
@@ -143,7 +157,7 @@ class _TrayManagerPort with TrayListener implements DesktopTrayPort {
     };
     final onAction = _onAction;
     if (action != null && onAction != null) {
-      unawaited(onAction(action));
+      _runGuarded('executar a ação ${action.name}', () => onAction(action));
     }
   }
 
@@ -158,4 +172,59 @@ class _TrayManagerPort with TrayListener implements DesktopTrayPort {
     _onAction = null;
     _listening = false;
   }
+}
+
+void _runGuarded(String operation, Future<void> Function() callback) {
+  unawaited(() async {
+    try {
+      await callback();
+    } catch (error, stackTrace) {
+      debugPrint('Falha ao $operation pelo system tray: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
+  }());
+}
+
+Future<bool> _hasUsableLinuxTray() async {
+  final environment = Platform.environment;
+  final flatpakId = environment['FLATPAK_ID'];
+  final snapName = environment['SNAP_NAME'];
+
+  // O plugin interpreta o caminho como nome de ícone dentro de sandboxes.
+  // Sem um ID de manifesto conhecido não há como registrar um ícone válido.
+  final isGenericContainer =
+      environment['container']?.isNotEmpty == true ||
+      FileSystemEntity.isFileSync('/.dockerenv');
+  final isPackagedSandbox =
+      flatpakId?.isNotEmpty == true || snapName?.isNotEmpty == true;
+  if ((isGenericContainer && !isPackagedSandbox) ||
+      (environment.containsKey('FLATPAK_ID') &&
+          flatpakId?.isNotEmpty != true) ||
+      (environment.containsKey('SNAP') && snapName?.isNotEmpty != true)) {
+    return false;
+  }
+
+  final desktop = environment['XDG_CURRENT_DESKTOP']?.toLowerCase() ?? '';
+  final needsStatusNotifier =
+      environment['WAYLAND_DISPLAY']?.isNotEmpty == true ||
+      desktop.contains('gnome');
+  if (!needsStatusNotifier) return true;
+
+  final bus = DBusClient.session(introspectable: false);
+  try {
+    return await bus.nameHasOwner(_statusNotifierWatcherName);
+  } catch (error, stackTrace) {
+    debugPrint('Não foi possível consultar o host do system tray: $error');
+    debugPrintStack(stackTrace: stackTrace);
+    return false;
+  } finally {
+    await bus.close();
+  }
+}
+
+String _linuxTrayIconPath() {
+  final environment = Platform.environment;
+  return environment['FLATPAK_ID'] ??
+      environment['SNAP_NAME'] ??
+      'web/favicon.png';
 }

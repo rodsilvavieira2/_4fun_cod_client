@@ -1,17 +1,19 @@
-# fourfun_cod_client
+# 4fun Cod client
 
-A new Flutter project.
+Cliente Flutter para web, Linux e Windows.
 
-## Getting Started
+## Desktop
 
-This project is a starting point for a Flutter application.
+No Linux e no Windows, fechar a janela envia o aplicativo para o system tray.
+O menu da bandeja permite reabrir a janela ou encerrar o processo de verdade.
+Se o Linux não oferecer um host de tray acessível, o fechamento normal é
+mantido para evitar deixar o processo invisível sem forma de recuperação.
 
-A few resources to get you started if this is your first Flutter project:
+Para compilar no Debian/Ubuntu, instale uma implementação AppIndicator:
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+```bash
+sudo apt-get install libayatana-appindicator3-dev
+```
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+Também é possível usar `libappindicator3-dev`. No GNOME, a extensão
+AppIndicator/KStatusNotifierItem precisa estar habilitada para exibir o ícone.

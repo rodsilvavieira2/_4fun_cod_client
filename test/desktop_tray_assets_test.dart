@@ -5,7 +5,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   test('empacota os ícones de tray para Linux e Windows', () async {
-    final linuxIcon = await rootBundle.load('web/icons/Icon-192.png');
+    final linuxIcon = await rootBundle.load('web/favicon.png');
     final windowsIcon = await rootBundle.load(
       'windows/runner/resources/app_icon.ico',
     );
