@@ -654,9 +654,6 @@ class _Controls extends StatelessWidget {
       );
     }
 
-    // Um controle ativo executa a ação inversa ao ser pressionado (parar).
-    // O vermelho deixa isso inequívoco no dock de stream/voz.
-    const stopActionColor = Color(0xFFC62828);
     return Material(
       color: Colors.transparent,
       child: Container(
@@ -675,7 +672,7 @@ class _Controls extends StatelessWidget {
             _mediaToggleButton(
               icon: state.isMicrophoneEnabled ? Icons.mic : Icons.mic_off,
               active: state.isMicrophoneEnabled,
-              activeColor: stopActionColor,
+              activeColor: AppTokens.accentDanger,
               tooltip: state.isMicrophoneEnabled
                   ? 'Desativar microfone'
                   : 'Ativar microfone',
@@ -684,7 +681,7 @@ class _Controls extends StatelessWidget {
             _mediaToggleButton(
               icon: state.isCameraEnabled ? Icons.videocam : Icons.videocam_off,
               active: state.isCameraEnabled,
-              activeColor: stopActionColor,
+              activeColor: AppTokens.accentDanger,
               tooltip: state.isCameraEnabled
                   ? 'Desativar câmera'
                   : 'Ativar câmera',
@@ -693,7 +690,7 @@ class _Controls extends StatelessWidget {
             _mediaToggleButton(
               icon: Icons.present_to_all,
               active: state.isScreenSharing,
-              activeColor: stopActionColor,
+              activeColor: AppTokens.accentDanger,
               tooltip: state.isScreenSharing
                   ? 'Parar compartilhamento'
                   : 'Compartilhar tela',

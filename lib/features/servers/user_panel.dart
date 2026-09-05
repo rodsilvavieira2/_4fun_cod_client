@@ -15,8 +15,8 @@ import '../../core/ui/ui.dart';
 import '../voice/voice_controls_provider.dart';
 import '../voice/voice_providers.dart';
 
-/// Rodapé da sidebar (wireframe v4 macOS):
-/// Avatar 32 + nome + status dot + controles de áudio (mic/fones/⚙️) estilo compacto.
+/// Rodapé da sidebar no padrão Discord: sessão de voz no topo, ações de mídia
+/// agrupadas e identidade/controles pessoais na base.
 class UserPanel extends ConsumerWidget {
   const UserPanel({
     super.key,
@@ -42,173 +42,171 @@ class UserPanel extends ConsumerWidget {
     final devices = ref.watch(audioDevicesProvider);
     final controls = ref.watch(voiceControlsProvider);
     final activeVoiceState = voiceState;
-    final showScreenShare =
+    final showVoiceActions =
         voiceArg != null &&
         activeVoiceState != null &&
         activeVoiceState.status != VoiceSessionStatus.idle;
-    final canToggleScreenShare =
+    final canToggleVoiceMedia =
         activeVoiceState?.status == VoiceSessionStatus.connected &&
         !(activeVoiceState?.isReconnecting ?? false);
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: const BoxDecoration(
-        color: AppTokens.surface1,
-        border: Border(
-          top: BorderSide(color: AppTokens.borderHairline, width: 1),
+      color: AppTokens.surface1,
+      padding: const EdgeInsets.fromLTRB(6, 0, 6, 6),
+      child: Container(
+        key: const Key('user-panel-card'),
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: AppTokens.surface2,
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          border: Border.all(color: AppTokens.borderSubtle, width: 1),
         ),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (voiceArg != null &&
-              voiceState != null &&
-              voiceState!.status != VoiceSessionStatus.idle)
-            _VoiceConnectionPanel(
-              channelName: voiceChannelName ?? 'Canal de voz',
-              state: voiceState!,
-              onLeave: onLeaveVoice,
-            ),
-          Row(
-            children: [
-              // Avatar com PresenceDot
-              Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                      color: AppTokens.surface2,
-                      borderRadius: BorderRadius.circular(AppRadius.sm),
-                      border: Border.all(
-                        color: AppTokens.borderHairline,
-                        width: 1,
-                      ),
-                    ),
-                    alignment: Alignment.center,
-                    clipBehavior: Clip.antiAlias,
-                    child: avatarUrl != null
-                        ? Image.network(
-                            avatarUrl,
-                            width: 32,
-                            height: 32,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, _, _) => _initial(name),
-                          )
-                        : _initial(name),
-                  ),
-                  const Positioned(
-                    right: -2,
-                    bottom: -2,
-                    child: PresenceDot(status: PresenceStatus.online, size: 10),
-                  ),
-                ],
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (showVoiceActions)
+              _VoiceConnectionPanel(
+                channelName: voiceChannelName ?? 'Canal de voz',
+                state: voiceState!,
+                canToggleMedia: canToggleVoiceMedia,
+                onToggleCamera: () => unawaited(
+                  ref
+                      .read(voiceControllerProvider(voiceArg!).notifier)
+                      .toggleCamera(),
+                ),
+                onToggleScreenShare: () =>
+                    unawaited(_toggleScreenShare(context, ref)),
+                onLeave: onLeaveVoice,
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
+            Row(
+              children: [
+                Stack(
+                  clipBehavior: Clip.none,
                   children: [
-                    Text(
-                      name,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontFamily: 'Geist',
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: AppTokens.textPrimary,
+                    Container(
+                      width: 34,
+                      height: 34,
+                      decoration: BoxDecoration(
+                        color: AppTokens.surface2,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: AppTokens.borderHairline,
+                          width: 1,
+                        ),
                       ),
+                      alignment: Alignment.center,
+                      clipBehavior: Clip.antiAlias,
+                      child: avatarUrl != null
+                          ? Image.network(
+                              avatarUrl,
+                              width: 34,
+                              height: 34,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, _, _) => _initial(name),
+                            )
+                          : _initial(name),
                     ),
-                    const Text(
-                      'Online',
-                      style: TextStyle(
-                        fontFamily: 'Geist',
-                        fontSize: 11,
-                        color: AppTokens.accentGreen,
+                    const Positioned(
+                      right: -2,
+                      bottom: -2,
+                      child: PresenceDot(
+                        status: PresenceStatus.online,
+                        size: 10,
                       ),
                     ),
                   ],
                 ),
-              ),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _SplitMediaControl(
-                    icon: controls.isMicrophoneEnabled
-                        ? Icons.mic_none
-                        : Icons.mic_off_outlined,
-                    isActive: !controls.isMicrophoneEnabled,
-                    activeColor: AppTokens.accentPurple,
-                    tooltip: controls.isDeafened
-                        ? 'Desative o ensurdecer para usar o microfone'
-                        : (controls.isPushToTalkEnabled &&
-                                  !controls.isPushToTalkPressed &&
-                                  !controls.isMuted &&
-                                  controls.isPushToTalkRegistered
-                              ? 'Push to Talk ativo: segure ${controls.pushToTalkBinding?.displayLabel ?? 'o atalho'} para transmitir'
-                              : (controls.isMuted
-                                    ? 'Ativar microfone'
-                                    : 'Desativar microfone')),
-                    onMainPressed: controls.isDeafened || controls.isApplying
-                        ? null
-                        : () => unawaited(_toggleMicrophone(context, ref)),
-                    menu: _audioMenu(
-                      context: context,
-                      devices: devices.inputs,
-                      selectedId: devices.preferredInputId,
-                      unavailable: devices.preferredInputUnavailable,
-                      title: 'Dispositivo de entrada',
-                      onSelected: (id) => _selectInput(context, ref, id),
-                    ),
+                const SizedBox(width: 9),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        name,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontFamily: 'Geist',
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: AppTokens.textPrimary,
+                        ),
+                      ),
+                      const Text(
+                        'Online',
+                        style: TextStyle(
+                          fontFamily: 'Geist',
+                          fontSize: 11,
+                          color: AppTokens.accentGreen,
+                        ),
+                      ),
+                    ],
                   ),
-                  if (showScreenShare)
+                ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _SplitMediaControl(
+                      icon: controls.isMicrophoneEnabled
+                          ? Icons.mic_none
+                          : Icons.mic_off_outlined,
+                      isActive: !controls.isMicrophoneEnabled,
+                      activeColor: AppTokens.accentDanger,
+                      tooltip: controls.isDeafened
+                          ? 'Desative o ensurdecer para usar o microfone'
+                          : (controls.isPushToTalkEnabled &&
+                                    !controls.isPushToTalkPressed &&
+                                    !controls.isMuted &&
+                                    controls.isPushToTalkRegistered
+                                ? 'Push to Talk ativo: segure ${controls.pushToTalkBinding?.displayLabel ?? 'o atalho'} para transmitir'
+                                : (controls.isMuted
+                                      ? 'Ativar microfone'
+                                      : 'Desativar microfone')),
+                      onMainPressed: controls.isDeafened || controls.isApplying
+                          ? null
+                          : () => unawaited(_toggleMicrophone(context, ref)),
+                      menu: _audioMenu(
+                        context: context,
+                        devices: devices.inputs,
+                        selectedId: devices.preferredInputId,
+                        unavailable: devices.preferredInputUnavailable,
+                        title: 'Dispositivo de entrada',
+                        onSelected: (id) => _selectInput(context, ref, id),
+                      ),
+                    ),
+                    _SplitMediaControl(
+                      icon: controls.isDeafened
+                          ? Icons.headset_off_outlined
+                          : Icons.headset_outlined,
+                      isActive: controls.isDeafened,
+                      activeColor: AppTokens.accentDanger,
+                      tooltip: controls.isDeafened
+                          ? 'Parar de ensurdecer'
+                          : 'Ensurdecer',
+                      onMainPressed: controls.isApplying
+                          ? null
+                          : () => unawaited(_toggleDeafen(context, ref)),
+                      menu: _audioMenu(
+                        context: context,
+                        devices: devices.outputs,
+                        selectedId: devices.preferredOutputId,
+                        unavailable: devices.preferredOutputUnavailable,
+                        title: 'Dispositivo de saída',
+                        onSelected: (id) => _selectOutput(context, ref, id),
+                      ),
+                    ),
                     AppIconButton(
-                      icon: Icons.present_to_all,
-                      tooltip: activeVoiceState.isScreenSharing
-                          ? 'Parar compartilhamento'
-                          : 'Compartilhar tela',
+                      icon: Icons.settings_outlined,
+                      tooltip: 'Configurações',
                       minSize: 26,
-                      iconSize: 16,
-                      isActive: activeVoiceState.isScreenSharing,
-                      activeColor: AppTokens.accentPurple,
-                      onPressed: canToggleScreenShare
-                          ? () => unawaited(_toggleScreenShare(context, ref))
-                          : null,
+                      onPressed: onOpenSettings,
                     ),
-                  _SplitMediaControl(
-                    icon: controls.isDeafened
-                        ? Icons.headset_off_outlined
-                        : Icons.headset_outlined,
-                    isActive: controls.isDeafened,
-                    activeColor: AppTokens.accentPurple,
-                    tooltip: controls.isDeafened
-                        ? 'Parar de ensurdecer'
-                        : 'Ensurdecer',
-                    onMainPressed: controls.isApplying
-                        ? null
-                        : () => unawaited(_toggleDeafen(context, ref)),
-                    menu: _audioMenu(
-                      context: context,
-                      devices: devices.outputs,
-                      selectedId: devices.preferredOutputId,
-                      unavailable: devices.preferredOutputUnavailable,
-                      title: 'Dispositivo de saída',
-                      onSelected: (id) => _selectOutput(context, ref, id),
-                    ),
-                  ),
-                  AppIconButton(
-                    icon: Icons.settings_outlined,
-                    tooltip: 'Configurações',
-                    minSize: 26,
-                    onPressed: onOpenSettings,
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ],
+                  ],
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -406,11 +404,17 @@ class _VoiceConnectionPanel extends StatelessWidget {
   const _VoiceConnectionPanel({
     required this.channelName,
     required this.state,
+    required this.canToggleMedia,
+    required this.onToggleCamera,
+    required this.onToggleScreenShare,
     this.onLeave,
   });
 
   final String channelName;
   final VoiceState state;
+  final bool canToggleMedia;
+  final VoidCallback onToggleCamera;
+  final VoidCallback onToggleScreenShare;
   final VoidCallback? onLeave;
 
   @override
@@ -420,7 +424,7 @@ class _VoiceConnectionPanel extends StatelessWidget {
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.fromLTRB(4, 2, 2, 8),
+      padding: const EdgeInsets.only(bottom: 8),
       decoration: const BoxDecoration(
         border: Border(
           bottom: BorderSide(color: AppTokens.borderHairline, width: 1),
@@ -430,48 +434,74 @@ class _VoiceConnectionPanel extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Icon(
-                Icons.graphic_eq,
-                size: 16,
-                color: isConnected
-                    ? AppTokens.accentGreen
-                    : AppTokens.textMuted,
-              ),
-              const SizedBox(width: 6),
+              _ConnectionLatency(latencyMs: state.latencyMs),
+              const SizedBox(width: 8),
               Expanded(
-                child: Text(
-                  isConnecting ? 'Conectando…' : 'Voz conectada',
-                  style: TextStyle(
-                    fontFamily: 'Geist',
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: isConnected
-                        ? AppTokens.accentGreen
-                        : AppTokens.textSecondary,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      isConnecting ? 'Conectando…' : 'Voz conectada',
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: 'Geist',
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                        color: isConnected
+                            ? AppTokens.accentGreen
+                            : AppTokens.textSecondary,
+                      ),
+                    ),
+                    Text(
+                      channelName,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontFamily: 'Geist',
+                        fontSize: 10.5,
+                        color: AppTokens.textSecondary,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              if (isConnected) _ConnectionLatency(latencyMs: state.latencyMs),
-              IconButton(
+              AppIconButton(
+                icon: Icons.call_end,
                 tooltip: 'Sair do canal de voz',
                 onPressed: onLeave,
-                visualDensity: VisualDensity.compact,
-                icon: const Icon(Icons.call_end, size: 17),
+                minSize: 28,
+                iconSize: 17,
               ),
             ],
           ),
-          Padding(
-            padding: const EdgeInsets.only(left: 22),
-            child: Text(
-              channelName,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontFamily: 'Geist',
-                fontSize: 11.5,
-                color: AppTokens.textSecondary,
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: _VoiceActionButton(
+                  icon: state.isCameraEnabled
+                      ? Icons.videocam
+                      : Icons.videocam_off_outlined,
+                  tooltip: state.isCameraEnabled
+                      ? 'Desativar câmera'
+                      : 'Ativar câmera',
+                  isActive: state.isCameraEnabled,
+                  onPressed: canToggleMedia ? onToggleCamera : null,
+                ),
               ),
-            ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: _VoiceActionButton(
+                  icon: Icons.present_to_all,
+                  tooltip: state.isScreenSharing
+                      ? 'Parar compartilhamento'
+                      : 'Compartilhar tela',
+                  isActive: state.isScreenSharing,
+                  onPressed: canToggleMedia ? onToggleScreenShare : null,
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -493,29 +523,15 @@ class _ConnectionLatency extends StatelessWidget {
       <= 300 => AppTokens.accentAmber,
       _ => AppTokens.accentPurple,
     };
-    final label = latency == null ? '— ms' : '$latency ms';
     return Tooltip(
       message: latency == null
           ? 'Medindo latência da conexão…'
-          : 'Latência da conexão com o servidor: $latency ms',
-      child: Padding(
-        padding: const EdgeInsets.only(left: 4, right: 2),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.signal_cellular_alt, size: 13, color: color),
-            const SizedBox(width: 3),
-            Text(
-              label,
-              style: TextStyle(
-                fontFamily: 'Geist',
-                fontSize: 10.5,
-                fontWeight: FontWeight.w500,
-                color: color,
-              ),
-            ),
-          ],
-        ),
+          : 'Latência da conexão: $latency ms',
+      child: Icon(
+        Icons.wifi_rounded,
+        size: 18,
+        color: color,
+        semanticLabel: 'Latência da conexão',
       ),
     );
   }
@@ -554,6 +570,45 @@ class _SplitMediaControl extends StatelessWidget {
         ),
         SizedBox(width: 14, height: 26, child: menu),
       ],
+    );
+  }
+}
+
+class _VoiceActionButton extends StatelessWidget {
+  const _VoiceActionButton({
+    required this.icon,
+    required this.tooltip,
+    required this.isActive,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final bool isActive;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 28,
+      child: IconButton(
+        tooltip: tooltip,
+        onPressed: onPressed,
+        icon: Icon(icon, size: 17),
+        style: IconButton.styleFrom(
+          foregroundColor: isActive
+              ? AppTokens.accentDanger
+              : AppTokens.textPrimary,
+          disabledForegroundColor: AppTokens.textMuted,
+          backgroundColor: AppTokens.surfaceBase,
+          minimumSize: Size.zero,
+          padding: EdgeInsets.zero,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadius.sm),
+          ),
+        ),
+      ),
     );
   }
 }

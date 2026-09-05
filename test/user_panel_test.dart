@@ -141,42 +141,52 @@ void main() {
     expect(rtc.remoteAudioSelections, [true, false]);
   });
 
-  testWidgets(
-    'UserPanel mostra compartilhar à direita do mic e o ping da voz',
-    (tester) async {
-      SharedPreferences.setMockInitialValues({});
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [rtcServiceProvider.overrideWithValue(_FakeRtcService())],
-          child: MaterialApp(
-            home: Scaffold(
-              body: UserPanel(
-                voiceArg: (serverId: 'server-1', channelId: 'voice-1'),
-                voiceChannelName: 'reunião',
-                voiceState: const VoiceState(
-                  status: VoiceSessionStatus.connected,
-                  latencyMs: 42,
-                ),
-                onLeaveVoice: () {},
+  testWidgets('UserPanel organiza ações de voz acima dos controles pessoais', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    await tester.binding.setSurfaceSize(const Size(256, 300));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [rtcServiceProvider.overrideWithValue(_FakeRtcService())],
+        child: MaterialApp(
+          home: Scaffold(
+            body: UserPanel(
+              voiceArg: (serverId: 'server-1', channelId: 'voice-1'),
+              voiceChannelName: 'reunião',
+              voiceState: const VoiceState(
+                status: VoiceSessionStatus.connected,
+                latencyMs: 42,
               ),
+              onLeaveVoice: () {},
             ),
           ),
         ),
-      );
-      await tester.pumpAndSettle();
+      ),
+    );
+    await tester.pumpAndSettle();
 
-      expect(find.text('Voz conectada'), findsOneWidget);
-      expect(find.text('reunião'), findsOneWidget);
-      expect(find.text('42 ms'), findsOneWidget);
-      expect(find.byIcon(Icons.present_to_all), findsOneWidget);
-      expect(find.byIcon(Icons.mic_none), findsOneWidget);
-      expect(find.byIcon(Icons.headset_outlined), findsOneWidget);
+    expect(find.text('Voz conectada'), findsOneWidget);
+    expect(find.text('reunião'), findsOneWidget);
+    expect(find.text('42 ms'), findsNothing);
+    expect(find.byIcon(Icons.wifi_rounded), findsOneWidget);
+    expect(find.byTooltip('Latência da conexão: 42 ms'), findsOneWidget);
+    expect(find.byIcon(Icons.videocam_off_outlined), findsOneWidget);
+    expect(find.byIcon(Icons.present_to_all), findsOneWidget);
+    expect(find.byIcon(Icons.mic_none), findsOneWidget);
+    expect(find.byIcon(Icons.headset_outlined), findsOneWidget);
 
-      final micX = tester.getCenter(find.byIcon(Icons.mic_none)).dx;
-      final shareX = tester.getCenter(find.byIcon(Icons.present_to_all)).dx;
-      final headsetX = tester.getCenter(find.byIcon(Icons.headset_outlined)).dx;
-      expect(micX, lessThan(shareX));
-      expect(shareX, lessThan(headsetX));
-    },
-  );
+    final cameraY = tester
+        .getCenter(find.byIcon(Icons.videocam_off_outlined))
+        .dy;
+    final shareY = tester.getCenter(find.byIcon(Icons.present_to_all)).dy;
+    final micX = tester.getCenter(find.byIcon(Icons.mic_none)).dx;
+    final micY = tester.getCenter(find.byIcon(Icons.mic_none)).dy;
+    final headsetX = tester.getCenter(find.byIcon(Icons.headset_outlined)).dx;
+    final headsetY = tester.getCenter(find.byIcon(Icons.headset_outlined)).dy;
+    expect(cameraY, lessThan(micY));
+    expect(shareY, lessThan(headsetY));
+    expect(micX, lessThan(headsetX));
+  });
 }

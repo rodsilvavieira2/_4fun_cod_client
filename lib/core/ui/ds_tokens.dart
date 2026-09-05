@@ -54,6 +54,9 @@ abstract final class AppTokens {
   /// Roxo/Violeta para estados DND, tags especiais e erros.
   static const Color accentPurple = Color(0xFF9333EA);
 
+  /// Vermelho para ações que interrompem mídia ou sinalizam estado bloqueado.
+  static const Color accentDanger = Color(0xFFC62828);
+
   /// Verde para online, microfone ativo e indicadores de sucesso.
   static const Color accentGreen = Color(0xFF46A758);
 
