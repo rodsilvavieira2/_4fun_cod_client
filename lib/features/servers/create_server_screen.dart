@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/api/api_exception.dart';
+import '../../core/ui/ui.dart';
 import 'invite_link_parser.dart';
 import 'servers_providers.dart';
 
@@ -51,8 +52,9 @@ class _CreateServerScreenState extends ConsumerState<CreateServerScreen> {
       _error = null;
     });
     try {
-      final server =
-          await ref.read(serversProvider.notifier).create(_nameController.text.trim());
+      final server = await ref
+          .read(serversProvider.notifier)
+          .create(_nameController.text.trim());
       if (!mounted) return;
       context.go('/servers/${server.id}');
     } on ApiException catch (e) {
@@ -73,8 +75,9 @@ class _CreateServerScreenState extends ConsumerState<CreateServerScreen> {
       _error = null;
     });
     try {
-      final serverId =
-          await ref.read(serversRepositoryProvider).acceptInvite(code);
+      final serverId = await ref
+          .read(serversRepositoryProvider)
+          .acceptInvite(code);
       ref.invalidate(serversProvider);
       if (!mounted) return;
       context.go('/servers/$serverId');
@@ -91,108 +94,134 @@ class _CreateServerScreenState extends ConsumerState<CreateServerScreen> {
   Widget build(BuildContext context) {
     final isCreate = _mode == _ServerEntryMode.create;
     return Scaffold(
-      appBar: AppBar(title: const Text('Servidores')),
+      appBar: AppBar(title: const Text('Criar ou entrar em um servidor')),
       body: SafeArea(
         child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 480),
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    SegmentedButton<_ServerEntryMode>(
-                      segments: const [
-                        ButtonSegment(
-                          value: _ServerEntryMode.create,
-                          label: Text('Criar'),
-                          icon: Icon(Icons.add),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 500),
+              child: AppCard(
+                padding: const EdgeInsets.all(28),
+                backgroundColor: AppTokens.surface1,
+                borderColor: AppTokens.borderStrong,
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      AppSegmentedControl<_ServerEntryMode>(
+                        height: 38,
+                        items: const [
+                          SegmentItem(
+                            value: _ServerEntryMode.create,
+                            label: 'Criar',
+                            icon: Icons.add,
+                          ),
+                          SegmentItem(
+                            value: _ServerEntryMode.join,
+                            label: 'Entrar',
+                            icon: Icons.group_add_outlined,
+                          ),
+                        ],
+                        selectedValue: _mode,
+                        onChanged: _switchMode,
+                      ),
+                      const SizedBox(height: 28),
+                      Align(
+                        child: Container(
+                          width: 58,
+                          height: 58,
+                          decoration: const BoxDecoration(
+                            color: AppTokens.surface2,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            isCreate
+                                ? Icons.groups_2_outlined
+                                : Icons.group_add_outlined,
+                            size: 28,
+                            color: AppTokens.textPrimary,
+                          ),
                         ),
-                        ButtonSegment(
-                          value: _ServerEntryMode.join,
-                          label: Text('Entrar em um servidor'),
-                          icon: Icon(Icons.group_add_outlined),
+                      ),
+                      const SizedBox(height: 18),
+                      Text(
+                        isCreate
+                            ? 'Crie sua comunidade'
+                            : 'Entre em uma comunidade',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.headlineSmall,
+                      ),
+                      const SizedBox(height: 7),
+                      Text(
+                        isCreate
+                            ? 'Dê um nome ao espaço onde sua galera vai conversar.'
+                            : 'Cole o link do convite ou apenas o código.',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontFamily: 'Geist',
+                          fontSize: 13.5,
+                          height: 1.45,
+                          color: AppTokens.textMuted,
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      if (isCreate)
+                        AppTextField(
+                          controller: _nameController,
+                          autofocus: !kIsWeb,
+                          label: 'NOME DO SERVIDOR',
+                          hintText: 'Minha comunidade',
+                          validator: (value) =>
+                              (value == null || value.trim().isEmpty)
+                              ? 'Informe o nome do servidor.'
+                              : null,
+                          onFieldSubmitted: (_) => _create(),
+                        )
+                      else
+                        AppTextField(
+                          controller: _inviteLinkController,
+                          autofocus: !kIsWeb,
+                          label: 'LINK OU CÓDIGO DO CONVITE',
+                          hintText: 'https://…/invite/CodigoDoConvite',
+                          validator: (value) =>
+                              extractInviteCode(value ?? '') == null
+                              ? 'Cole um link de convite válido.'
+                              : null,
+                          onFieldSubmitted: (_) => _join(),
+                        ),
+                      if (_error != null) ...[
+                        const SizedBox(height: 16),
+                        Text(
+                          _error!,
+                          style: const TextStyle(
+                            fontFamily: 'Geist',
+                            fontSize: 12.5,
+                            color: AppTokens.accentPurple,
+                          ),
                         ),
                       ],
-                      selected: {_mode},
-                      onSelectionChanged: (selection) =>
-                          _switchMode(selection.first),
-                    ),
-                    const SizedBox(height: 32),
-                    if (isCreate) ...[
-                      const Icon(Icons.dns_outlined, size: 64),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Dê um nome ao seu servidor',
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.titleLarge,
-                      ),
                       const SizedBox(height: 24),
-                      TextFormField(
-                        controller: _nameController,
-                        autofocus: !kIsWeb,
-                        decoration: const InputDecoration(
-                          labelText: 'Nome do servidor',
-                          border: OutlineInputBorder(),
-                        ),
-                        validator: (value) =>
-                            (value == null || value.trim().isEmpty)
-                                ? 'Informe o nome do servidor.'
-                                : null,
-                        onFieldSubmitted: (_) => _create(),
-                      ),
-                    ] else ...[
-                      const Icon(Icons.group_add_outlined, size: 64),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Entre com um convite',
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.titleLarge,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Cole o link do convite (ou apenas o código).',
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.bodyMedium,
-                      ),
-                      const SizedBox(height: 24),
-                      TextFormField(
-                        controller: _inviteLinkController,
-                        autofocus: !kIsWeb,
-                        decoration: const InputDecoration(
-                          labelText: 'Link do convite',
-                          hintText: 'https://…/invite/CodigoDoConvite',
-                          border: OutlineInputBorder(),
-                        ),
-                        validator: (value) =>
-                            extractInviteCode(value ?? '') == null
-                                ? 'Cole um link de convite válido.'
-                                : null,
-                        onFieldSubmitted: (_) => _join(),
+                      FilledButton(
+                        onPressed: _busy ? null : (isCreate ? _create : _join),
+                        child: _busy
+                            ? const SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : Text(
+                                isCreate
+                                    ? 'Criar servidor'
+                                    : 'Entrar no servidor',
+                              ),
                       ),
                     ],
-                    if (_error != null) ...[
-                      const SizedBox(height: 16),
-                      Text(
-                        _error!,
-                        style: TextStyle(color: Theme.of(context).colorScheme.error),
-                      ),
-                    ],
-                    const SizedBox(height: 24),
-                    FilledButton(
-                      onPressed: _busy ? null : (isCreate ? _create : _join),
-                      child: _busy
-                          ? const SizedBox(
-                              height: 20,
-                              width: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : Text(isCreate ? 'Criar servidor' : 'Entrar no servidor'),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),

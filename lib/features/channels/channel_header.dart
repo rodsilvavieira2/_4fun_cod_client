@@ -4,7 +4,8 @@ import 'package:flutter/material.dart';
 import '../../core/ui/ui.dart';
 import '../../shared/models/servers.dart';
 
-/// Header de canal estilo macOS Toolbar (48px com backdrop blur e hairline inferior).
+/// Header do canal: mantém o vidro do tema atual com a hierarquia compacta
+/// de uma toolbar de comunidade.
 class ChannelHeader extends StatelessWidget {
   const ChannelHeader({
     super.key,
@@ -33,7 +34,7 @@ class ChannelHeader extends StatelessWidget {
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
         child: Container(
-          height: 48,
+          height: AppLayout.headerHeight,
           padding: const EdgeInsets.symmetric(horizontal: 16),
           decoration: const BoxDecoration(
             color: Color(0xCC000000), // ~80% black glass
@@ -54,16 +55,44 @@ class ChannelHeader extends StatelessWidget {
               Icon(icon, size: 16, color: AppTokens.textSecondary),
               const SizedBox(width: 8),
               Expanded(
-                child: Text(
-                  channelName,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontFamily: 'Geist',
-                    fontSize: 14.5,
-                    fontWeight: FontWeight.w600,
-                    color: AppTokens.textPrimary,
-                    letterSpacing: -0.2,
-                  ),
+                child: Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        channelName,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontFamily: 'Geist',
+                          fontSize: 14.5,
+                          fontWeight: FontWeight.w600,
+                          color: AppTokens.textPrimary,
+                          letterSpacing: -0.2,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const SizedBox(
+                      height: 18,
+                      child: VerticalDivider(
+                        color: AppTokens.borderStrong,
+                        width: 1,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Flexible(
+                      child: Text(
+                        channelType == ChannelType.text
+                            ? 'Conversa do servidor'
+                            : 'Sala de voz e vídeo',
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontFamily: 'Geist',
+                          fontSize: 12.5,
+                          color: AppTokens.textMuted,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
               AppIconButton(

@@ -1,6 +1,7 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
+import 'package:flutter/foundation.dart'
+    show debugPrint, kIsWeb, visibleForTesting;
 import 'package:flutter_webrtc/flutter_webrtc.dart' as rtc;
 
 // `SpeakingChangedEvent` e `ReconnectingEvent` (mixin, events.dart:71)
@@ -157,6 +158,14 @@ class LiveKitRtcService implements RtcService {
   /// concorrentes na MESMA sala). Null quando ocioso — ver [_publishSystemAudio].
   Future<void>? _pendingSystemAudioPublish;
 
+  /// Atualiza o ping exibido no painel de voz usando o RTT do par ICE que
+  /// está carregando a conexão com o servidor LiveKit.
+  static const Duration _latencyPollInterval = Duration(seconds: 5);
+  Timer? _latencyTimer;
+  int _latencyGeneration = 0;
+  bool _latencyPollInFlight = false;
+  int? _lastLatencyMs;
+
   @override
   RtcScreenShareQuality get screenShareQuality => _screenShareQuality;
 
@@ -234,6 +243,7 @@ class LiveKitRtcService implements RtcService {
     // [_seedParticipants]). Sem isso a UI mostraria a sala vazia até alguém
     // publicar track/mutar.
     _seedParticipants(room);
+    _startLatencyMonitor(room);
   }
 
   @override
@@ -1230,6 +1240,7 @@ class LiveKitRtcService implements RtcService {
       // [_seedParticipants]).
       _participantsById.clear();
       _seedParticipants(room);
+      _startLatencyMonitor(room);
       // Sem startAudio explícito aqui (decisão): o Room novo nasce com
       // `_audioEnabled = true` (room.dart:107) e, se o autoplay do browser
       // ainda bloquear o áudio remoto, a ponte track→room do SDK reemite
@@ -1336,6 +1347,7 @@ class LiveKitRtcService implements RtcService {
   /// recursos WebRTC — retornar antes deixaria dois [Room]/PeerConnection
   /// vivos num reconnect rápido.
   Future<void> _teardownRoom() async {
+    _stopLatencyMonitor();
     // Pode ser chamado tanto no disconnect quanto na reconexão automática.
     // Em ambos os casos, preview local não pode sobreviver à room antiga.
     await stopCameraPreview();
@@ -1365,6 +1377,115 @@ class LiveKitRtcService implements RtcService {
     }
     _emitSnapshot();
   }
+
+  void _startLatencyMonitor(Room room) {
+    _stopLatencyMonitor(emitUnavailable: false);
+    final generation = ++_latencyGeneration;
+    unawaited(_pollConnectionLatency(room, generation));
+    _latencyTimer = Timer.periodic(_latencyPollInterval, (_) {
+      unawaited(_pollConnectionLatency(room, generation));
+    });
+  }
+
+  void _stopLatencyMonitor({bool emitUnavailable = true}) {
+    _latencyGeneration++;
+    _latencyTimer?.cancel();
+    _latencyTimer = null;
+    _latencyPollInFlight = false;
+    if (emitUnavailable && _lastLatencyMs != null) {
+      _lastLatencyMs = null;
+      _emitEvent(const ConnectionLatencyChangedEvent(latencyMs: null));
+    }
+  }
+
+  Future<void> _pollConnectionLatency(Room room, int generation) async {
+    if (_latencyPollInFlight ||
+        _disposed ||
+        generation != _latencyGeneration ||
+        !identical(_room, room)) {
+      return;
+    }
+    _latencyPollInFlight = true;
+    try {
+      // O SDK ainda não expõe stats da conexão na API pública. `engine` e
+      // `primary` apontam para o PeerConnection escolhido pelo próprio
+      // LiveKit; o fork está fixado no projeto e este acesso fica isolado aqui.
+      // ignore: invalid_use_of_internal_member
+      final peerConnection = room.engine.primary?.pc;
+      if (peerConnection == null) return;
+      final latencyMs = connectionLatencyMsFromStats(
+        await peerConnection.getStats(),
+      );
+      if (_disposed ||
+          generation != _latencyGeneration ||
+          !identical(_room, room) ||
+          latencyMs == null ||
+          latencyMs == _lastLatencyMs) {
+        return;
+      }
+      _lastLatencyMs = latencyMs;
+      _emitEvent(ConnectionLatencyChangedEvent(latencyMs: latencyMs));
+    } catch (error) {
+      // Stats podem não existir nos primeiros instantes da negociação. A
+      // próxima coleta tenta novamente sem afetar áudio ou vídeo.
+      debugPrint('[rtc] medição de latência indisponível: $error');
+    } finally {
+      if (generation == _latencyGeneration) {
+        _latencyPollInFlight = false;
+      }
+    }
+  }
+}
+
+/// Extrai o RTT do par ICE selecionado de um relatório WebRTC.
+///
+/// O WebRTC define `currentRoundTripTime` em segundos; a UI trabalha com
+/// milissegundos. Alguns backends não incluem o relatório `transport`, então
+/// o fallback aceita o par marcado como `selected` ou como
+/// `nominated+succeeded`.
+@visibleForTesting
+int? connectionLatencyMsFromStats(Iterable<rtc.StatsReport> reports) {
+  final all = reports.toList(growable: false);
+  final selectedPairIds = <String>{
+    for (final report in all)
+      if (report.type == 'transport' &&
+          report.values['selectedCandidatePairId'] is String)
+        report.values['selectedCandidatePairId'] as String,
+  };
+
+  rtc.StatsReport? selectedPair;
+  for (final report in all) {
+    if (report.type != 'candidate-pair') continue;
+    if (selectedPairIds.contains(report.id)) {
+      selectedPair = report;
+      break;
+    }
+    final values = report.values;
+    if (selectedPair == null && values['selected'] == true) {
+      selectedPair = report;
+    } else if (selectedPair == null &&
+        values['nominated'] == true &&
+        values['state'] == 'succeeded') {
+      selectedPair = report;
+    }
+  }
+
+  var seconds = _statNumber(selectedPair?.values['currentRoundTripTime']);
+  if (seconds == null) {
+    for (final report in all) {
+      if (report.type != 'remote-inbound-rtp') continue;
+      seconds = _statNumber(report.values['roundTripTime']);
+      if (seconds != null) break;
+    }
+  }
+  if (seconds == null || !seconds.isFinite || seconds < 0) return null;
+  return (seconds * 1000).round().clamp(0, 60000).toInt();
+}
+
+double? _statNumber(Object? value) {
+  if (value is num) return value.toDouble();
+  if (value is String) return double.tryParse(value);
+  return null;
 }
 
 /// Acha o device de "monitor"/loopback (áudio de sistema) na lista de

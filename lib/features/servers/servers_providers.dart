@@ -35,15 +35,30 @@ class ServersController extends AsyncNotifier<List<Server>> {
   }
 }
 
-final serversProvider =
-    AsyncNotifierProvider<ServersController, List<Server>>(ServersController.new);
+final serversProvider = AsyncNotifierProvider<ServersController, List<Server>>(
+  ServersController.new,
+);
 
 /// Detalhe de um servidor (`GET /servers/:id`): servidor + canais + membros
 /// + papel do usuário.
 class ServerDetailController
     extends AutoDisposeFamilyAsyncNotifier<ServerDetail, String> {
+  StreamSubscription<RealtimeEvent>? _membershipSubscription;
+
   @override
   Future<ServerDetail> build(String serverId) async {
+    _membershipSubscription?.cancel();
+    _membershipSubscription = ref.read(socketServiceProvider).events.listen((
+      event,
+    ) {
+      final eventServerId = switch (event) {
+        MemberRemovedEvent(:final serverId) => serverId,
+        MemberRoleUpdatedEvent(:final serverId) => serverId,
+        _ => null,
+      };
+      if (eventServerId == serverId) ref.invalidateSelf();
+    });
+    ref.onDispose(() => _membershipSubscription?.cancel());
     final log = ref.watch(appLoggerProvider);
     log.d('detail fetch: $serverId', tag: 'server-detail');
     // Timeout defensivo: mesmo com o interceptor corrigido, um fetch preso
@@ -54,12 +69,18 @@ class ServerDetailController
           .watch(serversRepositoryProvider)
           .fetchServerDetail(serverId)
           .timeout(const Duration(seconds: 20));
-      log.d('detail ok: $serverId (${detail.channels.length} canais)',
-          tag: 'server-detail');
+      log.d(
+        'detail ok: $serverId (${detail.channels.length} canais)',
+        tag: 'server-detail',
+      );
       return detail;
     } catch (e, st) {
-      log.e('detail falhou: $serverId', error: e, stackTrace: st,
-          tag: 'server-detail');
+      log.e(
+        'detail falhou: $serverId',
+        error: e,
+        stackTrace: st,
+        tag: 'server-detail',
+      );
       rethrow;
     }
   }
@@ -71,41 +92,53 @@ class ServerDetailController
     ref.invalidate(serversProvider);
   }
 
-  /// Renomeia o servidor (OWNER).
+  /// Renomeia o servidor (OWNER ou ADMIN).
   Future<void> updateName(String name) async {
     await ref.read(serversRepositoryProvider).updateServer(arg, name: name);
     ref.invalidateSelf();
     ref.invalidate(serversProvider);
   }
 
-  /// Atualiza o ícone do servidor (OWNER).
+  /// Atualiza o ícone do servidor (OWNER ou ADMIN).
   Future<void> updateIcon(String iconUrl) async {
-    await ref.read(serversRepositoryProvider).updateServer(arg, iconUrl: iconUrl);
+    await ref
+        .read(serversRepositoryProvider)
+        .updateServer(arg, iconUrl: iconUrl);
     ref.invalidateSelf();
     ref.invalidate(serversProvider);
   }
 
-  /// Remove um membro (OWNER).
+  /// Remove um membro conforme a hierarquia do papel atual.
   Future<void> removeMember(String userId) async {
     await ref.read(serversRepositoryProvider).removeMember(arg, userId);
     ref.invalidateSelf();
   }
 
-  /// Cria um convite (OWNER).
+  /// Promove um membro a ADMIN ou rebaixa para MEMBER (apenas OWNER).
+  Future<void> updateMemberRole(String userId, ServerRole role) async {
+    await ref
+        .read(serversRepositoryProvider)
+        .updateMemberRole(arg, userId, role);
+    ref.invalidateSelf();
+  }
+
+  /// Cria um convite (OWNER ou ADMIN).
   Future<InviteInfo> createInvite() {
     return ref.read(serversRepositoryProvider).createInvite(arg);
   }
 }
 
-final serverDetailProvider = AsyncNotifierProvider.autoDispose.family<
-    ServerDetailController, ServerDetail, String>(ServerDetailController.new);
+final serverDetailProvider = AsyncNotifierProvider.autoDispose
+    .family<ServerDetailController, ServerDetail, String>(
+      ServerDetailController.new,
+    );
 
 /// Resolução pública de convite (`GET /invites/:code`) — funciona
 /// deslogado; o aceite (`POST`) exige sessão.
-final inviteDetailProvider =
-    FutureProvider.autoDispose.family<InviteDetail, String>((ref, code) {
-  return ref.watch(serversRepositoryProvider).fetchInvite(code);
-});
+final inviteDetailProvider = FutureProvider.autoDispose
+    .family<InviteDetail, String>((ref, code) {
+      return ref.watch(serversRepositoryProvider).fetchInvite(code);
+    });
 
 /// Presença online dos membros — `GET /servers/:id/presence` (estado
 /// inicial) + eventos `presence.changed` aplicados em tempo real.
@@ -185,8 +218,9 @@ class PresenceController
 
   Future<void> _fetch(String serverId) async {
     try {
-      final presence =
-          await ref.read(serversRepositoryProvider).fetchPresence(serverId);
+      final presence = await ref
+          .read(serversRepositoryProvider)
+          .fetchPresence(serverId);
       if (_disposed) return;
       // Snapshot REST como base, exceto usuários com evento (o estado de
       // eventos é sempre mais recente que o snapshot).
@@ -203,5 +237,84 @@ class PresenceController
 
 /// Ids dos usuários online no servidor (autoDispose: sai da tela de membros,
 /// cancela o listener).
-final presenceProvider = NotifierProvider.autoDispose.family<
-    PresenceController, Set<String>, String>(PresenceController.new);
+final presenceProvider = NotifierProvider.autoDispose
+    .family<PresenceController, Set<String>, String>(PresenceController.new);
+
+/// Ocupantes de voz por canal (`channelId -> userIds`). É separado da
+/// presença online para não alterar os consumidores existentes de
+/// [presenceProvider], mas usa o mesmo snapshot REST e os eventos LiveKit.
+class VoicePresenceController
+    extends AutoDisposeFamilyNotifier<Map<String, Set<String>>, String> {
+  StreamSubscription<RealtimeEvent>? _subscription;
+  StreamSubscription<void>? _reconnectedSub;
+  bool _disposed = false;
+  final Map<({String channelId, String userId}), bool> _eventStates = {};
+
+  @override
+  Map<String, Set<String>> build(String serverId) {
+    _disposed = false;
+    _subscription?.cancel();
+    _reconnectedSub?.cancel();
+    _subscription = ref.read(socketServiceProvider).events.listen((event) {
+      if (event is! VoicePresenceChangedEvent || event.serverId != serverId) {
+        return;
+      }
+      _eventStates[(channelId: event.channelId, userId: event.userId)] =
+          event.connected;
+      final next = {
+        for (final entry in state.entries) entry.key: {...entry.value},
+      };
+      final occupants = next.putIfAbsent(event.channelId, () => <String>{});
+      if (event.connected) {
+        occupants.add(event.userId);
+      } else {
+        occupants.remove(event.userId);
+      }
+      state = next;
+    });
+    _reconnectedSub = ref.read(socketServiceProvider).reconnected.listen((_) {
+      _eventStates.clear();
+      state = const {};
+      _fetch(serverId);
+    });
+    ref.onDispose(() {
+      _disposed = true;
+      _subscription?.cancel();
+      _reconnectedSub?.cancel();
+    });
+    _fetch(serverId);
+    return const {};
+  }
+
+  Future<void> _fetch(String serverId) async {
+    try {
+      final presence = await ref
+          .read(serversRepositoryProvider)
+          .fetchPresence(serverId);
+      if (_disposed) return;
+      final next = <String, Set<String>>{
+        for (final entry in presence.voiceByChannel.entries)
+          entry.key: {...entry.value},
+      };
+      for (final entry in _eventStates.entries) {
+        final occupants = next.putIfAbsent(
+          entry.key.channelId,
+          () => <String>{},
+        );
+        if (entry.value) {
+          occupants.add(entry.key.userId);
+        } else {
+          occupants.remove(entry.key.userId);
+        }
+      }
+      state = next;
+    } catch (_) {
+      // Presença de voz é best-effort; os eventos futuros ainda a preenchem.
+    }
+  }
+}
+
+final voicePresenceProvider = NotifierProvider.autoDispose
+    .family<VoicePresenceController, Map<String, Set<String>>, String>(
+      VoicePresenceController.new,
+    );

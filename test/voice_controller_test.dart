@@ -662,6 +662,21 @@ void main() {
       },
     );
 
+    test('ping atualiza durante a chamada e limpa ao reconectar', () async {
+      repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
+      final notifier = buildVoice();
+      await notifier.join();
+      await settle();
+
+      rtc.pushEvent(const ConnectionLatencyChangedEvent(latencyMs: 42));
+      await settle();
+      expect(state().latencyMs, 42);
+
+      rtc.pushEvent(const ReconnectingEvent());
+      await settle();
+      expect(state().latencyMs, isNull);
+    });
+
     test('resumeAudio conectado chama o serviço (1 chamada)', () async {
       repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
       final notifier = buildVoice();
@@ -1432,205 +1447,27 @@ void main() {
     );
 
     test(
-      '1º sharer no snapshot ganha destaque automático salvando o anterior',
+      'shares simultâneos preservam o grid até um destaque manual',
       () async {
         rtc.localId = 'user_u1';
         final notifier = buildVoice();
 
-        // Spotlight manual pré-existente (Fase 5).
-        notifier.toggleSpotlight('user_u2');
-        expect(state().spotlightParticipantId, 'user_u2');
-
-        // 1º snapshot com sharer: destaque vai para o sharer, anterior salvo.
         rtc.pushParticipants([
           _participant('user_u1', 'Ana'),
-          _participant('user_u2', 'Bia', camera: true),
+          _participant('user_u2', 'Bia', screenShare: true),
           _participant('user_u3', 'Caio', camera: true, screenShare: true),
         ]);
         await settle();
 
-        expect(state().spotlightParticipantId, 'user_u3');
-        expect(state().autoSpotlightActive, isTrue);
-        expect(
-          state().savedSpotlightParticipantId,
-          'user_u2',
-          reason: 'spotlight manual anterior salvo para restaurar',
-        );
-      },
-    );
-
-    test('share termina: spotlight restaurado para o id salvo', () async {
-      rtc.localId = 'user_u1';
-      final notifier = buildVoice();
-
-      notifier.toggleSpotlight('user_u2');
-      rtc.pushParticipants([
-        _participant('user_u1', 'Ana'),
-        _participant('user_u2', 'Bia', camera: true),
-        _participant('user_u3', 'Caio', camera: true, screenShare: true),
-      ]);
-      await settle();
-      expect(state().spotlightParticipantId, 'user_u3');
-      expect(state().savedSpotlightParticipantId, 'user_u2');
-
-      // Share termina: sem sharers no snapshot → restaura o manual anterior.
-      rtc.pushParticipants([
-        _participant('user_u1', 'Ana'),
-        _participant('user_u2', 'Bia', camera: true),
-        _participant('user_u3', 'Caio', camera: true),
-      ]);
-      await settle();
-
-      expect(state().spotlightParticipantId, 'user_u2');
-      expect(state().autoSpotlightActive, isFalse);
-      expect(state().savedSpotlightParticipantId, isNull);
-    });
-
-    test(
-      'share termina com spotlight anterior em grid: restaura para grid',
-      () async {
-        rtc.localId = 'user_u1';
-        buildVoice();
-
-        rtc.pushParticipants([
-          _participant('user_u1', 'Ana'),
-          _participant('user_u2', 'Bia', screenShare: true),
-        ]);
-        await settle();
-        expect(state().spotlightParticipantId, 'user_u2');
-        expect(
-          state().savedSpotlightParticipantId,
-          isNull,
-          reason: 'era grid — nada para restaurar',
-        );
-
-        rtc.pushParticipants([
-          _participant('user_u1', 'Ana'),
-          _participant('user_u2', 'Bia'),
-        ]);
-        await settle();
-
-        expect(state().spotlightParticipantId, isNull, reason: 'volta ao grid');
-        expect(state().autoSpotlightActive, isFalse);
-        expect(state().savedSpotlightParticipantId, isNull);
-      },
-    );
-
-    test('2º sharer assume o destaque com auto-spotlight ativo', () async {
-      rtc.localId = 'user_u1';
-      buildVoice();
-
-      rtc.pushParticipants([
-        _participant('user_u1', 'Ana'),
-        _participant('user_u2', 'Bia', screenShare: true),
-      ]);
-      await settle();
-      expect(state().spotlightParticipantId, 'user_u2');
-
-      // Bia para de compartilhar e Caio assume: destaque move para Caio.
-      rtc.pushParticipants([
-        _participant('user_u1', 'Ana'),
-        _participant('user_u2', 'Bia'),
-        _participant('user_u3', 'Caio', screenShare: true),
-      ]);
-      await settle();
-
-      expect(
-        state().spotlightParticipantId,
-        'user_u3',
-        reason: 'troca de sharer: destaque segue o share',
-      );
-      expect(state().autoSpotlightActive, isTrue);
-    });
-
-    test(
-      'dispensa manual do auto-spotlight não é re-forçada pelo snapshot',
-      () async {
-        rtc.localId = 'user_u1';
-        final notifier = buildVoice();
-
-        rtc.pushParticipants([
-          _participant('user_u1', 'Ana'),
-          _participant('user_u2', 'Bia', screenShare: true),
-        ]);
-        await settle();
-        expect(state().spotlightParticipantId, 'user_u2');
-        expect(state().autoSpotlightActive, isTrue);
-
-        // Toque no sharer em destaque: dispensa explícita → grid.
-        notifier.toggleSpotlight('user_u2');
         expect(state().spotlightParticipantId, isNull);
         expect(state().autoSpotlightActive, isFalse);
-
-        // Snapshot seguinte com o sharer AINDA compartilhando: não re-força.
-        rtc.pushParticipants([
-          _participant('user_u1', 'Ana'),
-          _participant('user_u2', 'Bia', screenShare: true),
-        ]);
-        await settle();
-
-        expect(state().spotlightParticipantId, isNull);
         expect(
-          state().autoSpotlightActive,
-          isFalse,
-          reason: 'dispensa manual desativa o auto — sem loop visual',
+          state().participants.where((p) => p.isScreenSharing),
+          hasLength(2),
         );
-      },
-    );
 
-    test(
-      'selecionar OUTRO participante dispensa o auto-spotlight (não só o sharer)',
-      () async {
-        rtc.localId = 'user_u1';
-        final notifier = buildVoice();
-
-        rtc.pushParticipants([
-          _participant('user_u1', 'Ana'),
-          _participant('user_u2', 'Bia', screenShare: true),
-          _participant('user_u3', 'Caio', camera: true),
-        ]);
-        await settle();
-        expect(state().spotlightParticipantId, 'user_u2');
-        expect(state().autoSpotlightActive, isTrue);
-
-        // Seleção manual de OUTRO tile (não o sharer): assume o controle —
-        // dispensa o auto e limpa o saved (senão o snapshot re-forçaria o
-        // sharer e o fim do share restauraria um estado obsoleto).
         notifier.toggleSpotlight('user_u3');
         expect(state().spotlightParticipantId, 'user_u3');
-        expect(state().autoSpotlightActive, isFalse);
-        expect(state().savedSpotlightParticipantId, isNull);
-
-        // Snapshot seguinte com o sharer AINDA compartilhando: não re-força.
-        rtc.pushParticipants([
-          _participant('user_u1', 'Ana'),
-          _participant('user_u2', 'Bia', screenShare: true),
-          _participant('user_u3', 'Caio', camera: true),
-        ]);
-        await settle();
-        expect(
-          state().spotlightParticipantId,
-          'user_u3',
-          reason: 'seleção manual sobrevive ao snapshot',
-        );
-        expect(state().autoSpotlightActive, isFalse);
-
-        // Share TERMINA depois da dispensa manual: a seleção manual DELE
-        // permanece — o shareEnded não pode restaurar um saved já limpo
-        // (converteria o spotlight manual em grid).
-        rtc.pushParticipants([
-          _participant('user_u1', 'Ana'),
-          _participant('user_u2', 'Bia'),
-          _participant('user_u3', 'Caio', camera: true),
-        ]);
-        await settle();
-        expect(
-          state().spotlightParticipantId,
-          'user_u3',
-          reason: 'fim do share após dispensa manual preserva a seleção',
-        );
-        expect(state().autoSpotlightActive, isFalse);
-        expect(state().savedSpotlightParticipantId, isNull);
       },
     );
 
@@ -1727,17 +1564,19 @@ void main() {
     );
 
     test(
-      'revalidação: sharer sem câmera mantém destaque; sem vídeo limpa',
+      'revalidação: destaque manual em sharer sem câmera permanece; sem vídeo limpa',
       () async {
         rtc.localId = 'user_u1';
         final notifier = buildVoice();
 
-        // Sharer entra compartilhando COM câmera (auto-spotlight ativo).
+        // O grid não promove shares automaticamente; o usuário escolhe o
+        // destaque do sharer manualmente.
         rtc.pushParticipants([
           _participant('user_u1', 'Ana'),
           _participant('user_u2', 'Bia', camera: true, screenShare: true),
         ]);
         await settle();
+        notifier.toggleSpotlight('user_u2');
         expect(state().spotlightParticipantId, 'user_u2');
 
         // Desliga a câmera, segue compartilhando: destaque SE MANTÉM (a tela

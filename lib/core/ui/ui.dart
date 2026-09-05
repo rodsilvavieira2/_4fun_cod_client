@@ -8,4 +8,5 @@ export 'inputs/app_text_field.dart';
 export 'overlays/app_modal_window.dart';
 export 'presence_dot.dart';
 export 'section_header.dart';
+export 'server_role_badge.dart';
 export 'surfaces/app_card.dart';

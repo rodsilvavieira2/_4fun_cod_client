@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/ui/settings_modal.dart';
+import '../../core/ui/ui.dart';
 import '../servers/server_rail.dart';
 import '../servers/servers_providers.dart';
+import '../servers/user_panel.dart';
 import 'dm_chat_area.dart';
 import 'dm_conversation_list.dart';
 import 'dm_profile_panel.dart';
@@ -17,8 +20,6 @@ import 'dms_providers.dart';
 class DmShellScreen extends ConsumerWidget {
   const DmShellScreen({super.key});
 
-  static const double _desktopBreakpoint = 800;
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final servers = ref.watch(serversProvider).valueOrNull ?? const [];
@@ -27,52 +28,71 @@ class DmShellScreen extends ConsumerWidget {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final isNarrow = constraints.maxWidth < _desktopBreakpoint;
+        final activeServerId = serverId;
+        if (activeServerId == null) {
+          return const Scaffold(
+            body: Center(child: Text('Nenhum servidor ainda.')),
+          );
+        }
+        final isNarrow = constraints.maxWidth < AppLayout.compactBreakpoint;
         // Mobile: sem conversa selecionada → lista full-width; com → chat.
         final showChat = !isNarrow || selectedUserId != null;
         final showList = !isNarrow || selectedUserId == null;
-        final showProfile = !isNarrow && selectedUserId != null;
+        final showProfile =
+            constraints.maxWidth >= AppLayout.auxiliaryPanelBreakpoint &&
+            selectedUserId != null;
+        final conversationPanel = Column(
+          children: [
+            Expanded(child: DmConversationList(serverId: activeServerId)),
+            UserPanel(onOpenSettings: () => showSettingsModal(context)),
+          ],
+        );
 
         return Scaffold(
-          body: serverId == null
-              ? const Center(child: Text('Nenhum servidor ainda.'))
-              : Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    // DM mobile: SEM rail fixo (SPEC 3 tarefa 16) — lista
-                    // e chat alternam full-width com back; rota /dms é push
-                    // (gesto/back do navegador sai da visão DM).
-                    if (!isNarrow) const ServerRail(dmActive: true),
-                    if (showList) ...[
-                      const VerticalDivider(width: 1),
-                      SizedBox(
-                        width: isNarrow ? null : 240,
-                        child: DmConversationList(serverId: serverId),
-                      ),
-                    ],
-                    if (showChat) ...[
-                      const VerticalDivider(width: 1),
-                      Expanded(
-                        child: DmChatArea(
-                          serverId: serverId,
-                          userId: selectedUserId,
-                          onBack: isNarrow
-                              ? () => ref
-                                  .read(selectedDmConversationProvider.notifier)
-                                  .state = null
-                              : null,
-                        ),
-                      ),
-                    ],
-                    if (showProfile) ...[
-                      const VerticalDivider(width: 1),
-                      DmProfilePanel(
-                        serverId: serverId,
-                        userId: selectedUserId,
-                      ),
-                    ],
-                  ],
+          body: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // DM mobile: SEM rail fixo (SPEC 3 tarefa 16) — lista
+              // e chat alternam full-width com back; rota /dms é push
+              // (gesto/back do navegador sai da visão DM).
+              if (!isNarrow) const ServerRail(dmActive: true),
+              if (showList) ...[
+                const VerticalDivider(width: 1),
+                if (isNarrow)
+                  Expanded(child: conversationPanel)
+                else
+                  SizedBox(
+                    width: AppLayout.navigationWidth,
+                    child: conversationPanel,
+                  ),
+              ],
+              if (showChat) ...[
+                const VerticalDivider(width: 1),
+                Expanded(
+                  child: DmChatArea(
+                    serverId: activeServerId,
+                    userId: selectedUserId,
+                    onBack: isNarrow
+                        ? () =>
+                              ref
+                                      .read(
+                                        selectedDmConversationProvider.notifier,
+                                      )
+                                      .state =
+                                  null
+                        : null,
+                  ),
                 ),
+              ],
+              if (showProfile) ...[
+                const VerticalDivider(width: 1),
+                DmProfilePanel(
+                  serverId: activeServerId,
+                  userId: selectedUserId,
+                ),
+              ],
+            ],
+          ),
         );
       },
     );

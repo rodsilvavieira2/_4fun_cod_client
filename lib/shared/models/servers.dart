@@ -1,5 +1,42 @@
 import 'user.dart';
 
+/// Papéis do servidor e suas capacidades, inspirados na hierarquia do
+/// Discord. O backend continua sendo a autoridade para cada ação.
+enum ServerRole {
+  owner('OWNER', 'Dono'),
+  admin('ADMIN', 'Administrador'),
+  member('MEMBER', 'Membro');
+
+  const ServerRole(this.apiValue, this.label);
+
+  final String apiValue;
+  final String label;
+
+  static ServerRole? fromApi(Object? value) => switch (value) {
+    'OWNER' => ServerRole.owner,
+    'ADMIN' => ServerRole.admin,
+    'MEMBER' => ServerRole.member,
+    _ => null,
+  };
+
+  bool get isOwner => this == ServerRole.owner;
+  bool get isAdmin => this == ServerRole.admin;
+  bool get canManageServer => isOwner || isAdmin;
+  bool get canManageRoles => isOwner;
+
+  String get description => switch (this) {
+    ServerRole.owner => 'Controle total, cargos e exclusão do servidor.',
+    ServerRole.admin => 'Gerencia canais, convites e membros comuns.',
+    ServerRole.member => 'Conversa, entra em voz e usa os canais.',
+  };
+
+  bool canRemove(ServerRole target) => switch (this) {
+    ServerRole.owner => !target.isOwner,
+    ServerRole.admin => target == ServerRole.member,
+    ServerRole.member => false,
+  };
+}
+
 /// Tipo de canal de servidor (espelho do enum do backend).
 enum ChannelType { text, voice }
 
@@ -12,10 +49,10 @@ class ServerChannel {
   });
 
   factory ServerChannel.fromJson(Map<String, dynamic> json) => ServerChannel(
-        id: json['id'] as String,
-        name: json['name'] as String,
-        type: json['type'] == 'VOICE' ? ChannelType.voice : ChannelType.text,
-      );
+    id: json['id'] as String,
+    name: json['name'] as String,
+    type: json['type'] == 'VOICE' ? ChannelType.voice : ChannelType.text,
+  );
 
   final String id;
   final String name;
@@ -38,15 +75,15 @@ class Server {
   });
 
   factory Server.fromJson(Map<String, dynamic> json) => Server(
-        id: json['id'] as String,
-        name: json['name'] as String,
-        iconUrl: json['iconUrl'] as String?,
-        createdAt: DateTime.tryParse(json['createdAt'] as String? ?? ''),
-        channels: (json['channels'] as List<dynamic>? ?? const [])
-            .map((e) => ServerChannel.fromJson(e as Map<String, dynamic>))
-            .toList(),
-        myRole: json['myRole'] as String?,
-      );
+    id: json['id'] as String,
+    name: json['name'] as String,
+    iconUrl: json['iconUrl'] as String?,
+    createdAt: DateTime.tryParse(json['createdAt'] as String? ?? ''),
+    channels: (json['channels'] as List<dynamic>? ?? const [])
+        .map((e) => ServerChannel.fromJson(e as Map<String, dynamic>))
+        .toList(),
+    myRole: ServerRole.fromApi(json['myRole']),
+  );
 
   final String id;
   final String name;
@@ -56,11 +93,12 @@ class Server {
   /// Canais embutidos na listagem (`GET /servers`).
   final List<ServerChannel> channels;
 
-  /// Papel do usuário atual ('OWNER' | 'MEMBER') — ausente em respostas de
+  /// Papel do usuário atual — ausente em respostas de
   /// criação.
-  final String? myRole;
+  final ServerRole? myRole;
 
-  bool get isOwner => myRole == 'OWNER';
+  bool get isOwner => myRole?.isOwner ?? false;
+  bool get canManageServer => myRole?.canManageServer ?? false;
 }
 
 /// Membro de servidor — `GET /servers/:id/members`.
@@ -74,23 +112,25 @@ class ServerMember {
   });
 
   factory ServerMember.fromJson(Map<String, dynamic> json) => ServerMember(
-        // `GET /servers/:id` (detalhe) nem sempre traz o id da linha de
-        // membership — fallback para o userId (identidade única do membro).
-        id: json['id'] as String? ?? json['userId'] as String,
-        userId: json['userId'] as String,
-        role: json['role'] as String,
-        joinedAt: DateTime.tryParse(json['joinedAt'] as String? ?? '') ??
-            DateTime.fromMillisecondsSinceEpoch(0),
-        user: User.fromJson(json['user'] as Map<String, dynamic>),
-      );
+    // `GET /servers/:id` (detalhe) nem sempre traz o id da linha de
+    // membership — fallback para o userId (identidade única do membro).
+    id: json['id'] as String? ?? json['userId'] as String,
+    userId: json['userId'] as String,
+    role: ServerRole.fromApi(json['role']) ?? ServerRole.member,
+    joinedAt:
+        DateTime.tryParse(json['joinedAt'] as String? ?? '') ??
+        DateTime.fromMillisecondsSinceEpoch(0),
+    user: User.fromJson(json['user'] as Map<String, dynamic>),
+  );
 
   final String id;
   final String userId;
-  final String role;
+  final ServerRole role;
   final DateTime joinedAt;
   final User user;
 
-  bool get isOwner => role == 'OWNER';
+  bool get isOwner => role.isOwner;
+  bool get isAdmin => role.isAdmin;
 }
 
 /// Convite criado — `POST /servers/:id/invites`.
@@ -104,12 +144,12 @@ class InviteInfo {
   });
 
   factory InviteInfo.fromJson(Map<String, dynamic> json) => InviteInfo(
-        code: json['code'] as String,
-        url: json['url'] as String,
-        expiresAt: DateTime.tryParse(json['expiresAt'] as String? ?? ''),
-        maxUses: json['maxUses'] as int?,
-        uses: json['uses'] as int?,
-      );
+    code: json['code'] as String,
+    url: json['url'] as String,
+    expiresAt: DateTime.tryParse(json['expiresAt'] as String? ?? ''),
+    maxUses: json['maxUses'] as int?,
+    uses: json['uses'] as int?,
+  );
 
   final String code;
   final String url;
@@ -129,11 +169,11 @@ class InviteServer {
   });
 
   factory InviteServer.fromJson(Map<String, dynamic> json) => InviteServer(
-        id: json['id'] as String,
-        name: json['name'] as String,
-        iconUrl: json['iconUrl'] as String?,
-        memberCount: json['memberCount'] as int? ?? 0,
-      );
+    id: json['id'] as String,
+    name: json['name'] as String,
+    iconUrl: json['iconUrl'] as String?,
+    memberCount: json['memberCount'] as int? ?? 0,
+  );
 
   final String id;
   final String name;
@@ -146,9 +186,9 @@ class InviteDetail {
   const InviteDetail({required this.invite, required this.server});
 
   factory InviteDetail.fromJson(Map<String, dynamic> json) => InviteDetail(
-        invite: InviteInfo.fromJson(json['invite'] as Map<String, dynamic>),
-        server: InviteServer.fromJson(json['server'] as Map<String, dynamic>),
-      );
+    invite: InviteInfo.fromJson(json['invite'] as Map<String, dynamic>),
+    server: InviteServer.fromJson(json['server'] as Map<String, dynamic>),
+  );
 
   final InviteInfo invite;
   final InviteServer server;
@@ -165,46 +205,40 @@ class ServerDetail {
   });
 
   factory ServerDetail.fromJson(Map<String, dynamic> json) => ServerDetail(
-        server: Server.fromJson(json['server'] as Map<String, dynamic>),
-        channels: (json['channels'] as List<dynamic>? ?? const [])
-            .map((e) => ServerChannel.fromJson(e as Map<String, dynamic>))
-            .toList(),
-        members: (json['members'] as List<dynamic>? ?? const [])
-            .map((e) => ServerMember.fromJson(e as Map<String, dynamic>))
-            .toList(),
-        myRole: json['myRole'] as String?,
-      );
+    server: Server.fromJson(json['server'] as Map<String, dynamic>),
+    channels: (json['channels'] as List<dynamic>? ?? const [])
+        .map((e) => ServerChannel.fromJson(e as Map<String, dynamic>))
+        .toList(),
+    members: (json['members'] as List<dynamic>? ?? const [])
+        .map((e) => ServerMember.fromJson(e as Map<String, dynamic>))
+        .toList(),
+    myRole: ServerRole.fromApi(json['myRole']),
+  );
 
   final Server server;
   final List<ServerChannel> channels;
   final List<ServerMember> members;
-  final String? myRole;
+  final ServerRole? myRole;
 
-  bool get isOwner => myRole == 'OWNER';
+  bool get isOwner => myRole?.isOwner ?? false;
+  bool get isAdmin => myRole?.isAdmin ?? false;
+  bool get canManageServer => myRole?.canManageServer ?? false;
 }
 
 /// Presença do servidor — `GET /servers/:id/presence` →
 /// `{ online: string[], voiceByChannel: { channelId: string[] } }`.
 /// Estado efêmero (Redis, TTL 60s), NUNCA persistido.
 class ServerPresence {
-  const ServerPresence({
-    required this.online,
-    this.voiceByChannel = const {},
-  });
+  const ServerPresence({required this.online, this.voiceByChannel = const {}});
 
   factory ServerPresence.fromJson(Map<String, dynamic> json) => ServerPresence(
-        online: {
-          ...(json['online'] as List<dynamic>? ?? const []).cast<String>(),
-        },
-        voiceByChannel: (json['voiceByChannel'] as Map<String, dynamic>? ??
-                const {})
-            .map(
-              (channelId, userIds) => MapEntry(
-                channelId,
-                (userIds as List<dynamic>).cast<String>(),
-              ),
-            ),
-      );
+    online: {...(json['online'] as List<dynamic>? ?? const []).cast<String>()},
+    voiceByChannel:
+        (json['voiceByChannel'] as Map<String, dynamic>? ?? const {}).map(
+          (channelId, userIds) =>
+              MapEntry(channelId, (userIds as List<dynamic>).cast<String>()),
+        ),
+  );
 
   /// Ids dos usuários online no servidor.
   final Set<String> online;

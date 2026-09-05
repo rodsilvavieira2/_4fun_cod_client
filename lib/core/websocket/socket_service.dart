@@ -19,7 +19,7 @@ import 'realtime_event.dart';
 /// registrado por [joinServer]/[joinChannel], sem interação do usuário.
 class SocketService {
   SocketService({required this.apiUrl, AppLogger? logger})
-      : _log = logger ?? AppLogger();
+    : _log = logger ?? AppLogger();
 
   /// Base URL da API (mesma usada pelo dio; o gateway responde nela).
   final String apiUrl;
@@ -34,6 +34,7 @@ class SocketService {
   final StreamController<void> _reconnected =
       StreamController<void>.broadcast();
   Timer? _heartbeat;
+
   /// Alguma conexão já foi estabelecida nesta sessão (não reseta em
   /// reconexões — inclusive as pós-auth-failure; só em logout/dispose).
   bool _hasConnectedOnce = false;
@@ -125,8 +126,11 @@ class SocketService {
     socket.on('connect', (_) {
       final wasConnected = _hasConnectedOnce;
       _hasConnectedOnce = true;
-      _log.i('socket conectado${wasConnected ? ' (reconexão)' : ''} '
-          'id=${socket.id}', tag: 'socket');
+      _log.i(
+        'socket conectado${wasConnected ? ' (reconexão)' : ''} '
+        'id=${socket.id}',
+        tag: 'socket',
+      );
       _startHeartbeat();
       _rejoin();
       if (wasConnected) {
@@ -154,17 +158,28 @@ class SocketService {
     socket.on('channel.updated', (data) => _dispatch('channel.updated', data));
     socket.on('channel.deleted', (data) => _dispatch('channel.deleted', data));
     socket.on('member.removed', (data) => _dispatch('member.removed', data));
+    socket.on('member.left', (data) => _dispatch('member.left', data));
+    socket.on(
+      'member.role_updated',
+      (data) => _dispatch('member.role_updated', data),
+    );
     socket.on(
       'presence.changed',
       (data) => _dispatch('presence.changed', data),
+    );
+    socket.on(
+      'voice.presence.changed',
+      (data) => _dispatch('voice.presence.changed', data),
     );
   }
 
   void _dispatch(String type, dynamic data) {
     if (data is! Map) return;
     try {
-      final event =
-          RealtimeEvent.fromJson(type, Map<String, dynamic>.from(data));
+      final event = RealtimeEvent.fromJson(
+        type,
+        Map<String, dynamic>.from(data),
+      );
       if (event == null) return; // evento desconhecido: ignora
       _log.d('evento $type', tag: 'socket');
       _events.add(event);
@@ -176,7 +191,8 @@ class SocketService {
 
   void _handleConnectError(dynamic data) {
     final message = _errorMessage(data).toLowerCase();
-    final isAuthRejection = message.contains('unauthorized') ||
+    final isAuthRejection =
+        message.contains('unauthorized') ||
         message.contains('forbidden') ||
         message.contains('jwt') ||
         message.contains('token') ||

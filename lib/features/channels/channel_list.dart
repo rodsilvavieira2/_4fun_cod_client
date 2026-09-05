@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/rtc/rtc_service.dart';
 import '../../core/ui/ui.dart';
 import '../../shared/models/servers.dart';
 import '../servers/servers_providers.dart';
@@ -13,35 +14,57 @@ class ChannelList extends ConsumerWidget {
   const ChannelList({
     super.key,
     required this.serverId,
-    required this.isOwner,
+    required this.canManageServer,
     this.selectedChannelId,
+    this.activeVoiceChannelId,
+    this.activeVoiceParticipants = const [],
     this.onChannelSelected,
+    this.onOpenInvites,
+    this.onOpenMembers,
+    this.onOpenSettings,
   });
 
   final String serverId;
-  final bool isOwner;
+  final bool canManageServer;
   final String? selectedChannelId;
+
+  /// Fonte local e imediata para a sala ativa: evita depender do atraso do
+  /// espelho LiveKit → webhook → Socket.IO para mostrar quem acabou de entrar.
+  final String? activeVoiceChannelId;
+  final List<RtcParticipant> activeVoiceParticipants;
   final ValueChanged<String>? onChannelSelected;
+  final VoidCallback? onOpenInvites;
+  final VoidCallback? onOpenMembers;
+  final VoidCallback? onOpenSettings;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final channels = ref.watch(channelsControllerProvider(serverId));
-    final serverName =
-        ref.watch(serverDetailProvider(serverId)).valueOrNull?.server.name;
+    final serverName = ref
+        .watch(serverDetailProvider(serverId))
+        .valueOrNull
+        ?.server
+        .name;
+    final members =
+        ref.watch(serverDetailProvider(serverId)).valueOrNull?.members ??
+        const <ServerMember>[];
+    final membersById = {for (final member in members) member.userId: member};
+    final voiceOccupants = ref.watch(voicePresenceProvider(serverId));
     final textChannels = <ServerChannel>[];
     final voiceChannels = <ServerChannel>[];
     for (final channel in channels.valueOrNull ?? const <ServerChannel>[]) {
-      (channel.type == ChannelType.text ? textChannels : voiceChannels)
-          .add(channel);
+      (channel.type == ChannelType.text ? textChannels : voiceChannels).add(
+        channel,
+      );
     }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
+          padding: const EdgeInsets.only(left: 16, right: 8),
           child: SizedBox(
-            height: 48,
+            height: AppLayout.headerHeight,
             child: Row(
               children: [
                 Expanded(
@@ -56,13 +79,63 @@ class ChannelList extends ConsumerWidget {
                     ),
                   ),
                 ),
-                if (isOwner)
-                  AppIconButton(
-                    icon: Icons.add,
-                    tooltip: 'Criar canal',
-                    onPressed: () =>
-                        showCreateChannelDialog(context, serverId: serverId),
+                PopupMenuButton<String>(
+                  tooltip: 'Menu do servidor',
+                  icon: const Icon(
+                    Icons.keyboard_arrow_down,
+                    size: 18,
+                    color: AppTokens.textSecondary,
                   ),
+                  onSelected: (value) {
+                    switch (value) {
+                      case 'invite':
+                        onOpenInvites?.call();
+                        break;
+                      case 'create':
+                        showCreateChannelDialog(context, serverId: serverId);
+                        break;
+                      case 'members':
+                        onOpenMembers?.call();
+                        break;
+                      case 'settings':
+                        onOpenSettings?.call();
+                        break;
+                    }
+                  },
+                  itemBuilder: (context) => [
+                    if (canManageServer) ...[
+                      const PopupMenuItem(
+                        value: 'invite',
+                        child: _ServerMenuEntry(
+                          icon: Icons.person_add_alt_1_outlined,
+                          label: 'Convidar pessoas',
+                        ),
+                      ),
+                      const PopupMenuItem(
+                        value: 'create',
+                        child: _ServerMenuEntry(
+                          icon: Icons.add_circle_outline,
+                          label: 'Criar canal',
+                        ),
+                      ),
+                    ],
+                    const PopupMenuItem(
+                      value: 'members',
+                      child: _ServerMenuEntry(
+                        icon: Icons.group_outlined,
+                        label: 'Membros e cargos',
+                      ),
+                    ),
+                    const PopupMenuDivider(),
+                    const PopupMenuItem(
+                      value: 'settings',
+                      child: _ServerMenuEntry(
+                        icon: Icons.settings_outlined,
+                        label: 'Configurações do servidor',
+                      ),
+                    ),
+                  ],
+                ),
               ],
             ),
           ),
@@ -108,14 +181,11 @@ class ChannelList extends ConsumerWidget {
                           _ChannelRow(
                             channel: channel,
                             selected: channel.id == selectedChannelId,
-                            isOwner: isOwner,
-                            onTap: () =>
-                                onChannelSelected?.call(channel.id),
-                            onDelete: () => _confirmDelete(
-                              context,
-                              ref,
-                              channel,
-                            ),
+                            connected: false,
+                            canManageServer: canManageServer,
+                            onTap: () => onChannelSelected?.call(channel.id),
+                            onDelete: () =>
+                                _confirmDelete(context, ref, channel),
                           ),
                       ],
                       if (voiceChannels.isNotEmpty) ...[
@@ -124,17 +194,28 @@ class ChannelList extends ConsumerWidget {
                           padding: EdgeInsets.fromLTRB(16, 14, 16, 6),
                         ),
                         for (final channel in voiceChannels)
-                          _ChannelRow(
-                            channel: channel,
-                            selected: channel.id == selectedChannelId,
-                            isOwner: isOwner,
-                            onTap: () =>
-                                onChannelSelected?.call(channel.id),
-                            onDelete: () => _confirmDelete(
-                              context,
-                              ref,
-                              channel,
-                            ),
+                          Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              _ChannelRow(
+                                channel: channel,
+                                selected: channel.id == selectedChannelId,
+                                connected: channel.id == activeVoiceChannelId,
+                                canManageServer: canManageServer,
+                                onTap: () =>
+                                    onChannelSelected?.call(channel.id),
+                                onDelete: () =>
+                                    _confirmDelete(context, ref, channel),
+                              ),
+                              for (final occupant in _occupantsFor(
+                                channelId: channel.id,
+                                mirroredIds:
+                                    voiceOccupants[channel.id] ??
+                                    const <String>{},
+                                membersById: membersById,
+                              ))
+                                _VoiceOccupantRow(occupant: occupant),
+                            ],
                           ),
                       ],
                     ],
@@ -143,6 +224,43 @@ class ChannelList extends ConsumerWidget {
         ),
       ],
     );
+  }
+
+  List<_VoiceOccupant> _occupantsFor({
+    required String channelId,
+    required Set<String> mirroredIds,
+    required Map<String, ServerMember> membersById,
+  }) {
+    final rtcByUserId = <String, RtcParticipant>{};
+    if (channelId == activeVoiceChannelId) {
+      for (final participant in activeVoiceParticipants) {
+        final userId = _userIdFromIdentity(participant.id);
+        if (userId != null) rtcByUserId[userId] = participant;
+      }
+    }
+    final userIds = {...mirroredIds, ...rtcByUserId.keys}.toList()
+      ..sort((left, right) {
+        final leftName =
+            membersById[left]?.user.name ?? rtcByUserId[left]?.name ?? left;
+        final rightName =
+            membersById[right]?.user.name ?? rtcByUserId[right]?.name ?? right;
+        return leftName.toLowerCase().compareTo(rightName.toLowerCase());
+      });
+    return [
+      for (final userId in userIds)
+        _VoiceOccupant(
+          userId: userId,
+          member: membersById[userId],
+          participant: rtcByUserId[userId],
+        ),
+    ];
+  }
+
+  String? _userIdFromIdentity(String identity) {
+    const prefix = 'user_';
+    if (!identity.startsWith(prefix)) return null;
+    final userId = identity.substring(prefix.length);
+    return userId.isEmpty ? null : userId;
   }
 
   Future<void> _confirmDelete(
@@ -191,7 +309,106 @@ class ChannelList extends ConsumerWidget {
       ),
     );
     if (confirmed != true) return;
-    await ref.read(channelsControllerProvider(serverId).notifier).delete(channel.id);
+    await ref
+        .read(channelsControllerProvider(serverId).notifier)
+        .delete(channel.id);
+  }
+}
+
+class _ServerMenuEntry extends StatelessWidget {
+  const _ServerMenuEntry({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [Icon(icon, size: 17), const SizedBox(width: 10), Text(label)],
+    );
+  }
+}
+
+/// Participante compacto abaixo de um canal de voz, no mesmo agrupamento
+/// visual usado pelo Discord. Estado detalhado de fala/mídia segue no palco
+/// da sala ativa, que recebe o stream direto do LiveKit.
+class _VoiceOccupant {
+  const _VoiceOccupant({
+    required this.userId,
+    required this.member,
+    required this.participant,
+  });
+
+  final String userId;
+  final ServerMember? member;
+  final RtcParticipant? participant;
+
+  String get name => member?.user.name ?? participant?.name ?? userId;
+  String? get avatarUrl => member?.user.avatarUrl;
+}
+
+class _VoiceOccupantRow extends StatelessWidget {
+  const _VoiceOccupantRow({required this.occupant});
+
+  final _VoiceOccupant occupant;
+
+  @override
+  Widget build(BuildContext context) {
+    final participant = occupant.participant;
+    final isSpeaking = participant?.isSpeaking == true;
+    return Padding(
+      padding: const EdgeInsets.only(left: 32, right: 12, bottom: 2),
+      child: SizedBox(
+        height: 26,
+        child: Row(
+          children: [
+            CircleAvatar(
+              radius: 9,
+              backgroundColor: isSpeaking
+                  ? AppTokens.accentGreen
+                  : AppTokens.surface3,
+              backgroundImage: occupant.avatarUrl == null
+                  ? null
+                  : NetworkImage(occupant.avatarUrl!),
+              child: occupant.avatarUrl == null
+                  ? Text(
+                      occupant.name.isEmpty
+                          ? '?'
+                          : occupant.name[0].toUpperCase(),
+                      style: const TextStyle(
+                        fontFamily: 'Geist',
+                        fontSize: 9,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    )
+                  : null,
+            ),
+            const SizedBox(width: 7),
+            Expanded(
+              child: Text(
+                occupant.name,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontFamily: 'Geist',
+                  fontSize: 12.5,
+                  color: AppTokens.textSecondary,
+                ),
+              ),
+            ),
+            if (participant != null) ...[
+              const SizedBox(width: 4),
+              Icon(
+                participant.isMicrophoneEnabled ? Icons.mic : Icons.mic_off,
+                size: 13,
+                color: participant.isMicrophoneEnabled
+                    ? AppTokens.textMuted
+                    : AppTokens.textSecondary,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -199,14 +416,16 @@ class _ChannelRow extends StatefulWidget {
   const _ChannelRow({
     required this.channel,
     required this.selected,
-    required this.isOwner,
+    required this.connected,
+    required this.canManageServer,
     required this.onTap,
     required this.onDelete,
   });
 
   final ServerChannel channel;
   final bool selected;
-  final bool isOwner;
+  final bool connected;
+  final bool canManageServer;
   final VoidCallback onTap;
   final VoidCallback onDelete;
 
@@ -225,7 +444,9 @@ class _ChannelRowState extends State<_ChannelRow> {
         : Icons.volume_up_outlined;
     final baseColor = selected
         ? AppTokens.textPrimary
-        : (_hovered ? AppTokens.textPrimary : AppTokens.textSecondary);
+        : (widget.connected
+              ? AppTokens.accentGreen
+              : (_hovered ? AppTokens.textPrimary : AppTokens.textSecondary));
 
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
@@ -265,13 +486,13 @@ class _ChannelRowState extends State<_ChannelRow> {
               ),
               AnimatedOpacity(
                 duration: const Duration(milliseconds: 120),
-                opacity: widget.isOwner && _hovered ? 1 : 0,
+                opacity: widget.canManageServer && _hovered ? 1 : 0,
                 child: AppIconButton(
                   icon: Icons.delete_outline,
                   tooltip: 'Excluir canal',
                   minSize: 22,
                   iconSize: 14,
-                  onPressed: widget.onDelete,
+                  onPressed: widget.canManageServer ? widget.onDelete : null,
                 ),
               ),
             ],

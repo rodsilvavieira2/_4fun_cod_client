@@ -3,11 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/api/api_exception.dart';
+import '../../core/ui/ui.dart';
+import '../../shared/models/servers.dart';
 import '../channels/channels_providers.dart';
 import 'servers_providers.dart';
 
-/// Configurações do servidor: nome, ícone, excluir (OWNER) ou sair
-/// (não-OWNER).
+/// Configurações e entrada da administração do servidor.
 class ServerSettingsScreen extends ConsumerStatefulWidget {
   const ServerSettingsScreen({super.key, required this.serverId});
 
@@ -51,17 +52,27 @@ class _ServerSettingsScreenState extends ConsumerState<ServerSettingsScreen> {
       final notifier = ref.read(serverDetailProvider(widget.serverId).notifier);
       final name = _nameController.text.trim();
       final iconUrl = _iconController.text.trim();
-      if (name != ref.read(serverDetailProvider(widget.serverId)).valueOrNull?.server.name) {
+      if (name !=
+          ref
+              .read(serverDetailProvider(widget.serverId))
+              .valueOrNull
+              ?.server
+              .name) {
         await notifier.updateName(name);
       }
       if (iconUrl.isNotEmpty &&
-          iconUrl != ref.read(serverDetailProvider(widget.serverId)).valueOrNull?.server.iconUrl) {
+          iconUrl !=
+              ref
+                  .read(serverDetailProvider(widget.serverId))
+                  .valueOrNull
+                  ?.server
+                  .iconUrl) {
         await notifier.updateIcon(iconUrl);
       }
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Servidor atualizado.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Servidor atualizado.')));
     } on ApiException catch (e) {
       if (mounted) setState(() => _error = e.message);
     } catch (_) {
@@ -148,7 +159,9 @@ class _ServerSettingsScreenState extends ConsumerState<ServerSettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final detail = ref.watch(serverDetailProvider(widget.serverId));
-    final isOwner = detail.valueOrNull?.isOwner ?? false;
+    final currentRole = detail.valueOrNull?.myRole ?? ServerRole.member;
+    final isOwner = currentRole.isOwner;
+    final canManageServer = currentRole.canManageServer;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Configurações do servidor')),
@@ -173,6 +186,45 @@ class _ServerSettingsScreenState extends ConsumerState<ServerSettingsScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
+                      AppCard(
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'Administração',
+                                    style: TextStyle(
+                                      fontFamily: 'Geist',
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  ServerRoleBadge(role: currentRole),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    currentRole.description,
+                                    style: const TextStyle(
+                                      color: AppTokens.textSecondary,
+                                      fontSize: 12.5,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            OutlinedButton.icon(
+                              onPressed: () => context.push(
+                                '/servers/${widget.serverId}/members',
+                              ),
+                              icon: const Icon(Icons.manage_accounts_outlined),
+                              label: const Text('Membros e cargos'),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 28),
                       Text(
                         'Informações',
                         style: Theme.of(context).textTheme.titleMedium,
@@ -180,18 +232,20 @@ class _ServerSettingsScreenState extends ConsumerState<ServerSettingsScreen> {
                       const SizedBox(height: 16),
                       TextFormField(
                         controller: _nameController,
+                        enabled: canManageServer,
                         decoration: const InputDecoration(
                           labelText: 'Nome do servidor',
                           border: OutlineInputBorder(),
                         ),
                         validator: (value) =>
                             (value == null || value.trim().isEmpty)
-                                ? 'Informe o nome do servidor.'
-                                : null,
+                            ? 'Informe o nome do servidor.'
+                            : null,
                       ),
                       const SizedBox(height: 16),
                       TextFormField(
                         controller: _iconController,
+                        enabled: canManageServer,
                         decoration: const InputDecoration(
                           labelText: 'URL do ícone',
                           border: OutlineInputBorder(),
@@ -206,20 +260,24 @@ class _ServerSettingsScreenState extends ConsumerState<ServerSettingsScreen> {
                           ),
                         ),
                       ],
-                      const SizedBox(height: 16),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: FilledButton(
-                          onPressed: _saving || _working ? null : _save,
-                          child: _saving
-                              ? const SizedBox(
-                                  height: 20,
-                                  width: 20,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
-                                )
-                              : const Text('Salvar'),
+                      if (canManageServer) ...[
+                        const SizedBox(height: 16),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: FilledButton(
+                            onPressed: _saving || _working ? null : _save,
+                            child: _saving
+                                ? const SizedBox(
+                                    height: 20,
+                                    width: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Text('Salvar'),
+                          ),
                         ),
-                      ),
+                      ],
                       const SizedBox(height: 32),
                       if (isOwner)
                         OutlinedButton.icon(
@@ -227,7 +285,9 @@ class _ServerSettingsScreenState extends ConsumerState<ServerSettingsScreen> {
                           icon: const Icon(Icons.delete_outline),
                           label: const Text('Excluir servidor'),
                           style: OutlinedButton.styleFrom(
-                            foregroundColor: Theme.of(context).colorScheme.error,
+                            foregroundColor: Theme.of(
+                              context,
+                            ).colorScheme.error,
                           ),
                         )
                       else

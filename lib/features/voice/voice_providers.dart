@@ -12,6 +12,10 @@ import 'voice_controls_provider.dart';
 /// Estado da sessão de voz de um canal.
 enum VoiceSessionStatus { idle, connecting, connected, error }
 
+/// Fonte visual destacada quando uma pessoa publica câmera e tela ao mesmo
+/// tempo. O grid trata as duas publicações como tiles irmãos.
+enum VoiceSpotlightSource { camera, screen }
+
 /// Sentinel de "não fornecido": default dos parâmetros nullable de
 /// [VoiceState.copyWith]. Omitir o parâmetro mantém o valor atual; passar
 /// `null` EXPLICITAMENTE limpa o campo (nullable limpável). Padrão mínimo
@@ -38,9 +42,11 @@ class VoiceState {
     this.isDeafened = false,
     this.isReconnecting = false,
     this.isAudioBlocked = false,
+    this.latencyMs,
     this.autoSpotlightActive = false,
     this.savedSpotlightParticipantId,
     this.spotlightParticipantId,
+    this.spotlightSource,
     this.cameraDevices = const [],
     this.selectedCameraId,
     this.screenShareQuality = RtcScreenShareQuality.auto,
@@ -92,6 +98,10 @@ class VoiceState {
   /// chama [VoiceController.resumeAudio]. Desktop nunca liga.
   final bool isAudioBlocked;
 
+  /// RTT atual até o servidor de voz. Nulo enquanto o WebRTC ainda não
+  /// escolheu um par ICE ou durante uma reconexão.
+  final int? latencyMs;
+
   /// Destaque automático do share em vigor (PRD §25): o 1º sharer vira
   /// spotlight e o estado anterior fica salvo em
   /// [savedSpotlightParticipantId]. Desligado ao terminar o share ou por
@@ -106,6 +116,10 @@ class VoiceState {
   /// participantes revalida: destaque de tile sem câmera nem tela/saído é
   /// limpo.
   final String? spotlightParticipantId;
+
+  /// Publicação destacada do participante. Nulo quando o painel está em
+  /// grid; mantido separado do id para câmera e tela poderem coexistir.
+  final VoiceSpotlightSource? spotlightSource;
 
   /// Cache da lista de câmeras do dispositivo (sheet de settings).
   final List<RtcVideoDevice> cameraDevices;
@@ -130,9 +144,11 @@ class VoiceState {
     bool? isDeafened,
     bool? isReconnecting,
     bool? isAudioBlocked,
+    Object? latencyMs = _unset,
     bool? autoSpotlightActive,
     Object? savedSpotlightParticipantId = _unset,
     Object? spotlightParticipantId = _unset,
+    Object? spotlightSource = _unset,
     List<RtcVideoDevice>? cameraDevices,
     Object? selectedCameraId = _unset,
     RtcScreenShareQuality? screenShareQuality,
@@ -154,6 +170,9 @@ class VoiceState {
       isDeafened: isDeafened ?? this.isDeafened,
       isReconnecting: isReconnecting ?? this.isReconnecting,
       isAudioBlocked: isAudioBlocked ?? this.isAudioBlocked,
+      latencyMs: identical(latencyMs, _unset)
+          ? this.latencyMs
+          : latencyMs as int?,
       autoSpotlightActive: autoSpotlightActive ?? this.autoSpotlightActive,
       // Sentinel: savedSpotlightParticipantId é LIMPÁVEL — restaurar para
       // grid (null) deve funcionar; o padrão `??` manteria o id salvo.
@@ -164,6 +183,9 @@ class VoiceState {
       spotlightParticipantId: identical(spotlightParticipantId, _unset)
           ? this.spotlightParticipantId
           : spotlightParticipantId as String?,
+      spotlightSource: identical(spotlightSource, _unset)
+          ? this.spotlightSource
+          : spotlightSource as VoiceSpotlightSource?,
       cameraDevices: cameraDevices ?? this.cameraDevices,
       selectedCameraId: identical(selectedCameraId, _unset)
           ? this.selectedCameraId
@@ -251,6 +273,7 @@ class VoiceController
       screenShareQuality: RtcScreenShareQuality.auto,
       // Preferências de mídia são por sessão.
       includeSystemAudio: false,
+      latencyMs: null,
       selectedCameraId: null,
     );
     try {
@@ -290,9 +313,11 @@ class VoiceController
       isDeafened: false,
       isReconnecting: false,
       isAudioBlocked: false,
+      latencyMs: null,
       autoSpotlightActive: false,
       savedSpotlightParticipantId: null,
       spotlightParticipantId: null,
+      spotlightSource: null,
       selectedCameraId: null,
       errorMessage: null,
     );
@@ -468,7 +493,18 @@ class VoiceController
   /// Alterna o destaque (spotlight) de um participante: toque repetido no
   /// mesmo tile volta ao grid. O snapshot de participantes revalida —
   /// destaque de quem saiu ou desligou a câmera é limpo em [_applyParticipants].
-  void toggleSpotlight(String participantId) {
+  void toggleSpotlight(String participantId, {VoiceSpotlightSource? source}) {
+    final participant = state.participants
+        .where((item) => item.id == participantId)
+        .firstOrNull;
+    final targetSource =
+        source ??
+        (participant?.isScreenSharing == true
+            ? VoiceSpotlightSource.screen
+            : VoiceSpotlightSource.camera);
+    final selectingCurrent =
+        state.spotlightParticipantId == participantId &&
+        state.spotlightSource == targetSource;
     if (state.autoSpotlightActive) {
       // QUALQUER seleção manual dispensa o destaque automático do share:
       // o usuário assumiu o controle. Tocar o próprio sharer volta ao grid;
@@ -476,18 +512,23 @@ class VoiceController
       // desligado (senão o snapshot seguinte re-forçaria o sharer e o fim
       // do share restauraria um estado obsoleto, perdendo a seleção manual).
       state = state.copyWith(
-        spotlightParticipantId: state.spotlightParticipantId == participantId
-            ? null
-            : participantId,
+        spotlightParticipantId: selectingCurrent ? null : participantId,
+        spotlightSource: selectingCurrent ? null : targetSource,
         autoSpotlightActive: false,
         savedSpotlightParticipantId: null,
       );
       return;
     }
-    if (state.spotlightParticipantId == participantId) {
-      state = state.copyWith(spotlightParticipantId: null);
+    if (selectingCurrent) {
+      state = state.copyWith(
+        spotlightParticipantId: null,
+        spotlightSource: null,
+      );
     } else {
-      state = state.copyWith(spotlightParticipantId: participantId);
+      state = state.copyWith(
+        spotlightParticipantId: participantId,
+        spotlightSource: targetSource,
+      );
     }
   }
 
@@ -646,45 +687,17 @@ class VoiceController
     final localId = ref.read(rtcServiceProvider).localParticipantId;
     final sorted = _sort(list, localId);
 
-    // ── Spotlight automático do screen share (PRD §25) ────────────────────
-    // Lógica por SNAPSHOT (robusto a ordem de eventos — evento e snapshot
-    // chegam separados): o 1º sharer vira destaque com o estado anterior
-    // salvo; o fim do share restaura; um 2º sharer assume o destaque.
-    final sharerIds = {
-      for (final p in sorted)
-        if (p.isScreenSharing) p.id,
-    };
-    final firstShare = _lastSharers.isEmpty && sharerIds.isNotEmpty; // 0 → ≥1
-    final shareEnded = _lastSharers.isNotEmpty && sharerIds.isEmpty; // ≥1 → 0
+    // O grid é o estado padrão de uma chamada Discord-like. Começar um
+    // compartilhamento não pode promover ninguém automaticamente e esconder
+    // os demais sharers; o spotlight permanece uma escolha manual.
     _lastSharers
       ..clear()
-      ..addAll(sharerIds);
-
+      ..addAll(
+        sorted
+            .where((participant) => participant.isScreenSharing)
+            .map((participant) => participant.id),
+      );
     var next = state.copyWith(participants: sorted);
-
-    if (firstShare) {
-      // Salva o spotlight atual (id manual ou null = grid) para restaurar.
-      next = next.copyWith(
-        savedSpotlightParticipantId: next.spotlightParticipantId,
-        autoSpotlightActive: true,
-        spotlightParticipantId: sharerIds.first,
-      );
-    } else if (shareEnded && next.autoSpotlightActive) {
-      // Ninguém mais compartilha E o auto ainda estava no controle: restaura
-      // o estado anterior. Se o usuário dispensou o auto manualmente
-      // (autoSpotlightActive false, saved limpo), a seleção manual DELE
-      // permanece — restaurar aqui converteria o spotlight manual em grid.
-      next = next.copyWith(
-        spotlightParticipantId: next.savedSpotlightParticipantId,
-        autoSpotlightActive: false,
-        savedSpotlightParticipantId: null,
-      );
-    } else if (next.autoSpotlightActive &&
-        sharerIds.isNotEmpty &&
-        !sharerIds.contains(next.spotlightParticipantId)) {
-      // Outro sharer assumiu (2º share, troca de sharer): o destaque segue.
-      next = next.copyWith(spotlightParticipantId: sharerIds.first);
-    }
 
     // Revalida o destaque: tile sem vídeo não merece spotlight — quem saiu
     // da sala ou desligou a câmera (E não está compartilhando tela) volta o
@@ -692,12 +705,22 @@ class VoiceController
     // tela dele é o vídeo — critério ampliado). Também limpa do dedupe de
     // qualidade os ids que saíram (tile desmontado = OFF).
     final spotlightId = next.spotlightParticipantId;
-    if (spotlightId != null &&
-        !sorted.any(
-          (p) =>
-              p.id == spotlightId && (p.isCameraEnabled || p.isScreenSharing),
-        )) {
-      next = next.copyWith(spotlightParticipantId: null);
+    if (spotlightId != null) {
+      final spotlightSource = next.spotlightSource;
+      final sourceStillAvailable = sorted.any((participant) {
+        if (participant.id != spotlightId) return false;
+        return switch (spotlightSource) {
+          VoiceSpotlightSource.camera => participant.isCameraEnabled,
+          VoiceSpotlightSource.screen => participant.isScreenSharing,
+          null => participant.isCameraEnabled || participant.isScreenSharing,
+        };
+      });
+      if (!sourceStillAvailable) {
+        next = next.copyWith(
+          spotlightParticipantId: null,
+          spotlightSource: null,
+        );
+      }
     }
     final ids = {for (final p in sorted) p.id};
     _lastQuality.removeWhere((id, _) => !ids.contains(id));
@@ -728,9 +751,11 @@ class VoiceController
           isDeafened: false,
           isReconnecting: false,
           isAudioBlocked: false,
+          latencyMs: null,
           autoSpotlightActive: false,
           savedSpotlightParticipantId: null,
           spotlightParticipantId: null,
+          spotlightSource: null,
           selectedCameraId: null,
           errorMessage: null,
         );
@@ -741,6 +766,8 @@ class VoiceController
       case AudioPlaybackResumedEvent():
         // startAudio bem-sucedido dentro do gesto: o banner pode sumir.
         state = state.copyWith(isAudioBlocked: false);
+      case ConnectionLatencyChangedEvent(:final latencyMs):
+        state = state.copyWith(latencyMs: latencyMs);
       case MicEnabledChangedEvent(
         :final participantId,
         :final isMicrophoneEnabled,
@@ -786,7 +813,7 @@ class VoiceController
       case ReconnectingEvent():
         // Só o banner: a sessão continua connected — o serviço está tentando
         // restabelecer; NADA aqui pode derrubar para idle/error.
-        state = state.copyWith(isReconnecting: true);
+        state = state.copyWith(isReconnecting: true, latencyMs: null);
       case ReconnectedEvent():
         // Sala nova preserva mute/ensurdecer globais; câmera/share locais
         // recomeçam off. Reset também o rastreio de sharers do auto-spotlight.
@@ -802,9 +829,11 @@ class VoiceController
           includeSystemAudio: false,
           isSystemAudioEnabled: false,
           isAudioBlocked: false,
+          latencyMs: null,
           autoSpotlightActive: false,
           savedSpotlightParticipantId: null,
           spotlightParticipantId: null,
+          spotlightSource: null,
         );
       case ParticipantJoinedEvent() ||
           ParticipantLeftEvent() ||

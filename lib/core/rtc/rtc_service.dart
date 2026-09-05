@@ -201,6 +201,17 @@ class AudioPlaybackResumedEvent extends RtcEvent {
   const AudioPlaybackResumedEvent();
 }
 
+/// Latência atual da conexão de voz até o servidor LiveKit.
+///
+/// O valor é o RTT do par ICE selecionado pelo WebRTC, em milissegundos.
+/// `null` indica que a medição ainda não está disponível ou que a conexão
+/// está sendo refeita.
+class ConnectionLatencyChangedEvent extends RtcEvent {
+  const ConnectionLatencyChangedEvent({required this.latencyMs});
+
+  final int? latencyMs;
+}
+
 /// Qualidade de recepção de vídeo remoto (Fase 5).
 ///
 /// SEM `off`: "desligar" um tile é decisão da UI (não montar o RtcVideoView).

@@ -18,12 +18,10 @@ class DmProfilePanel extends ConsumerWidget {
     if (userId == null) return const SizedBox.shrink();
 
     final detail = ref.watch(serverDetailProvider(serverId)).valueOrNull;
-    final member = detail?.members
-        .where((m) => m.userId == userId)
-        .firstOrNull;
+    final member = detail?.members.where((m) => m.userId == userId).firstOrNull;
 
     return Container(
-      width: 240,
+      width: AppLayout.memberPanelWidth,
       decoration: const BoxDecoration(
         color: AppTokens.surface1,
         border: Border(

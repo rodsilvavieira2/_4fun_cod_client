@@ -39,8 +39,12 @@ class ChatState {
 /// Chat de um canal de texto — carrega as 50 mensagens mais recentes
 /// (`GET /channels/:id/messages`) e aplica os eventos de tempo real SEM
 /// refetch (append/update/delete local com dedupe por id).
-class ChatController extends AutoDisposeFamilyAsyncNotifier<ChatState,
-    ({String serverId, String channelId})> {
+class ChatController
+    extends
+        AutoDisposeFamilyAsyncNotifier<
+          ChatState,
+          ({String serverId, String channelId})
+        > {
   StreamSubscription<RealtimeEvent>? _subscription;
   StreamSubscription<void>? _reconnectedSub;
   bool _disposed = false;
@@ -252,7 +256,9 @@ class ChatController extends AutoDisposeFamilyAsyncNotifier<ChatState,
           ChannelUpdatedEvent() ||
           ChannelDeletedEvent() ||
           MemberRemovedEvent() ||
-          PresenceChangedEvent():
+          MemberRoleUpdatedEvent() ||
+          PresenceChangedEvent() ||
+          VoicePresenceChangedEvent():
         break; // não afetam a lista de mensagens
     }
   }
@@ -260,7 +266,7 @@ class ChatController extends AutoDisposeFamilyAsyncNotifier<ChatState,
 
 /// Provider do chat por `(serverId, channelId)` — autoDispose: sai do canal,
 /// descarta o estado e cancela o listener.
-final chatControllerProvider = AsyncNotifierProvider.autoDispose.family<
-    ChatController,
-    ChatState,
-    ({String serverId, String channelId})>(ChatController.new);
+final chatControllerProvider = AsyncNotifierProvider.autoDispose
+    .family<ChatController, ChatState, ({String serverId, String channelId})>(
+      ChatController.new,
+    );

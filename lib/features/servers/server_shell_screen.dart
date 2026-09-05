@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -11,6 +13,7 @@ import '../channels/channel_list.dart';
 import '../channels/channels_providers.dart';
 import '../chat/chat_screen.dart';
 import '../voice/voice_screen.dart';
+import '../voice/voice_providers.dart';
 import 'members_panel.dart';
 import 'server_rail.dart';
 import 'servers_providers.dart';
@@ -35,6 +38,9 @@ class ServerShellScreen extends ConsumerStatefulWidget {
 
 class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
   String? _selectedChannelId;
+  String? _activeVoiceChannelId;
+  int _voiceSwitchEpoch = 0;
+  bool _didSelectInitialChannel = false;
 
   /// Painel de membros lateral (desktop): alternável pela ação do header.
   bool _showMembers = true;
@@ -57,37 +63,144 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
     if (channelId != null) {
       socket.leaveChannel(channelId);
     }
+    final activeVoiceChannelId = _activeVoiceChannelId;
+    if (activeVoiceChannelId != null) {
+      unawaited(
+        ref
+            .read(
+              voiceControllerProvider((
+                serverId: widget.serverId,
+                channelId: activeVoiceChannelId,
+              )).notifier,
+            )
+            .leave(),
+      );
+    }
     socket.leaveServer(widget.serverId);
     super.dispose();
   }
 
-  void _onChannelSelected(String channelId, List<ServerChannel> channels) {
-    if (_selectedChannelId == channelId) return;
+  Future<void> _onChannelSelected(
+    String channelId,
+    List<ServerChannel> channels,
+  ) async {
+    final channel = channels.where((c) => c.id == channelId).firstOrNull;
+    if (channel == null) return;
+    _didSelectInitialChannel = true;
+    if (_selectedChannelId == channelId) {
+      if (channel.type == ChannelType.voice) {
+        if (_activeVoiceChannelId != channelId) {
+          setState(() => _activeVoiceChannelId = channelId);
+        }
+        final controller = ref.read(
+          voiceControllerProvider((
+            serverId: widget.serverId,
+            channelId: channelId,
+          )).notifier,
+        );
+        final state = ref.read(
+          voiceControllerProvider((
+            serverId: widget.serverId,
+            channelId: channelId,
+          )),
+        );
+        if (state.status == VoiceSessionStatus.idle ||
+            state.status == VoiceSessionStatus.error) {
+          await controller.join();
+        }
+      }
+      return;
+    }
     final previous = _selectedChannelId;
     final socket = ref.read(socketServiceProvider);
     if (previous != null) {
       socket.leaveChannel(previous);
     }
     setState(() => _selectedChannelId = channelId);
-    final channel = channels.where((c) => c.id == channelId).firstOrNull;
-    if (channel?.type == ChannelType.text) {
+    if (channel.type == ChannelType.text) {
       socket.joinChannel(channelId);
+      return;
     }
+
+    final epoch = ++_voiceSwitchEpoch;
+    final previousVoiceChannelId = _activeVoiceChannelId;
+    if (previousVoiceChannelId != null && previousVoiceChannelId != channelId) {
+      await ref
+          .read(
+            voiceControllerProvider((
+              serverId: widget.serverId,
+              channelId: previousVoiceChannelId,
+            )).notifier,
+          )
+          .leave();
+    }
+    if (!mounted || epoch != _voiceSwitchEpoch) return;
+    setState(() => _activeVoiceChannelId = channelId);
+    await ref
+        .read(
+          voiceControllerProvider((
+            serverId: widget.serverId,
+            channelId: channelId,
+          )).notifier,
+        )
+        .join();
   }
 
-  /// Abaixo desta largura o shell vira mobile (lista de canais full-width →
-  /// push do conteúdo com back); em ≥ ela mantém as colunas do desktop.
-  static const double _desktopBreakpoint = 800;
+  void _leaveActiveVoice() {
+    final channelId = _activeVoiceChannelId;
+    if (channelId == null) return;
+    ++_voiceSwitchEpoch;
+    unawaited(
+      ref
+          .read(
+            voiceControllerProvider((
+              serverId: widget.serverId,
+              channelId: channelId,
+            )).notifier,
+          )
+          .leave(),
+    );
+    setState(() => _activeVoiceChannelId = null);
+  }
 
   @override
   Widget build(BuildContext context) {
     final detail = ref.watch(serverDetailProvider(widget.serverId));
     final channels = ref.watch(channelsControllerProvider(widget.serverId));
-    final isOwner = detail.valueOrNull?.isOwner ?? false;
+    final canManageServer = detail.valueOrNull?.canManageServer ?? false;
     final channelList = channels.valueOrNull ?? const <ServerChannel>[];
     final selectedChannel = channelList
         .where((c) => c.id == _selectedChannelId)
         .firstOrNull;
+    final activeVoiceChannel = channelList
+        .where((c) => c.id == _activeVoiceChannelId)
+        .firstOrNull;
+    final activeVoiceState = activeVoiceChannel == null
+        ? null
+        : ref.watch(
+            voiceControllerProvider((
+              serverId: widget.serverId,
+              channelId: activeVoiceChannel.id,
+            )),
+          );
+
+    // Como no Discord, abrir um servidor leva direto ao primeiro canal de
+    // texto. Canais de voz nunca são conectados automaticamente.
+    if (!_didSelectInitialChannel &&
+        _selectedChannelId == null &&
+        channels.hasValue) {
+      final firstTextChannel = channelList
+          .where((channel) => channel.type == ChannelType.text)
+          .firstOrNull;
+      if (firstTextChannel != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || _selectedChannelId != null) return;
+          _didSelectInitialChannel = true;
+          setState(() => _selectedChannelId = firstTextChannel.id);
+          ref.read(socketServiceProvider).joinChannel(firstTextChannel.id);
+        });
+      }
+    }
 
     // Canal selecionado foi removido (owner deletou): sai do join e limpa a
     // seleção. O callback roda em pós-frame para não setState durante build.
@@ -104,7 +217,9 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
     // decisão por constraints.maxWidth, nunca por hardware/orientação.
     return LayoutBuilder(
       builder: (context, constraints) {
-        final isNarrow = constraints.maxWidth < _desktopBreakpoint;
+        final isNarrow = constraints.maxWidth < AppLayout.compactBreakpoint;
+        final canDockMembers =
+            constraints.maxWidth >= AppLayout.auxiliaryPanelBreakpoint;
         // Mobile: com canal selecionado, o conteúdo ocupa a tela toda e o
         // header ganha o back para a lista de canais.
         final showContent = isNarrow && _selectedChannelId != null;
@@ -122,15 +237,17 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
                         children: [
                           ServerRail(
                             selectedServerId: widget.serverId,
-                            width: 56,
+                            width: AppLayout.compactServerRailWidth,
                             compact: true,
                           ),
                           Expanded(
                             child: _channelListPanel(
                               context,
                               detail: detail,
-                              isOwner: isOwner,
+                              canManageServer: canManageServer,
                               channelList: channelList,
+                              activeVoiceChannel: activeVoiceChannel,
+                              activeVoiceState: activeVoiceState,
                             ),
                           ),
                         ],
@@ -138,9 +255,12 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
               : _desktopBody(
                   context,
                   detail: detail,
-                  isOwner: isOwner,
+                  canManageServer: canManageServer,
                   channelList: channelList,
                   selectedChannel: selectedChannel,
+                  activeVoiceChannel: activeVoiceChannel,
+                  activeVoiceState: activeVoiceState,
+                  canDockMembers: canDockMembers,
                 ),
         );
       },
@@ -151,9 +271,12 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
   Widget _desktopBody(
     BuildContext context, {
     required AsyncValue<ServerDetail> detail,
-    required bool isOwner,
+    required bool canManageServer,
     required List<ServerChannel> channelList,
     required ServerChannel? selectedChannel,
+    required ServerChannel? activeVoiceChannel,
+    required VoiceState? activeVoiceState,
+    required bool canDockMembers,
   }) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -161,17 +284,19 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
         ServerRail(selectedServerId: widget.serverId),
         const VerticalDivider(width: 1),
         SizedBox(
-          width: 240,
+          width: AppLayout.navigationWidth,
           child: _channelListPanel(
             context,
             detail: detail,
-            isOwner: isOwner,
+            canManageServer: canManageServer,
             channelList: channelList,
+            activeVoiceChannel: activeVoiceChannel,
+            activeVoiceState: activeVoiceState,
           ),
         ),
         const VerticalDivider(width: 1),
         Expanded(child: _channelContent(context, selectedChannel)),
-        if (_showMembers) ...[
+        if (_showMembers && canDockMembers) ...[
           const VerticalDivider(width: 1),
           MembersPanel(serverId: widget.serverId),
         ],
@@ -184,8 +309,10 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
   Widget _channelListPanel(
     BuildContext context, {
     required AsyncValue<ServerDetail> detail,
-    required bool isOwner,
+    required bool canManageServer,
     required List<ServerChannel> channelList,
+    required ServerChannel? activeVoiceChannel,
+    required VoiceState? activeVoiceState,
   }) {
     return Container(
       color: AppThemeColors.card,
@@ -211,13 +338,29 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
               ),
               data: (_) => ChannelList(
                 serverId: widget.serverId,
-                isOwner: isOwner,
+                canManageServer: canManageServer,
                 selectedChannelId: _selectedChannelId,
+                activeVoiceChannelId: activeVoiceChannel?.id,
+                activeVoiceParticipants:
+                    activeVoiceState?.participants ?? const [],
                 onChannelSelected: (id) => _onChannelSelected(id, channelList),
+                onOpenInvites: () =>
+                    context.push('/servers/${widget.serverId}/invites'),
+                onOpenMembers: () =>
+                    context.push('/servers/${widget.serverId}/members'),
+                onOpenSettings: () => _openSettings(context),
               ),
             ),
           ),
-          UserPanel(onOpenSettings: () => _openSettings(context)),
+          UserPanel(
+            onOpenSettings: () => _openSettings(context),
+            voiceArg: activeVoiceChannel == null
+                ? null
+                : (serverId: widget.serverId, channelId: activeVoiceChannel.id),
+            voiceChannelName: activeVoiceChannel?.name,
+            voiceState: activeVoiceState,
+            onLeaveVoice: _leaveActiveVoice,
+          ),
         ],
       ),
     );
@@ -239,9 +382,10 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
               channelType: channel.type,
               onBack: onBack,
               onOpenMembers: () {
-                final isNarrow =
-                    MediaQuery.of(context).size.width < _desktopBreakpoint;
-                if (isNarrow) {
+                final canDock =
+                    MediaQuery.sizeOf(context).width >=
+                    AppLayout.auxiliaryPanelBreakpoint;
+                if (!canDock) {
                   context.push('/servers/${widget.serverId}/members');
                 } else {
                   setState(() => _showMembers = !_showMembers);
@@ -253,12 +397,13 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
             ),
           Expanded(
             child: channel == null
-                ? const Center(child: Text('Selecione um canal'))
+                ? const _NoChannelSelected()
                 : switch (channel.type) {
                     ChannelType.text => ChatScreen(
                       key: ValueKey(channel.id),
                       serverId: widget.serverId,
                       channelId: channel.id,
+                      channelName: channel.name,
                     ),
                     ChannelType.voice => VoiceScreen(
                       key: ValueKey(channel.id),
@@ -277,5 +422,62 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
   /// [showSettingsModal] com o servidor ativo (seção "Servidor" do modal).
   void _openSettings(BuildContext context) {
     showSettingsModal(context, serverId: widget.serverId);
+  }
+}
+
+class _NoChannelSelected extends StatelessWidget {
+  const _NoChannelSelected();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 360),
+        child: const Padding(
+          padding: EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  color: AppTokens.surface2,
+                  shape: BoxShape.circle,
+                ),
+                child: Padding(
+                  padding: EdgeInsets.all(18),
+                  child: Icon(
+                    Icons.forum_outlined,
+                    size: 30,
+                    color: AppTokens.textSecondary,
+                  ),
+                ),
+              ),
+              SizedBox(height: 18),
+              Text(
+                'Escolha onde quer conversar',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontFamily: 'Geist',
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: AppTokens.textPrimary,
+                ),
+              ),
+              SizedBox(height: 7),
+              Text(
+                'Selecione um canal de texto ou entre em uma sala de voz pela barra lateral.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontFamily: 'Geist',
+                  fontSize: 13.5,
+                  height: 1.45,
+                  color: AppTokens.textMuted,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }

@@ -18,7 +18,10 @@ sealed class RealtimeEvent {
       'channel.updated' => ChannelUpdatedEvent.fromJson(json),
       'channel.deleted' => ChannelDeletedEvent.fromJson(json),
       'member.removed' => MemberRemovedEvent.fromJson(json),
+      'member.left' => MemberRemovedEvent.fromJson(json),
+      'member.role_updated' => MemberRoleUpdatedEvent.fromJson(json),
       'presence.changed' => PresenceChangedEvent.fromJson(json),
+      'voice.presence.changed' => VoicePresenceChangedEvent.fromJson(json),
       _ => null,
     };
   }
@@ -54,10 +57,7 @@ class MessageUpdatedEvent extends RealtimeEvent {
 
 /// `message.deleted { channelId, messageId }` — mensagem removida.
 class MessageDeletedEvent extends RealtimeEvent {
-  const MessageDeletedEvent({
-    required this.channelId,
-    required this.messageId,
-  });
+  const MessageDeletedEvent({required this.channelId, required this.messageId});
 
   factory MessageDeletedEvent.fromJson(Map<String, dynamic> json) =>
       MessageDeletedEvent(
@@ -103,10 +103,7 @@ class ChannelUpdatedEvent extends RealtimeEvent {
 
 /// `channel.deleted { serverId, channelId }`.
 class ChannelDeletedEvent extends RealtimeEvent {
-  const ChannelDeletedEvent({
-    required this.serverId,
-    required this.channelId,
-  });
+  const ChannelDeletedEvent({required this.serverId, required this.channelId});
 
   factory ChannelDeletedEvent.fromJson(Map<String, dynamic> json) =>
       ChannelDeletedEvent(
@@ -132,16 +129,33 @@ class MemberRemovedEvent extends RealtimeEvent {
   final String userId;
 }
 
+/// `member.role_updated { serverId, userId, role }`.
+class MemberRoleUpdatedEvent extends RealtimeEvent {
+  const MemberRoleUpdatedEvent({
+    required this.serverId,
+    required this.userId,
+    required this.role,
+  });
+
+  factory MemberRoleUpdatedEvent.fromJson(Map<String, dynamic> json) =>
+      MemberRoleUpdatedEvent(
+        serverId: json['serverId'] as String,
+        userId: json['userId'] as String,
+        role: ServerRole.fromApi(json['role']) ?? ServerRole.member,
+      );
+
+  final String serverId;
+  final String userId;
+  final ServerRole role;
+}
+
 /// Status de presença de um usuário (espelho do enum do backend).
 enum PresenceStatus { online, offline }
 
 /// `presence.changed { userId, status: ONLINE|OFFLINE }` — presença efêmera
 /// do servidor (Redis, TTL 60s + heartbeat).
 class PresenceChangedEvent extends RealtimeEvent {
-  const PresenceChangedEvent({
-    required this.userId,
-    required this.status,
-  });
+  const PresenceChangedEvent({required this.userId, required this.status});
 
   factory PresenceChangedEvent.fromJson(Map<String, dynamic> json) =>
       PresenceChangedEvent(
@@ -153,4 +167,28 @@ class PresenceChangedEvent extends RealtimeEvent {
 
   final String userId;
   final PresenceStatus status;
+}
+
+/// `voice.presence.changed` mantém os ocupantes dos canais de voz da
+/// sidebar sincronizados com o mirror LiveKit do servidor.
+class VoicePresenceChangedEvent extends RealtimeEvent {
+  const VoicePresenceChangedEvent({
+    required this.serverId,
+    required this.channelId,
+    required this.userId,
+    required this.connected,
+  });
+
+  factory VoicePresenceChangedEvent.fromJson(Map<String, dynamic> json) =>
+      VoicePresenceChangedEvent(
+        serverId: json['serverId'] as String,
+        channelId: json['channelId'] as String,
+        userId: json['userId'] as String,
+        connected: json['connected'] == true,
+      );
+
+  final String serverId;
+  final String channelId;
+  final String userId;
+  final bool connected;
 }

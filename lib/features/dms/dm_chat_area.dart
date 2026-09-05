@@ -35,12 +35,15 @@ class DmChatArea extends ConsumerWidget {
             child: BackdropFilter(
               filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
               child: Container(
-                height: 48,
+                height: AppLayout.headerHeight,
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 decoration: const BoxDecoration(
                   color: Color(0xCC000000),
                   border: Border(
-                    bottom: BorderSide(color: AppTokens.borderHairline, width: 1),
+                    bottom: BorderSide(
+                      color: AppTokens.borderHairline,
+                      width: 1,
+                    ),
                   ),
                 ),
                 child: Row(
@@ -54,7 +57,9 @@ class DmChatArea extends ConsumerWidget {
                       const SizedBox(width: 6),
                     ],
                     Text(
-                      conversation != null ? '@${conversation.name}' : 'Mensagens Diretas',
+                      conversation != null
+                          ? '@${conversation.name}'
+                          : 'Mensagens Diretas',
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         fontFamily: 'Geist',
@@ -142,9 +147,9 @@ class _DmComposerState extends State<_DmComposer> {
     final content = _controller.text.trim();
     if (content.isEmpty) return;
     _controller.clear();
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Mensagens diretas em breve')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Mensagens diretas em breve')));
   }
 
   @override
@@ -200,8 +205,10 @@ class _DmComposerState extends State<_DmComposer> {
                       enabledBorder: InputBorder.none,
                       focusedBorder: InputBorder.none,
                       isDense: true,
-                      contentPadding:
-                          const EdgeInsets.symmetric(horizontal: 0, vertical: 10),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 0,
+                        vertical: 10,
+                      ),
                     ),
                     onSubmitted: (_) => _handleSend(),
                   ),

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -47,38 +48,46 @@ class VoiceScreen extends ConsumerWidget {
       }
     });
 
-    return Column(
+    final controls = _Controls(
+      state: state,
+      onJoin: notifier.join,
+      onLeave: notifier.leave,
+      onToggleMicrophone: notifier.toggleMicrophone,
+      onToggleCamera: notifier.toggleCamera,
+      onToggleScreenShare: () => _toggleScreenShare(context, ref),
+      onToggleSystemAudio: notifier.toggleIncludeSystemAudio,
+      onOpenSettings: () => _openCameraSettings(context, ref, arg),
+      onOpenQuality: () => _openScreenShareQuality(context, ref, arg),
+    );
+    final connected = state.status == VoiceSessionStatus.connected;
+
+    return Stack(
       children: [
-        _Header(channelName: channelName, status: state.status),
-        const Divider(height: 1),
-        // Banner de reconexão automática: a sessão continua `connected` — o
-        // serviço está restabelecendo; o painel abaixo segue o ramo normal
-        // (participantes esvaziam e a lista mostra o estado transitório).
-        if (state.isReconnecting &&
-            state.status == VoiceSessionStatus.connected)
-          const _ReconnectingBanner(),
-        // Áudio remoto bloqueado pelo browser (autoplay policy no web):
-        // banner tocável que chama resumeAudio num gesto do usuário.
-        if (state.isAudioBlocked &&
-            state.status == VoiceSessionStatus.connected)
-          _AudioBlockedBanner(onTap: notifier.resumeAudio),
-        Expanded(
-          child: _ParticipantsPanel(state: state, notifier: notifier, arg: arg),
+        Column(
+          children: [
+            // Banner de reconexão automática: a sessão continua `connected`.
+            if (state.isReconnecting && connected) const _ReconnectingBanner(),
+            // Áudio remoto bloqueado pelo browser (autoplay policy no web).
+            if (state.isAudioBlocked && connected)
+              _AudioBlockedBanner(onTap: notifier.resumeAudio),
+            Expanded(
+              child: _ParticipantsPanel(
+                state: state,
+                notifier: notifier,
+                arg: arg,
+              ),
+            ),
+          ],
         ),
-        const Divider(height: 1),
-        _Controls(
-          state: state,
-          onJoin: notifier.join,
-          onLeave: notifier.leave,
-          onToggleMicrophone: notifier.toggleMicrophone,
-          onToggleCamera: notifier.toggleCamera,
-          onToggleScreenShare: () => _toggleScreenShare(context, ref),
-          onToggleSystemAudio: notifier.toggleIncludeSystemAudio,
-          onOpenSettings: () => _openCameraSettings(context, ref, arg),
-          onOpenQuality: () => _openScreenShareQuality(context, ref, arg),
-        ),
-        // Corrige o tom da barra inferior sobre o surface do tema.
-        const SizedBox(height: 4),
+        if (connected)
+          Positioned(
+            left: 16,
+            right: 16,
+            bottom: 16,
+            child: Center(child: controls),
+          )
+        else
+          Align(alignment: Alignment.bottomCenter, child: controls),
       ],
     );
   }
@@ -138,50 +147,6 @@ class VoiceScreen extends ConsumerWidget {
     showModalBottomSheet<void>(
       context: context,
       builder: (_) => _ScreenShareQualitySheet(arg: arg),
-    );
-  }
-}
-
-class _Header extends StatelessWidget {
-  const _Header({required this.channelName, required this.status});
-
-  final String channelName;
-  final VoiceSessionStatus status;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final statusLabel = switch (status) {
-      VoiceSessionStatus.idle => 'Fora do canal de voz',
-      VoiceSessionStatus.connecting => 'Conectando…',
-      VoiceSessionStatus.connected => 'Em voz',
-      VoiceSessionStatus.error => 'Falha na conexão',
-    };
-    final statusColor = switch (status) {
-      VoiceSessionStatus.connected => theme.colorScheme.primary,
-      VoiceSessionStatus.error => theme.colorScheme.error,
-      _ => theme.colorScheme.outline,
-    };
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-      child: Row(
-        children: [
-          const Icon(Icons.headset, size: 20),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              '#$channelName',
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.titleMedium,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            statusLabel,
-            style: theme.textTheme.bodySmall?.copyWith(color: statusColor),
-          ),
-        ],
-      ),
     );
   }
 }
@@ -323,24 +288,147 @@ class _ParticipantsPanel extends StatelessWidget {
           ),
         );
       case VoiceSessionStatus.connected:
-        // Com ≥1 câmera OU tela ativa o painel vira canal de MÍDIA
-        // (grid/spotlight); sem nenhuma mantém a lista da Fase 4 intacta.
-        final hasMedia = state.participants.any(
-          (p) => p.isCameraEnabled || p.isScreenSharing,
-        );
-        if (!hasMedia) {
-          return _ParticipantList(participants: state.participants);
-        }
         if (state.spotlightParticipantId == null) {
-          return _VideoGrid(state: state, notifier: notifier, arg: arg);
+          return ColoredBox(
+            color: Colors.black,
+            child: _VideoGrid(state: state, notifier: notifier, arg: arg),
+          );
         }
-        return _SpotlightLayout(state: state, notifier: notifier, arg: arg);
+        return ColoredBox(
+          color: Colors.black,
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: 108),
+            child: _SpotlightLayout(state: state, notifier: notifier, arg: arg),
+          ),
+        );
     }
   }
 }
 
-/// GRID de tiles de vídeo (modo mídia): um tile por participante, colunas
-/// responsivas pela largura do painel (≥900 → 3, ≥560 → 2, senão 1).
+/// Resultado puro do cálculo do grid, exposto para validar diferentes
+/// tamanhos de janela sem precisar abrir uma sessão RTC.
+class VoiceGridGeometry {
+  const VoiceGridGeometry({
+    required this.columns,
+    required this.rows,
+    required this.tileSize,
+    required this.gridSize,
+  });
+
+  final int columns;
+  final int rows;
+  final Size tileSize;
+  final Size gridSize;
+}
+
+/// Escolhe a combinação de linhas/colunas que produz o maior tile 16:9
+/// possível no espaço disponível. O mesmo cálculo atende câmeras, avatares e
+/// compartilhamentos — não existe um layout especial que esconda os shares.
+VoiceGridGeometry calculateVoiceGridGeometry({
+  required Size viewport,
+  required int tileCount,
+  double gap = 10,
+  double aspectRatio = 16 / 9,
+  int maxColumns = 5,
+}) {
+  assert(tileCount > 0);
+  final width = math.max(1.0, viewport.width);
+  final height = math.max(1.0, viewport.height);
+  VoiceGridGeometry? best;
+  var bestArea = -1.0;
+  var bestEmptySlots = tileCount;
+
+  for (var columns = 1; columns <= math.min(tileCount, maxColumns); columns++) {
+    final rows = (tileCount / columns).ceil();
+    final widthPerTile = (width - gap * (columns - 1)) / columns;
+    final heightPerTile = (height - gap * (rows - 1)) / rows;
+    if (widthPerTile <= 0 || heightPerTile <= 0) continue;
+
+    final maxTileWidth = tileCount == 1 ? 960.0 : 720.0;
+    final tileWidth = math.min(
+      maxTileWidth,
+      math.min(widthPerTile, heightPerTile * aspectRatio),
+    );
+    final tileHeight = tileWidth / aspectRatio;
+    final area = tileWidth * tileHeight;
+    final emptySlots = rows * columns - tileCount;
+    final isBetter =
+        area > bestArea + 0.5 ||
+        ((area - bestArea).abs() <= 0.5 && emptySlots < bestEmptySlots);
+    if (!isBetter) continue;
+
+    bestArea = area;
+    bestEmptySlots = emptySlots;
+    best = VoiceGridGeometry(
+      columns: columns,
+      rows: rows,
+      tileSize: Size(tileWidth, tileHeight),
+      gridSize: Size(
+        columns * tileWidth + (columns - 1) * gap,
+        rows * tileHeight + (rows - 1) * gap,
+      ),
+    );
+  }
+
+  return best ??
+      VoiceGridGeometry(
+        columns: 1,
+        rows: tileCount,
+        tileSize: const Size(1, 1),
+        gridSize: Size(1, tileCount.toDouble()),
+      );
+}
+
+class _VoiceMediaItem {
+  const _VoiceMediaItem({required this.participant, required this.source});
+
+  final RtcParticipant participant;
+  final VoiceVideoSource source;
+
+  String get key => '${participant.id}:${source.name}';
+}
+
+List<_VoiceMediaItem> _mediaItems(List<RtcParticipant> participants) {
+  final shares = <_VoiceMediaItem>[];
+  final people = <_VoiceMediaItem>[];
+  for (final participant in participants) {
+    if (participant.isScreenSharing) {
+      shares.add(
+        _VoiceMediaItem(
+          participant: participant,
+          source: VoiceVideoSource.screen,
+        ),
+      );
+    }
+    if (participant.isCameraEnabled) {
+      people.add(
+        _VoiceMediaItem(
+          participant: participant,
+          source: VoiceVideoSource.camera,
+        ),
+      );
+    } else if (!participant.isScreenSharing) {
+      people.add(
+        _VoiceMediaItem(
+          participant: participant,
+          source: VoiceVideoSource.avatar,
+        ),
+      );
+    }
+  }
+  // Compartilhamentos ficam visíveis primeiro, porém usam exatamente o
+  // mesmo tamanho e componente das câmeras.
+  return [...shares, ...people];
+}
+
+VoiceSpotlightSource _spotlightSource(VoiceVideoSource source) {
+  return source == VoiceVideoSource.screen
+      ? VoiceSpotlightSource.screen
+      : VoiceSpotlightSource.camera;
+}
+
+/// Palco em grade: uma pessoa pode contribuir com dois tiles irmãos (tela e
+/// câmera); participantes sem vídeo continuam presentes através do avatar.
 class _VideoGrid extends StatelessWidget {
   const _VideoGrid({
     required this.state,
@@ -354,39 +442,83 @@ class _VideoGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final items = _mediaItems(state.participants);
+    if (items.isEmpty) {
+      return const Center(
+        child: SizedBox(
+          width: 24,
+          height: 24,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      );
+    }
+
     return LayoutBuilder(
       builder: (context, constraints) {
-        final width = constraints.maxWidth;
-        final columns = width >= 900 ? 3 : (width >= 560 ? 2 : 1);
-        return GridView.builder(
-          padding: const EdgeInsets.all(8),
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: columns,
-            mainAxisSpacing: 8,
-            crossAxisSpacing: 8,
-            childAspectRatio: 16 / 9,
+        const gap = 10.0;
+        const horizontalPadding = 20.0;
+        const topPadding = 14.0;
+        const bottomControlsInset = 104.0;
+        final availableSize = Size(
+          math.max(1.0, constraints.maxWidth - horizontalPadding * 2),
+          math.max(
+            1.0,
+            constraints.maxHeight - topPadding - bottomControlsInset,
           ),
-          itemCount: state.participants.length,
-          itemBuilder: (context, index) {
-            final participant = state.participants[index];
-            // Só tile COM vídeo (câmera ou tela) vira spotlight (toque
-            // ignorado sem).
-            return VoiceVideoTile(
-              arg: arg,
-              participant: participant,
-              role: VoiceVideoTileRole.grid,
-              onTap: participant.isCameraEnabled || participant.isScreenSharing
-                  ? () => notifier.toggleSpotlight(participant.id)
-                  : null,
-            );
-          },
+        );
+        final geometry = calculateVoiceGridGeometry(
+          viewport: availableSize,
+          tileCount: items.length,
+          gap: gap,
+        );
+
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(
+            horizontalPadding,
+            topPadding,
+            horizontalPadding,
+            bottomControlsInset,
+          ),
+          child: Center(
+            child: SizedBox(
+              width: geometry.gridSize.width,
+              height: geometry.gridSize.height,
+              child: Wrap(
+                alignment: WrapAlignment.center,
+                runAlignment: WrapAlignment.center,
+                spacing: gap,
+                runSpacing: gap,
+                children: [
+                  for (final item in items)
+                    SizedBox(
+                      key: ValueKey(item.key),
+                      width: geometry.tileSize.width,
+                      height: geometry.tileSize.height,
+                      child: VoiceVideoTile(
+                        arg: arg,
+                        participant: item.participant,
+                        source: item.source,
+                        role: VoiceVideoTileRole.grid,
+                        onTap: item.source == VoiceVideoSource.avatar
+                            ? null
+                            : () => notifier.toggleSpotlight(
+                                item.participant.id,
+                                source: _spotlightSource(item.source),
+                              ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
         );
       },
     );
   }
 }
 
-/// SPOTLIGHT: tile em destaque (Expanded) + faixa de miniaturas dos demais.
+/// Destaque opcional com todas as outras publicações na mesma faixa de
+/// miniaturas. Câmera e tela da mesma pessoa continuam sendo itens distintos.
 class _SpotlightLayout extends StatelessWidget {
   const _SpotlightLayout({
     required this.state,
@@ -400,187 +532,80 @@ class _SpotlightLayout extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final items = _mediaItems(state.participants);
     final spotlightId = state.spotlightParticipantId;
-
-    // Defensivo: o controller já limpa destaque órfão no snapshot; ainda
-    // assim, se não houver destaque válido, cai no grid.
-    RtcParticipant? spotlight;
-    for (final p in state.participants) {
-      if (p.id == spotlightId && (p.isCameraEnabled || p.isScreenSharing)) {
-        spotlight = p;
+    final spotlightSource = state.spotlightSource;
+    _VoiceMediaItem? focused;
+    for (final item in items) {
+      final sourceMatches = switch (spotlightSource) {
+        VoiceSpotlightSource.camera => item.source == VoiceVideoSource.camera,
+        VoiceSpotlightSource.screen => item.source == VoiceVideoSource.screen,
+        null => item.source != VoiceVideoSource.avatar,
+      };
+      if (item.participant.id == spotlightId && sourceMatches) {
+        focused = item;
         break;
       }
     }
-    if (spotlight == null) {
+    if (focused == null) {
       return _VideoGrid(state: state, notifier: notifier, arg: arg);
     }
-    // Promoção definitiva para o closure (variável mutável não promove
-    // dentro de closure).
-    final focused = spotlight;
-
+    final selected = focused;
     final others = [
-      for (final p in state.participants)
-        if (p.id != focused.id) p,
+      for (final item in items)
+        if (item.key != selected.key) item,
     ];
 
     return Column(
       children: [
         Expanded(
           child: Padding(
-            padding: const EdgeInsets.all(8),
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
             child: VoiceVideoTile(
               arg: arg,
-              participant: focused,
+              participant: selected.participant,
+              source: selected.source,
               role: VoiceVideoTileRole.spotlight,
-              // Toque no destaque → volta ao grid.
-              onTap: () => notifier.toggleSpotlight(focused.id),
+              onTap: () => notifier.toggleSpotlight(
+                selected.participant.id,
+                source: _spotlightSource(selected.source),
+              ),
             ),
           ),
         ),
         if (others.isNotEmpty)
           SizedBox(
-            height: 96,
-            child: ListView(
+            height: 92,
+            child: ListView.separated(
               scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              children: [
-                for (final p in others)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: Center(
-                      // Miniatura 16:9 (~128×72), centralizada na faixa.
-                      child: SizedBox(
-                        width: 128,
-                        height: 72,
-                        child: VoiceVideoTile(
-                          arg: arg,
-                          participant: p,
-                          role: VoiceVideoTileRole.miniature,
-                          onTap: p.isCameraEnabled || p.isScreenSharing
-                              ? () => notifier.toggleSpotlight(p.id)
-                              : null,
-                        ),
-                      ),
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              itemCount: others.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 8),
+              itemBuilder: (context, index) {
+                final item = others[index];
+                return Center(
+                  child: SizedBox(
+                    width: 128,
+                    height: 72,
+                    child: VoiceVideoTile(
+                      arg: arg,
+                      participant: item.participant,
+                      source: item.source,
+                      role: VoiceVideoTileRole.miniature,
+                      onTap: item.source == VoiceVideoSource.avatar
+                          ? null
+                          : () => notifier.toggleSpotlight(
+                              item.participant.id,
+                              source: _spotlightSource(item.source),
+                            ),
                     ),
                   ),
-              ],
+                );
+              },
             ),
           ),
         const SizedBox(height: 8),
       ],
-    );
-  }
-}
-
-class _ParticipantList extends StatelessWidget {
-  const _ParticipantList({required this.participants});
-
-  final List<RtcParticipant> participants;
-
-  @override
-  Widget build(BuildContext context) {
-    if (participants.isEmpty) {
-      return Center(
-        child: Text(
-          'Ninguém mais está aqui.',
-          style: Theme.of(context).textTheme.bodyLarge,
-        ),
-      );
-    }
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      itemCount: participants.length,
-      itemBuilder: (context, index) =>
-          _ParticipantTile(participant: participants[index]),
-    );
-  }
-}
-
-class _ParticipantTile extends ConsumerWidget {
-  const _ParticipantTile({required this.participant});
-
-  final RtcParticipant participant;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
-    final isLocal =
-        participant.id == ref.read(rtcServiceProvider).localParticipantId;
-    final name = participant.name;
-    return ListTile(
-      dense: true,
-      // Active speaker: fundo destacado (highlight de fala).
-      tileColor: participant.isSpeaking
-          ? theme.colorScheme.primaryContainer.withValues(alpha: 0.45)
-          : null,
-      leading: CircleAvatar(
-        radius: 16,
-        child: Text(
-          name.isEmpty ? '?' : name[0].toUpperCase(),
-          style: const TextStyle(fontSize: 13),
-        ),
-      ),
-      title: Row(
-        children: [
-          Flexible(
-            child: Text(
-              name,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                fontWeight: participant.isSpeaking
-                    ? FontWeight.w600
-                    : FontWeight.w400,
-              ),
-            ),
-          ),
-          if (isLocal) ...[const SizedBox(width: 6), const _LocalBadge()],
-        ],
-      ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (participant.isSpeaking)
-            Icon(Icons.graphic_eq, size: 18, color: theme.colorScheme.primary),
-          const SizedBox(width: 10),
-          Icon(
-            participant.isCameraEnabled ? Icons.videocam : Icons.videocam_off,
-            size: 18,
-            color: participant.isCameraEnabled
-                ? AppTokens.accentGreen
-                : AppTokens.textMuted,
-          ),
-          const SizedBox(width: 10),
-          Icon(
-            participant.isMicrophoneEnabled ? Icons.mic : Icons.mic_off,
-            size: 18,
-            color: participant.isMicrophoneEnabled
-                ? AppTokens.accentGreen
-                : AppTokens.accentPurple,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _LocalBadge extends StatelessWidget {
-  const _LocalBadge();
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.secondaryContainer,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Text(
-        'Você',
-        style: theme.textTheme.labelSmall?.copyWith(
-          color: theme.colorScheme.onSecondaryContainer,
-        ),
-      ),
     );
   }
 }
@@ -608,262 +633,149 @@ class _Controls extends StatelessWidget {
   final VoidCallback onOpenSettings;
   final VoidCallback onOpenQuality;
 
-  /// Abaixo desta largura a barra usa o padrão compacto (Discord mobile):
-  /// botões circulares + sair grande central + menu ⋮ para o restante.
-  static const double _compactBreakpoint = 520;
-
   @override
   Widget build(BuildContext context) {
     final connected = state.status == VoiceSessionStatus.connected;
     final connecting = state.status == VoiceSessionStatus.connecting;
+    if (!connected) {
+      if (!connecting && state.status == VoiceSessionStatus.idle) {
+        return const SizedBox.shrink();
+      }
+      return FilledButton.icon(
+        onPressed: connecting ? null : onJoin,
+        icon: connecting
+            ? const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.headset),
+        label: Text(connecting ? 'Conectando…' : 'Tentar novamente'),
+      );
+    }
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          if (!connected) {
-            return FilledButton.icon(
-              onPressed: connecting ? null : onJoin,
-              icon: connecting
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.headset),
-              label: Text(connecting ? 'Conectando…' : 'Entrar'),
-            );
-          }
-          if (constraints.maxWidth < _compactBreakpoint) {
-            return _buildCompactControls(context);
-          }
-          return _buildWideControls(context);
-        },
+    final theme = Theme.of(context);
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: AppTokens.surfaceGlass,
+          borderRadius: AppRadius.brFull,
+          border: Border.all(color: AppTokens.borderSubtle),
+          boxShadow: AppShadows.popover,
+        ),
+        child: Wrap(
+          alignment: WrapAlignment.center,
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            _mediaToggleButton(
+              theme: theme,
+              icon: state.isMicrophoneEnabled ? Icons.mic : Icons.mic_off,
+              active: state.isMicrophoneEnabled,
+              activeColor: theme.colorScheme.primary,
+              tooltip: state.isMicrophoneEnabled
+                  ? 'Desativar microfone'
+                  : 'Ativar microfone',
+              onPressed: onToggleMicrophone,
+            ),
+            _mediaToggleButton(
+              theme: theme,
+              icon: state.isCameraEnabled ? Icons.videocam : Icons.videocam_off,
+              active: state.isCameraEnabled,
+              activeColor: AppTokens.accentGreen,
+              tooltip: state.isCameraEnabled
+                  ? 'Desativar câmera'
+                  : 'Ativar câmera',
+              onPressed: onToggleCamera,
+            ),
+            _mediaToggleButton(
+              theme: theme,
+              icon: Icons.present_to_all,
+              active: state.isScreenSharing,
+              activeColor: AppTokens.accentPurple,
+              tooltip: state.isScreenSharing
+                  ? 'Parar compartilhamento'
+                  : 'Compartilhar tela',
+              onPressed: state.isReconnecting ? null : onToggleScreenShare,
+            ),
+            PopupMenuButton<String>(
+              tooltip: 'Mais opções de voz',
+              icon: const Icon(Icons.more_horiz),
+              onSelected: (value) {
+                switch (value) {
+                  case 'quality':
+                    onOpenQuality();
+                    break;
+                  case 'settings':
+                    onOpenSettings();
+                    break;
+                  case 'systemAudio':
+                    onToggleSystemAudio();
+                    break;
+                }
+              },
+              itemBuilder: (context) => [
+                PopupMenuItem(
+                  value: 'quality',
+                  child: Row(
+                    children: const [
+                      Icon(Icons.hd),
+                      SizedBox(width: 12),
+                      Text('Qualidade de transmissão'),
+                    ],
+                  ),
+                ),
+                PopupMenuItem(
+                  value: 'settings',
+                  child: Row(
+                    children: const [
+                      Icon(Icons.settings),
+                      SizedBox(width: 12),
+                      Text('Configurações de câmera'),
+                    ],
+                  ),
+                ),
+                PopupMenuItem(
+                  value: 'systemAudio',
+                  enabled: !state.isScreenSharing && !state.isReconnecting,
+                  child: Row(
+                    children: [
+                      Icon(
+                        state.includeSystemAudio
+                            ? Icons.volume_up
+                            : Icons.volume_off,
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        state.includeSystemAudio
+                            ? 'Áudio de sistema: ligado'
+                            : 'Áudio de sistema: desligado',
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            IconButton(
+              onPressed: onLeave,
+              tooltip: 'Sair do canal de voz',
+              style: IconButton.styleFrom(
+                minimumSize: const Size.square(48),
+                backgroundColor: AppTokens.accentPurple,
+                foregroundColor: Colors.white,
+              ),
+              icon: const Icon(Icons.call_end),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  /// Controles largos (≥520px, desktop/tablet): botão de sair expandido +
-  /// todos os ícones inline — visual original inalterado.
-  Widget _buildWideControls(BuildContext context) {
-    final theme = Theme.of(context);
-    return Row(
-      children: [
-        Expanded(
-          child: FilledButton.tonalIcon(
-            onPressed: onLeave,
-            icon: const Icon(Icons.call_end),
-            label: const Text('Sair do canal de voz'),
-          ),
-        ),
-        const SizedBox(width: 8),
-        _mediaToggleButton(
-          theme: theme,
-          icon: state.isMicrophoneEnabled ? Icons.mic : Icons.mic_off,
-          active: state.isMicrophoneEnabled,
-          activeColor: theme.colorScheme.primary,
-          tooltip: state.isMicrophoneEnabled
-              ? 'Desativar microfone'
-              : 'Ativar microfone',
-          onPressed: onToggleMicrophone,
-        ),
-        const SizedBox(width: 8),
-        _mediaToggleButton(
-          theme: theme,
-          icon: state.isCameraEnabled ? Icons.videocam : Icons.videocam_off,
-          active: state.isCameraEnabled,
-          activeColor: theme.colorScheme.error,
-          tooltip: state.isCameraEnabled ? 'Desativar câmera' : 'Ativar câmera',
-          onPressed: onToggleCamera,
-        ),
-        const SizedBox(width: 8),
-        _mediaToggleButton(
-          theme: theme,
-          icon: Icons.present_to_all,
-          active: state.isScreenSharing,
-          activeColor: theme.colorScheme.error,
-          tooltip: state.isScreenSharing
-              ? 'Parar compartilhamento'
-              : 'Compartilhar tela',
-          onPressed: state.isReconnecting ? null : onToggleScreenShare,
-        ),
-        const SizedBox(width: 8),
-        // Áudio de sistema (Fase 6.1): preferência do PRÓXIMO share.
-        // Desabilitado com share ativo — a decisão é lida apenas no start.
-        // Com share ativo o ícone reflete o estado REAL (isSystemAudioEnabled
-        // — pode ter falhado a publicação); sem share, a preferência.
-        _mediaToggleButton(
-          theme: theme,
-          icon:
-              (state.isScreenSharing
-                  ? state.isSystemAudioEnabled
-                  : state.includeSystemAudio)
-              ? Icons.volume_up
-              : Icons.volume_off,
-          active: state.isScreenSharing
-              ? state.isSystemAudioEnabled
-              : state.includeSystemAudio,
-          activeColor: theme.colorScheme.primary,
-          tooltip: state.isScreenSharing
-              ? (state.isSystemAudioEnabled
-                    ? 'Transmitindo áudio de sistema'
-                    : 'Sem áudio de sistema neste compartilhamento')
-              : (state.includeSystemAudio
-                    ? 'Áudio de sistema no próximo compartilhamento'
-                    : 'Incluir áudio de sistema no compartilhamento'),
-          onPressed: state.isScreenSharing || state.isReconnecting
-              ? null
-              : onToggleSystemAudio,
-        ),
-        const SizedBox(width: 4),
-        // Qualidade do screen share: botão sempre visível; sem share a
-        // escolha fica pendente para o próximo compartilhamento.
-        IconButton(
-          onPressed: onOpenQuality,
-          tooltip: 'Qualidade de transmissão',
-          icon: Icon(
-            Icons.hd,
-            color: state.screenShareQuality != RtcScreenShareQuality.auto
-                ? theme.colorScheme.primary
-                : theme.colorScheme.onSurfaceVariant,
-          ),
-        ),
-        const SizedBox(width: 4),
-        IconButton(
-          onPressed: onOpenSettings,
-          tooltip: 'Configurações de câmera',
-          icon: const Icon(Icons.settings),
-        ),
-      ],
-    );
-  }
-
-  /// Controles compactos (<520px, mobile): botões circulares de mídia +
-  /// botão de sair GRANDE central (padrão de call) + menu ⋮ com qualidade e
-  /// settings — nada estoura na largura de um celular.
-  Widget _buildCompactControls(BuildContext context) {
-    final theme = Theme.of(context);
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        _mediaToggleButton(
-          theme: theme,
-          icon: state.isMicrophoneEnabled ? Icons.mic : Icons.mic_off,
-          active: state.isMicrophoneEnabled,
-          activeColor: theme.colorScheme.primary,
-          tooltip: state.isMicrophoneEnabled
-              ? 'Desativar microfone'
-              : 'Ativar microfone',
-          onPressed: onToggleMicrophone,
-        ),
-        const SizedBox(width: 12),
-        _mediaToggleButton(
-          theme: theme,
-          icon: state.isCameraEnabled ? Icons.videocam : Icons.videocam_off,
-          active: state.isCameraEnabled,
-          activeColor: theme.colorScheme.error,
-          tooltip: state.isCameraEnabled ? 'Desativar câmera' : 'Ativar câmera',
-          onPressed: onToggleCamera,
-        ),
-        const SizedBox(width: 12),
-        IconButton(
-          onPressed: onLeave,
-          iconSize: 30,
-          padding: const EdgeInsets.all(16),
-          tooltip: 'Sair do canal de voz',
-          style: IconButton.styleFrom(
-            backgroundColor: theme.colorScheme.error,
-            foregroundColor: theme.colorScheme.onError,
-          ),
-          icon: const Icon(Icons.call_end),
-        ),
-        const SizedBox(width: 12),
-        _mediaToggleButton(
-          theme: theme,
-          icon: Icons.present_to_all,
-          active: state.isScreenSharing,
-          activeColor: theme.colorScheme.error,
-          tooltip: state.isScreenSharing
-              ? 'Parar compartilhamento'
-              : 'Compartilhar tela',
-          onPressed: state.isReconnecting ? null : onToggleScreenShare,
-        ),
-        const SizedBox(width: 12),
-        IconButton(
-          onPressed: onOpenQuality,
-          tooltip: 'Qualidade de transmissão',
-          icon: Icon(
-            Icons.hd,
-            color: state.screenShareQuality != RtcScreenShareQuality.auto
-                ? theme.colorScheme.primary
-                : theme.colorScheme.onSurfaceVariant,
-          ),
-        ),
-        const SizedBox(width: 4),
-        PopupMenuButton<String>(
-          tooltip: 'Mais opções',
-          icon: const Icon(Icons.more_vert),
-          onSelected: (value) {
-            switch (value) {
-              case 'quality':
-                onOpenQuality();
-                break;
-              case 'settings':
-                onOpenSettings();
-                break;
-              case 'systemAudio':
-                onToggleSystemAudio();
-                break;
-            }
-          },
-          // Lista NÃO const: o item de áudio de sistema depende do estado
-          // (os itens individuais continuam const).
-          itemBuilder: (context) => [
-            PopupMenuItem(
-              value: 'settings',
-              child: Row(
-                children: const [
-                  Icon(Icons.settings),
-                  SizedBox(width: 12),
-                  Text('Configurações de câmera'),
-                ],
-              ),
-            ),
-            PopupMenuItem(
-              value: 'systemAudio',
-              // Mesmas condições do botão wide: desabilitado com share ativo
-              // ou reconexão (a decisão é lida apenas no start).
-              enabled: !state.isScreenSharing && !state.isReconnecting,
-              child: Row(
-                children: [
-                  Icon(
-                    (state.isScreenSharing
-                            ? state.isSystemAudioEnabled
-                            : state.includeSystemAudio)
-                        ? Icons.volume_up
-                        : Icons.volume_off,
-                  ),
-                  const SizedBox(width: 12),
-                  Text(
-                    state.isScreenSharing
-                        ? (state.isSystemAudioEnabled
-                              ? 'Áudio de sistema: transmitindo'
-                              : 'Áudio de sistema: sem áudio')
-                        : (state.includeSystemAudio
-                              ? 'Áudio de sistema: ligado'
-                              : 'Áudio de sistema: desligado'),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  /// Botão circular de mídia (mic/câmera/tela): filledTonal com ícone na cor
-  /// ativa/inativa — mesmo padrão visual nos dois modos.
+  /// Botão circular de mídia: o dock usa o mesmo controle em qualquer
+  /// largura, quebrando linhas só quando a janela fica estreita.
   Widget _mediaToggleButton({
     required ThemeData theme,
     required IconData icon,
@@ -875,6 +787,7 @@ class _Controls extends StatelessWidget {
     return IconButton.filledTonal(
       onPressed: onPressed,
       tooltip: tooltip,
+      style: IconButton.styleFrom(minimumSize: const Size.square(48)),
       icon: Icon(
         icon,
         color: active ? activeColor : theme.colorScheme.onSurfaceVariant,

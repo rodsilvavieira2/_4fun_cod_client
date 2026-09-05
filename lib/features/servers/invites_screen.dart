@@ -6,7 +6,7 @@ import '../../core/api/api_exception.dart';
 import '../../shared/models/servers.dart';
 import 'servers_providers.dart';
 
-/// Criação de convite (OWNER) com URL copiável.
+/// Criação de convite por OWNER/ADMIN com URL copiável.
 class InvitesScreen extends ConsumerStatefulWidget {
   const InvitesScreen({super.key, required this.serverId});
 
@@ -46,15 +46,15 @@ class _InvitesScreenState extends ConsumerState<InvitesScreen> {
     if (invite == null) return;
     await Clipboard.setData(ClipboardData(text: invite.url));
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Convite copiado.')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Convite copiado.')));
   }
 
   @override
   Widget build(BuildContext context) {
     final detail = ref.watch(serverDetailProvider(widget.serverId));
-    final isOwner = detail.valueOrNull?.isOwner ?? false;
+    final canManageServer = detail.valueOrNull?.canManageServer ?? false;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Convites')),
@@ -74,8 +74,8 @@ class _InvitesScreenState extends ConsumerState<InvitesScreen> {
               constraints: const BoxConstraints(maxWidth: 480),
               child: Padding(
                 padding: const EdgeInsets.all(24),
-                child: !isOwner
-                    ? const Text('Apenas o dono do servidor pode criar convites.')
+                child: !canManageServer
+                    ? const Text('Apenas administradores podem criar convites.')
                     : Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
@@ -130,7 +130,10 @@ class _InviteCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('Convite criado', style: Theme.of(context).textTheme.titleMedium),
+            Text(
+              'Convite criado',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
             const SizedBox(height: 12),
             SelectableText(invite.url),
             const SizedBox(height: 12),

@@ -11,6 +11,10 @@ import 'voice_providers.dart';
 /// grid → medium, miniatura → low.
 enum VoiceVideoTileRole { spotlight, grid, miniature }
 
+/// Cada publicação visual vira um tile próprio. Assim câmera e tela do mesmo
+/// participante podem aparecer lado a lado no mesmo grid.
+enum VoiceVideoSource { camera, screen, avatar }
+
 /// Tile de vídeo de um participante (Fase 5 + Fase 6).
 ///
 /// - Fonte do vídeo (Fase 6): no papel [VoiceVideoTileRole.spotlight], a
@@ -32,6 +36,7 @@ class VoiceVideoTile extends ConsumerStatefulWidget {
     required this.arg,
     required this.participant,
     required this.role,
+    required this.source,
     this.onTap,
   });
 
@@ -41,6 +46,8 @@ class VoiceVideoTile extends ConsumerStatefulWidget {
   final RtcParticipant participant;
 
   final VoiceVideoTileRole role;
+
+  final VoiceVideoSource source;
 
   /// Ação de toque: grid/miniatura → destaque, destaque → grid. A screen
   /// decide quem pode (tile sem câmera não vira spotlight — toque ignorado).
@@ -63,7 +70,8 @@ class _VoiceVideoTileState extends ConsumerState<VoiceVideoTile> {
     // Mudou de papel (grid→spotlight/miniatura, etc.) ou de participante:
     // a transição de papel é o que dispara a mudança de qualidade.
     if (oldWidget.role != widget.role ||
-        oldWidget.participant.id != widget.participant.id) {
+        oldWidget.participant.id != widget.participant.id ||
+        oldWidget.source != widget.source) {
       _scheduleQuality();
     }
   }
@@ -72,6 +80,9 @@ class _VoiceVideoTileState extends ConsumerState<VoiceVideoTile> {
   /// durante o build); seguro mesmo se o tile desmontar antes — o controller
   /// dedupe chamadas repetidas e ignora o participante local.
   void _scheduleQuality() {
+    // O contrato de qualidade remota controla a publicação de câmera. Uma
+    // tela em destaque não deve rebaixar a câmera irmã que está em miniatura.
+    if (widget.source != VoiceVideoSource.camera) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final quality = switch (widget.role) {
@@ -91,21 +102,11 @@ class _VoiceVideoTileState extends ConsumerState<VoiceVideoTile> {
     final rtc = ref.read(rtcServiceProvider);
     final participant = widget.participant;
     final isLocal = participant.id == rtc.localParticipantId;
-    // Fonte do vídeo (PRD §25): no destaque a TELA tem prioridade sobre a
-    // câmera; grid/miniatura preferem a câmera e caem para a tela só sem
-    // ela. Getter síncrono (null com publicação mutada/ausente) — reavaliado
-    // no build, como a câmera.
-    final RtcVideoTrackRef? trackRef;
-    if (widget.role == VoiceVideoTileRole.spotlight &&
-        participant.isScreenSharing) {
-      trackRef = rtc.screenTrackOf(participant.id);
-    } else if (participant.isCameraEnabled) {
-      trackRef = rtc.videoTrackOf(participant.id);
-    } else if (participant.isScreenSharing) {
-      trackRef = rtc.screenTrackOf(participant.id);
-    } else {
-      trackRef = null;
-    }
+    final trackRef = switch (widget.source) {
+      VoiceVideoSource.camera => rtc.videoTrackOf(participant.id),
+      VoiceVideoSource.screen => rtc.screenTrackOf(participant.id),
+      VoiceVideoSource.avatar => null,
+    };
     final hasVideo = trackRef != null;
     final isMiniature = widget.role == VoiceVideoTileRole.miniature;
 
@@ -121,9 +122,13 @@ class _VoiceVideoTileState extends ConsumerState<VoiceVideoTile> {
             else
               _AvatarPlaceholder(participant: participant),
             if (isMiniature)
-              _MiniatureOverlay(participant: participant)
+              _MiniatureOverlay(participant: participant, source: widget.source)
             else
-              _TileOverlay(participant: participant, isLocal: isLocal),
+              _TileOverlay(
+                participant: participant,
+                source: widget.source,
+                isLocal: isLocal,
+              ),
             // Active speaker: borda de 2px em primary (miniatura não tem).
             if (participant.isSpeaking && !isMiniature)
               IgnorePointer(
@@ -147,9 +152,14 @@ class _VoiceVideoTileState extends ConsumerState<VoiceVideoTile> {
 /// Overlay completo (grid/spotlight): nome + badge "Você" + ícone de mic,
 /// com scrim leve para legibilidade sobre o vídeo.
 class _TileOverlay extends StatelessWidget {
-  const _TileOverlay({required this.participant, required this.isLocal});
+  const _TileOverlay({
+    required this.participant,
+    required this.source,
+    required this.isLocal,
+  });
 
   final RtcParticipant participant;
+  final VoiceVideoSource source;
   final bool isLocal;
 
   @override
@@ -172,7 +182,9 @@ class _TileOverlay extends StatelessWidget {
           children: [
             Flexible(
               child: Text(
-                participant.name,
+                source == VoiceVideoSource.screen
+                    ? 'Tela de ${participant.name}'
+                    : participant.name,
                 overflow: TextOverflow.ellipsis,
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: Colors.white,
@@ -183,8 +195,7 @@ class _TileOverlay extends StatelessWidget {
             if (isLocal) ...[
               const SizedBox(width: 6),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                 decoration: BoxDecoration(
                   color: theme.colorScheme.secondaryContainer,
                   borderRadius: BorderRadius.circular(8),
@@ -198,7 +209,7 @@ class _TileOverlay extends StatelessWidget {
               ),
             ],
             // Badge de share: ao lado do ícone de mic (antes dele).
-            if (participant.isScreenSharing) ...[
+            if (source == VoiceVideoSource.screen) ...[
               const SizedBox(width: 6),
               const Icon(Icons.present_to_all, size: 14, color: Colors.white),
             ],
@@ -223,9 +234,10 @@ class _TileOverlay extends StatelessWidget {
 
 /// Overlay enxuto da miniatura: apenas o nome, com scrim leve (sem badge).
 class _MiniatureOverlay extends StatelessWidget {
-  const _MiniatureOverlay({required this.participant});
+  const _MiniatureOverlay({required this.participant, required this.source});
 
   final RtcParticipant participant;
+  final VoiceVideoSource source;
 
   @override
   Widget build(BuildContext context) {
@@ -247,7 +259,9 @@ class _MiniatureOverlay extends StatelessWidget {
           children: [
             Flexible(
               child: Text(
-                participant.name,
+                source == VoiceVideoSource.screen
+                    ? 'Tela de ${participant.name}'
+                    : participant.name,
                 overflow: TextOverflow.ellipsis,
                 style: theme.textTheme.labelSmall?.copyWith(
                   color: Colors.white,
@@ -255,7 +269,7 @@ class _MiniatureOverlay extends StatelessWidget {
               ),
             ),
             // Badge de share: ao lado do nome na miniatura.
-            if (participant.isScreenSharing) ...[
+            if (source == VoiceVideoSource.screen) ...[
               const SizedBox(width: 6),
               const Icon(Icons.present_to_all, size: 14, color: Colors.white),
             ],

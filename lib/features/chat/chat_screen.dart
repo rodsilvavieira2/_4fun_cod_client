@@ -13,10 +13,12 @@ class ChatScreen extends ConsumerWidget {
     super.key,
     required this.serverId,
     required this.channelId,
+    required this.channelName,
   });
 
   final String serverId;
   final String channelId;
+  final String channelName;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -36,18 +38,21 @@ class ChatScreen extends ConsumerWidget {
             ),
             error: (_, _) => _ChatError(
               onRetry: () => ref.invalidate(
-                chatControllerProvider(
-                  (serverId: serverId, channelId: channelId),
-                ),
+                chatControllerProvider((
+                  serverId: serverId,
+                  channelId: channelId,
+                )),
               ),
             ),
             data: (state) => _MessageList(
               state: state,
+              channelName: channelName,
               onLoadMore: () => ref
                   .read(
-                    chatControllerProvider(
-                      (serverId: serverId, channelId: channelId),
-                    ).notifier,
+                    chatControllerProvider((
+                      serverId: serverId,
+                      channelId: channelId,
+                    )).notifier,
                   )
                   .loadMore(),
             ),
@@ -91,9 +96,14 @@ class _ChatError extends StatelessWidget {
 }
 
 class _MessageList extends StatefulWidget {
-  const _MessageList({required this.state, required this.onLoadMore});
+  const _MessageList({
+    required this.state,
+    required this.channelName,
+    required this.onLoadMore,
+  });
 
   final ChatState state;
+  final String channelName;
   final VoidCallback onLoadMore;
 
   @override
@@ -133,13 +143,53 @@ class _MessageListState extends State<_MessageList> {
     final state = widget.state;
     final messages = state.messages;
     if (messages.isEmpty && !state.loadingMore) {
-      return const Center(
-        child: Text(
-          'Nenhuma mensagem ainda. Inicie a conversa!',
-          style: TextStyle(
-            fontFamily: 'Geist',
-            fontSize: 14,
-            color: AppTokens.textMuted,
+      return Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: AppTokens.surface2,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Padding(
+                    padding: EdgeInsets.all(18),
+                    child: Icon(
+                      Icons.tag,
+                      size: 30,
+                      color: AppTokens.textPrimary,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Text(
+                  'Boas-vindas a #${widget.channelName}!',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontFamily: 'Geist',
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    color: AppTokens.textPrimary,
+                    letterSpacing: -0.4,
+                  ),
+                ),
+                const SizedBox(height: 7),
+                const Text(
+                  'Este é o começo da conversa. Envie a primeira mensagem para o canal.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontFamily: 'Geist',
+                    fontSize: 13.5,
+                    height: 1.45,
+                    color: AppTokens.textMuted,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       );
@@ -224,7 +274,10 @@ class _MessageTileState extends State<_MessageTile> {
                     decoration: BoxDecoration(
                       color: AppTokens.surface2,
                       borderRadius: BorderRadius.circular(AppRadius.sm),
-                      border: Border.all(color: AppTokens.borderHairline, width: 1),
+                      border: Border.all(
+                        color: AppTokens.borderHairline,
+                        width: 1,
+                      ),
                     ),
                     alignment: Alignment.center,
                     clipBehavior: Clip.antiAlias,
@@ -299,7 +352,8 @@ class _MessageTileState extends State<_MessageTile> {
     final now = DateTime.now();
     final hh = local.hour.toString().padLeft(2, '0');
     final mm = local.minute.toString().padLeft(2, '0');
-    final isToday = local.year == now.year &&
+    final isToday =
+        local.year == now.year &&
         local.month == now.month &&
         local.day == now.day;
     if (isToday) return '$hh:$mm';
@@ -347,9 +401,10 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
     try {
       await ref
           .read(
-            chatControllerProvider(
-              (serverId: widget.serverId, channelId: widget.channelId),
-            ).notifier,
+            chatControllerProvider((
+              serverId: widget.serverId,
+              channelId: widget.channelId,
+            )).notifier,
           )
           .send(content);
       if (!mounted) return;
@@ -416,9 +471,12 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
                       enabledBorder: InputBorder.none,
                       focusedBorder: InputBorder.none,
                       isDense: true,
-                      contentPadding:
-                          EdgeInsets.symmetric(horizontal: 0, vertical: 10),
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 0,
+                        vertical: 10,
+                      ),
                     ),
+                    onChanged: (_) => setState(() {}),
                     onSubmitted: (_) => _handleSend(),
                   ),
                 ),
@@ -431,7 +489,7 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
                     minSize: 30,
                     iconSize: 16,
                     isActive: _controller.text.trim().isNotEmpty,
-                    activeColor: AppTokens.textInverse,
+                    activeColor: AppTokens.accentVercel,
                     onPressed: _sending ? null : _handleSend,
                   ),
                 ),

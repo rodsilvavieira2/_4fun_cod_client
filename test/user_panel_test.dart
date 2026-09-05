@@ -9,6 +9,7 @@ import 'package:fourfun_cod_client/core/rtc/rtc_providers.dart';
 import 'package:fourfun_cod_client/core/rtc/rtc_service.dart';
 import 'package:fourfun_cod_client/features/servers/user_panel.dart';
 import 'package:fourfun_cod_client/features/voice/voice_controls_provider.dart';
+import 'package:fourfun_cod_client/features/voice/voice_providers.dart';
 import 'package:fourfun_cod_client/shared/models/user.dart';
 
 /// Fake do AuthController: nunca toca em backend/storage/dio.
@@ -139,4 +140,43 @@ void main() {
     expect(rtc.disableMicrophoneCalls, 2);
     expect(rtc.remoteAudioSelections, [true, false]);
   });
+
+  testWidgets(
+    'UserPanel mostra compartilhar à direita do mic e o ping da voz',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [rtcServiceProvider.overrideWithValue(_FakeRtcService())],
+          child: MaterialApp(
+            home: Scaffold(
+              body: UserPanel(
+                voiceArg: (serverId: 'server-1', channelId: 'voice-1'),
+                voiceChannelName: 'reunião',
+                voiceState: const VoiceState(
+                  status: VoiceSessionStatus.connected,
+                  latencyMs: 42,
+                ),
+                onLeaveVoice: () {},
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Voz conectada'), findsOneWidget);
+      expect(find.text('reunião'), findsOneWidget);
+      expect(find.text('42 ms'), findsOneWidget);
+      expect(find.byIcon(Icons.present_to_all), findsOneWidget);
+      expect(find.byIcon(Icons.mic_none), findsOneWidget);
+      expect(find.byIcon(Icons.headset_outlined), findsOneWidget);
+
+      final micX = tester.getCenter(find.byIcon(Icons.mic_none)).dx;
+      final shareX = tester.getCenter(find.byIcon(Icons.present_to_all)).dx;
+      final headsetX = tester.getCenter(find.byIcon(Icons.headset_outlined)).dx;
+      expect(micX, lessThan(shareX));
+      expect(shareX, lessThan(headsetX));
+    },
+  );
 }

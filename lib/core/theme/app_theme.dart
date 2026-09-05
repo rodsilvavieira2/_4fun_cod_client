@@ -60,6 +60,25 @@ final ThemeData theme4funCod = ThemeData(
     error: AppTokens.accentPurple,
     onError: AppTokens.textPrimary,
   ),
+  appBarTheme: const AppBarTheme(
+    elevation: 0,
+    scrolledUnderElevation: 0,
+    centerTitle: false,
+    backgroundColor: AppTokens.surface1,
+    foregroundColor: AppTokens.textPrimary,
+    surfaceTintColor: Colors.transparent,
+    toolbarHeight: AppLayout.headerHeight,
+    titleTextStyle: TextStyle(
+      fontFamily: 'Geist',
+      fontSize: 15,
+      fontWeight: FontWeight.w600,
+      color: AppTokens.textPrimary,
+      letterSpacing: -0.2,
+    ),
+    shape: Border(
+      bottom: BorderSide(color: AppTokens.borderHairline, width: 1),
+    ),
+  ),
   textTheme: const TextTheme(
     displayMedium: TextStyle(
       fontSize: 24,
@@ -143,7 +162,9 @@ final ThemeData theme4funCod = ThemeData(
         fontSize: 13.5,
         fontWeight: FontWeight.w600,
       ),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.sm)),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+      ),
       elevation: 0,
     ),
   ),
@@ -156,7 +177,9 @@ final ThemeData theme4funCod = ThemeData(
         fontWeight: FontWeight.w500,
       ),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.sm)),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+      ),
     ),
   ),
   inputDecorationTheme: InputDecorationTheme(
@@ -196,7 +219,10 @@ final ThemeData theme4funCod = ThemeData(
   ),
   snackBarTheme: SnackBarThemeData(
     backgroundColor: AppTokens.surface2,
-    contentTextStyle: const TextStyle(color: AppTokens.textPrimary, fontSize: 13.5),
+    contentTextStyle: const TextStyle(
+      color: AppTokens.textPrimary,
+      fontSize: 13.5,
+    ),
     shape: RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(AppRadius.md),
       side: const BorderSide(color: AppTokens.borderSubtle, width: 1),
@@ -207,6 +233,52 @@ final ThemeData theme4funCod = ThemeData(
     color: AppTokens.borderHairline,
     thickness: 1,
     space: 1,
+  ),
+  scrollbarTheme: ScrollbarThemeData(
+    thickness: const WidgetStatePropertyAll(8),
+    radius: const Radius.circular(AppRadius.full),
+    thumbVisibility: const WidgetStatePropertyAll(false),
+    thumbColor: WidgetStateProperty.resolveWith(
+      (states) => states.contains(WidgetState.hovered)
+          ? AppTokens.surface3
+          : AppTokens.surface2,
+    ),
+    trackColor: const WidgetStatePropertyAll(Colors.transparent),
+  ),
+  tooltipTheme: TooltipThemeData(
+    decoration: BoxDecoration(
+      color: AppTokens.textPrimary,
+      borderRadius: BorderRadius.circular(AppRadius.sm),
+      boxShadow: AppShadows.popover,
+    ),
+    textStyle: const TextStyle(
+      fontFamily: 'Geist',
+      fontSize: 12,
+      fontWeight: FontWeight.w600,
+      color: AppTokens.textInverse,
+    ),
+    waitDuration: const Duration(milliseconds: 450),
+  ),
+  popupMenuTheme: PopupMenuThemeData(
+    color: AppTokens.surface2,
+    surfaceTintColor: Colors.transparent,
+    elevation: 16,
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(AppRadius.md),
+      side: const BorderSide(color: AppTokens.borderSubtle),
+    ),
+    textStyle: const TextStyle(
+      fontFamily: 'Geist',
+      fontSize: 13,
+      color: AppTokens.textPrimary,
+    ),
+  ),
+  bottomSheetTheme: const BottomSheetThemeData(
+    backgroundColor: AppTokens.surface1,
+    modalBackgroundColor: AppTokens.surface1,
+    surfaceTintColor: Colors.transparent,
+    showDragHandle: true,
+    dragHandleColor: AppTokens.borderStrong,
   ),
   chipTheme: ChipThemeData(
     backgroundColor: AppTokens.surface2,

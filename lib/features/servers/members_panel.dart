@@ -19,13 +19,16 @@ class MembersPanel extends ConsumerWidget {
 
     final onlineMembers = <ServerMember>[];
     final offlineMembers = <ServerMember>[];
-    for (final member in members) {
-      (online.contains(member.userId) ? onlineMembers : offlineMembers)
-          .add(member);
+    final orderedMembers = [...members]
+      ..sort((left, right) => left.role.index.compareTo(right.role.index));
+    for (final member in orderedMembers) {
+      (online.contains(member.userId) ? onlineMembers : offlineMembers).add(
+        member,
+      );
     }
 
     return Container(
-      width: 240,
+      width: AppLayout.memberPanelWidth,
       decoration: const BoxDecoration(
         color: AppTokens.surface1,
         border: Border(
@@ -97,7 +100,10 @@ class _MemberRowState extends State<_MemberRow> {
                   decoration: BoxDecoration(
                     color: AppTokens.surface2,
                     borderRadius: BorderRadius.circular(AppRadius.sm),
-                    border: Border.all(color: AppTokens.borderHairline, width: 1),
+                    border: Border.all(
+                      color: AppTokens.borderHairline,
+                      width: 1,
+                    ),
                   ),
                   alignment: Alignment.center,
                   clipBehavior: Clip.antiAlias,
@@ -115,7 +121,9 @@ class _MemberRowState extends State<_MemberRow> {
                   right: -2,
                   bottom: -2,
                   child: PresenceDot(
-                    status: online ? PresenceStatus.online : PresenceStatus.offline,
+                    status: online
+                        ? PresenceStatus.online
+                        : PresenceStatus.offline,
                     size: 9,
                   ),
                 ),
@@ -134,6 +142,8 @@ class _MemberRowState extends State<_MemberRow> {
                 ),
               ),
             ),
+            const SizedBox(width: 4),
+            ServerRoleBadge(role: widget.member.role, showLabel: false),
           ],
         ),
       ),

@@ -93,7 +93,7 @@ class ServersRepository {
     }
   }
 
-  /// `DELETE /servers/:id/members/:userId` → 204 (apenas OWNER).
+  /// `DELETE /servers/:id/members/:userId` → 204 (gestão por hierarquia).
   Future<void> removeMember(String serverId, String userId) async {
     try {
       await _dio.delete('/servers/$serverId/members/$userId');
@@ -102,7 +102,24 @@ class ServersRepository {
     }
   }
 
-  /// `POST /servers/:id/invites { expiresAt?, maxUses? }` → 201 (OWNER).
+  /// Promove/rebaixa ADMIN ↔ MEMBER. Apenas o dono pode alterar cargos.
+  Future<ServerMember> updateMemberRole(
+    String serverId,
+    String userId,
+    ServerRole role,
+  ) async {
+    try {
+      final response = await _dio.patch(
+        '/servers/$serverId/members/$userId/role',
+        data: {'role': role.apiValue},
+      );
+      return ServerMember.fromJson(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      throw ApiException.fromDio(e);
+    }
+  }
+
+  /// `POST /servers/:id/invites { expiresAt?, maxUses? }` → 201 (gestores).
   Future<InviteInfo> createInvite(String serverId) async {
     try {
       final response = await _dio.post('/servers/$serverId/invites');
@@ -168,7 +185,10 @@ class ServersRepository {
   }
 
   /// `PATCH /channels/:id { name }` → 200 (OWNER).
-  Future<ServerChannel> updateChannel(String channelId, {required String name}) async {
+  Future<ServerChannel> updateChannel(
+    String channelId, {
+    required String name,
+  }) async {
     try {
       final response = await _dio.patch(
         '/channels/$channelId',
@@ -240,8 +260,9 @@ class ServersRepository {
   /// de voz (Fase 4). O token é emitido SÓ pelo backend (10m de validade).
   Future<VoiceJoinInfo> joinVoice(String serverId, String channelId) async {
     try {
-      final response = await _dio
-          .post('/servers/$serverId/channels/$channelId/join');
+      final response = await _dio.post(
+        '/servers/$serverId/channels/$channelId/join',
+      );
       return VoiceJoinInfo.fromJson(response.data as Map<String, dynamic>);
     } on DioException catch (e) {
       throw ApiException.fromDio(e);

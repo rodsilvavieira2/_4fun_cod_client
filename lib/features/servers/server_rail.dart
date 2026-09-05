@@ -13,7 +13,7 @@ class ServerRail extends ConsumerWidget {
     super.key,
     this.selectedServerId,
     this.dmActive = false,
-    this.width = 68,
+    this.width = AppLayout.serverRailWidth,
     this.compact = false,
   });
 
@@ -91,8 +91,8 @@ class _DmRailItemState extends State<_DmRailItem> {
   Widget build(BuildContext context) {
     final active = widget.active;
     final compact = widget.compact;
-    final itemSize = compact ? 36.0 : 42.0;
-    final radius = compact ? 8.0 : 10.0;
+    final itemSize = compact ? 36.0 : 44.0;
+    final radius = compact ? 10.0 : 14.0;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
@@ -138,14 +138,18 @@ class _DmRailItemState extends State<_DmRailItem> {
                     decoration: BoxDecoration(
                       color: active
                           ? AppTokens.textPrimary
-                          : (_hovered ? AppTokens.surface3 : AppTokens.surface1),
+                          : (_hovered
+                                ? AppTokens.surface3
+                                : AppTokens.surface1),
                       borderRadius: BorderRadius.circular(
-                        active || _hovered ? radius + 4 : radius,
+                        active || _hovered ? radius : AppRadius.full,
                       ),
                       border: Border.all(
                         color: active
                             ? Colors.transparent
-                            : (_hovered ? AppTokens.borderSubtle : AppTokens.borderHairline),
+                            : (_hovered
+                                  ? AppTokens.borderSubtle
+                                  : AppTokens.borderHairline),
                         width: 1,
                       ),
                     ),
@@ -153,7 +157,9 @@ class _DmRailItemState extends State<_DmRailItem> {
                     child: Icon(
                       active ? Icons.chat : Icons.chat_outlined,
                       size: compact ? 16 : 18,
-                      color: active ? AppTokens.textInverse : AppTokens.textPrimary,
+                      color: active
+                          ? AppTokens.textInverse
+                          : AppTokens.textPrimary,
                     ),
                   ),
                 ],
@@ -189,8 +195,8 @@ class _ServerRailItemState extends State<_ServerRailItem> {
     final server = widget.server;
     final selected = widget.selected;
     final compact = widget.compact;
-    final itemSize = compact ? 36.0 : 42.0;
-    final radius = compact ? 8.0 : 10.0;
+    final itemSize = compact ? 36.0 : 44.0;
+    final radius = compact ? 10.0 : 14.0;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
@@ -236,14 +242,18 @@ class _ServerRailItemState extends State<_ServerRailItem> {
                     decoration: BoxDecoration(
                       color: selected
                           ? AppTokens.textPrimary
-                          : (_hovered ? AppTokens.surface3 : AppTokens.surface1),
+                          : (_hovered
+                                ? AppTokens.surface3
+                                : AppTokens.surface1),
                       borderRadius: BorderRadius.circular(
-                        selected || _hovered ? radius + 4 : radius,
+                        selected || _hovered ? radius : AppRadius.full,
                       ),
                       border: Border.all(
                         color: selected
                             ? Colors.transparent
-                            : (_hovered ? AppTokens.borderSubtle : AppTokens.borderHairline),
+                            : (_hovered
+                                  ? AppTokens.borderSubtle
+                                  : AppTokens.borderHairline),
                         width: 1,
                       ),
                     ),
@@ -251,14 +261,15 @@ class _ServerRailItemState extends State<_ServerRailItem> {
                     child: server.iconUrl != null
                         ? ClipRRect(
                             borderRadius: BorderRadius.circular(
-                              selected || _hovered ? radius + 4 : radius,
+                              selected || _hovered ? radius : AppRadius.full,
                             ),
                             child: Image.network(
                               server.iconUrl!,
                               width: itemSize,
                               height: itemSize,
                               fit: BoxFit.cover,
-                              errorBuilder: (_, _, _) => _initial(server, selected),
+                              errorBuilder: (_, _, _) =>
+                                  _initial(server, selected),
                             ),
                           )
                         : _initial(server, selected),
@@ -300,8 +311,8 @@ class _AddServerRailItemState extends State<_AddServerRailItem> {
   @override
   Widget build(BuildContext context) {
     final compact = widget.compact;
-    final itemSize = compact ? 36.0 : 42.0;
-    final radius = compact ? 8.0 : 10.0;
+    final itemSize = compact ? 36.0 : 44.0;
+    final radius = compact ? 10.0 : 14.0;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
@@ -322,12 +333,16 @@ class _AddServerRailItemState extends State<_AddServerRailItem> {
                   width: itemSize,
                   height: itemSize,
                   decoration: BoxDecoration(
-                    color: _hovered ? AppTokens.accentVercel : AppTokens.surface1,
+                    color: _hovered
+                        ? AppTokens.accentVercel
+                        : AppTokens.surface1,
                     borderRadius: BorderRadius.circular(
-                      _hovered ? radius + 4 : radius,
+                      _hovered ? radius : AppRadius.full,
                     ),
                     border: Border.all(
-                      color: _hovered ? Colors.transparent : AppTokens.borderHairline,
+                      color: _hovered
+                          ? Colors.transparent
+                          : AppTokens.borderHairline,
                       width: 1,
                     ),
                   ),

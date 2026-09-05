@@ -82,6 +82,27 @@ abstract final class AppTokens {
   ];
 }
 
+/// Medidas estruturais compartilhadas pelo shell desktop/web.
+///
+/// A hierarquia segue o modelo de uma comunidade em tempo real: rail de
+/// servidores, navegação contextual, conteúdo e painel auxiliar. Manter essas
+/// medidas centralizadas evita pequenas diferenças entre servidores e DMs.
+abstract final class AppLayout {
+  static const double serverRailWidth = 72;
+  static const double compactServerRailWidth = 56;
+  static const double navigationWidth = 256;
+  static const double memberPanelWidth = 240;
+  static const double headerHeight = 52;
+  static const double userPanelMinHeight = 56;
+
+  /// Abaixo desta largura a navegação contextual vira uma etapa separada.
+  static const double compactBreakpoint = 760;
+
+  /// O painel auxiliar só fica fixo quando ainda sobra uma área de conteúdo
+  /// confortável para chat ou vídeo.
+  static const double auxiliaryPanelBreakpoint = 1180;
+}
+
 /// Raios de curvatura padrão macOS
 abstract final class AppRadius {
   /// 4px - Badges pequenas, presence dots
@@ -125,11 +146,7 @@ abstract final class AppShadows {
       blurRadius: 24,
       spreadRadius: -4,
     ),
-    BoxShadow(
-      color: Color(0x33000000),
-      offset: Offset(0, 2),
-      blurRadius: 8,
-    ),
+    BoxShadow(color: Color(0x33000000), offset: Offset(0, 2), blurRadius: 8),
   ];
 
   /// Sombra para janelas de diálogo e modais (macOS window drop shadow)
@@ -140,10 +157,6 @@ abstract final class AppShadows {
       blurRadius: 48,
       spreadRadius: -8,
     ),
-    BoxShadow(
-      color: Color(0x44000000),
-      offset: Offset(0, 4),
-      blurRadius: 16,
-    ),
+    BoxShadow(color: Color(0x44000000), offset: Offset(0, 4), blurRadius: 16),
   ];
 }

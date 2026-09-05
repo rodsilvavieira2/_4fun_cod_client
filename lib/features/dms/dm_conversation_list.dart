@@ -12,8 +12,7 @@ class DmConversationList extends ConsumerStatefulWidget {
   final String serverId;
 
   @override
-  ConsumerState<DmConversationList> createState() =>
-      _DmConversationListState();
+  ConsumerState<DmConversationList> createState() => _DmConversationListState();
 }
 
 class _DmConversationListState extends ConsumerState<DmConversationList> {
@@ -34,14 +33,33 @@ class _DmConversationListState extends ConsumerState<DmConversationList> {
     final filtered = query.isEmpty
         ? conversations
         : conversations
-            .where((c) => c.name.toLowerCase().contains(query))
-            .toList();
+              .where((c) => c.name.toLowerCase().contains(query))
+              .toList();
 
     return Container(
       color: AppTokens.surface1,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          Container(
+            height: AppLayout.headerHeight,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            alignment: Alignment.centerLeft,
+            decoration: const BoxDecoration(
+              border: Border(
+                bottom: BorderSide(color: AppTokens.borderHairline, width: 1),
+              ),
+            ),
+            child: const Text(
+              'Mensagens diretas',
+              style: TextStyle(
+                fontFamily: 'Geist',
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: AppTokens.textPrimary,
+              ),
+            ),
+          ),
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
             child: Container(
@@ -66,18 +84,27 @@ class _DmConversationListState extends ConsumerState<DmConversationList> {
                     fontSize: 13,
                     color: AppTokens.textMuted,
                   ),
-                  prefixIcon: Icon(Icons.search, size: 16, color: AppTokens.textSecondary),
-                  prefixIconConstraints: BoxConstraints(minWidth: 32, minHeight: 32),
+                  prefixIcon: Icon(
+                    Icons.search,
+                    size: 16,
+                    color: AppTokens.textSecondary,
+                  ),
+                  prefixIconConstraints: BoxConstraints(
+                    minWidth: 32,
+                    minHeight: 32,
+                  ),
                   border: InputBorder.none,
                   enabledBorder: InputBorder.none,
                   focusedBorder: InputBorder.none,
                   isDense: true,
-                  contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                  contentPadding: EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 8,
+                  ),
                 ),
               ),
             ),
           ),
-          const Divider(height: 1, color: AppTokens.borderHairline),
           const SectionHeader('MENSAGENS'),
           Expanded(
             child: filtered.isEmpty
@@ -96,14 +123,15 @@ class _DmConversationListState extends ConsumerState<DmConversationList> {
                     itemCount: filtered.length,
                     itemBuilder: (context, index) {
                       final conversation = filtered[index];
-                      final selected =
-                          conversation.userId == selectedUserId;
+                      final selected = conversation.userId == selectedUserId;
                       return _ConversationRow(
                         conversation: conversation,
                         selected: selected,
-                        onTap: () => ref
-                            .read(selectedDmConversationProvider.notifier)
-                            .state = conversation.userId,
+                        onTap: () =>
+                            ref
+                                .read(selectedDmConversationProvider.notifier)
+                                .state = conversation
+                                .userId,
                       );
                     },
                   ),
@@ -196,7 +224,9 @@ class _ConversationRowState extends State<_ConversationRow> {
                 ),
               ),
               PresenceDot(
-                status: conversation.online ? PresenceStatus.online : PresenceStatus.offline,
+                status: conversation.online
+                    ? PresenceStatus.online
+                    : PresenceStatus.offline,
                 size: 8,
               ),
             ],

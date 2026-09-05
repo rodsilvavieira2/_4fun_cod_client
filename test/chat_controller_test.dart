@@ -37,7 +37,7 @@ class FakeSocketService extends SocketService {
 /// da interface cai em `noSuchMethod` (nunca chamado nos testes).
 class FakeServersRepository implements ServersRepository {
   FutureOr<MessagePage> Function(String channelId, {int limit, String? before})?
-      onFetchMessages;
+  onFetchMessages;
   Future<ServerPresence> Function(String serverId)? onFetchPresence;
   final List<String> sentContents = [];
   int fetchCalls = 0;
@@ -76,131 +76,121 @@ class FakeServersRepository implements ServersRepository {
 class FakeServerDetailController extends ServerDetailController {
   @override
   Future<ServerDetail> build(String serverId) async => ServerDetail(
-        server: const Server(id: 's1', name: 'Servidor'),
-        channels: const [],
-        members: [
-          ServerMember(
-            id: 'm1',
-            userId: 'u1',
-            role: 'OWNER',
-            joinedAt: _epoch,
-            user: const User(id: 'u1', name: 'Ana', username: 'ana'),
-          ),
-          ServerMember(
-            id: 'm2',
-            userId: 'u2',
-            role: 'MEMBER',
-            joinedAt: _epoch,
-            user: const User(id: 'u2', name: 'Bia', username: 'bia'),
-          ),
-          ServerMember(
-            id: 'm3',
-            userId: 'u3',
-            role: 'MEMBER',
-            joinedAt: _epoch,
-            user: const User(id: 'u3', name: 'Caio', username: 'caio'),
-          ),
-        ],
-        myRole: 'OWNER',
-      );
+    server: const Server(id: 's1', name: 'Servidor'),
+    channels: const [],
+    members: [
+      ServerMember(
+        id: 'm1',
+        userId: 'u1',
+        role: ServerRole.owner,
+        joinedAt: _epoch,
+        user: const User(id: 'u1', name: 'Ana', username: 'ana'),
+      ),
+      ServerMember(
+        id: 'm2',
+        userId: 'u2',
+        role: ServerRole.member,
+        joinedAt: _epoch,
+        user: const User(id: 'u2', name: 'Bia', username: 'bia'),
+      ),
+      ServerMember(
+        id: 'm3',
+        userId: 'u3',
+        role: ServerRole.member,
+        joinedAt: _epoch,
+        user: const User(id: 'u3', name: 'Caio', username: 'caio'),
+      ),
+    ],
+    myRole: ServerRole.owner,
+  );
 }
 
 final _epoch = DateTime.fromMillisecondsSinceEpoch(0);
 
 ChatMessage _msg(String id, String channelId, String content) => ChatMessage(
-      id: id,
-      channelId: channelId,
-      content: content,
-      author: const User(id: 'u1', name: 'Ana', username: 'ana'),
-      createdAt: DateTime.fromMillisecondsSinceEpoch(0),
-    );
+  id: id,
+  channelId: channelId,
+  content: content,
+  author: const User(id: 'u1', name: 'Ana', username: 'ana'),
+  createdAt: DateTime.fromMillisecondsSinceEpoch(0),
+);
 
 Map<String, dynamic> _messageJson(
   String id,
   String channelId,
   String content,
-) =>
-    {
-      'id': id,
-      'channelId': channelId,
-      'content': content,
-      'createdAt': '2026-08-18T20:00:00.000Z',
-      'author': {'id': 'u1', 'name': 'Ana', 'username': 'ana'},
-    };
+) => {
+  'id': id,
+  'channelId': channelId,
+  'content': content,
+  'createdAt': '2026-08-18T20:00:00.000Z',
+  'author': {'id': 'u1', 'name': 'Ana', 'username': 'ana'},
+};
 
 final _arg = (serverId: 's1', channelId: 'c1');
 
 void main() {
   group('RealtimeEvent.fromJson', () {
     test('message.created', () {
-      final event = RealtimeEvent.fromJson(
-        'message.created',
-        {'channelId': 'c1', 'message': _messageJson('m1', 'c1', 'oi')},
-      );
+      final event = RealtimeEvent.fromJson('message.created', {
+        'channelId': 'c1',
+        'message': _messageJson('m1', 'c1', 'oi'),
+      });
       expect(event, isA<MessageCreatedEvent>());
       expect((event! as MessageCreatedEvent).message.content, 'oi');
     });
 
     test('message.updated', () {
-      final event = RealtimeEvent.fromJson(
-        'message.updated',
-        {'channelId': 'c1', 'message': _messageJson('m1', 'c1', 'editado')},
-      );
+      final event = RealtimeEvent.fromJson('message.updated', {
+        'channelId': 'c1',
+        'message': _messageJson('m1', 'c1', 'editado'),
+      });
       expect(event, isA<MessageUpdatedEvent>());
       expect((event! as MessageUpdatedEvent).message.content, 'editado');
     });
 
     test('message.deleted', () {
-      final event = RealtimeEvent.fromJson(
-        'message.deleted',
-        {'channelId': 'c1', 'messageId': 'm1'},
-      );
+      final event = RealtimeEvent.fromJson('message.deleted', {
+        'channelId': 'c1',
+        'messageId': 'm1',
+      });
       expect(event, isA<MessageDeletedEvent>());
       expect((event! as MessageDeletedEvent).messageId, 'm1');
     });
 
     test('presence.changed ONLINE/OFFLINE', () {
-      final online = RealtimeEvent.fromJson(
-        'presence.changed',
-        {'userId': 'u2', 'status': 'ONLINE'},
-      );
+      final online = RealtimeEvent.fromJson('presence.changed', {
+        'userId': 'u2',
+        'status': 'ONLINE',
+      });
       expect((online! as PresenceChangedEvent).status, PresenceStatus.online);
-      final offline = RealtimeEvent.fromJson(
-        'presence.changed',
-        {'userId': 'u2', 'status': 'OFFLINE'},
-      );
-      expect(
-        (offline! as PresenceChangedEvent).status,
-        PresenceStatus.offline,
-      );
+      final offline = RealtimeEvent.fromJson('presence.changed', {
+        'userId': 'u2',
+        'status': 'OFFLINE',
+      });
+      expect((offline! as PresenceChangedEvent).status, PresenceStatus.offline);
     });
 
     test('channel.created', () {
-      final event = RealtimeEvent.fromJson(
-        'channel.created',
-        {
-          'serverId': 's1',
-          'channel': {'id': 'c2', 'name': 'geral', 'type': 'TEXT'},
-        },
-      );
+      final event = RealtimeEvent.fromJson('channel.created', {
+        'serverId': 's1',
+        'channel': {'id': 'c2', 'name': 'geral', 'type': 'TEXT'},
+      });
       expect(event, isA<ChannelCreatedEvent>());
       expect((event! as ChannelCreatedEvent).channel.name, 'geral');
     });
 
     test('member.removed', () {
-      final event = RealtimeEvent.fromJson(
-        'member.removed',
-        {'serverId': 's1', 'userId': 'u9'},
-      );
+      final event = RealtimeEvent.fromJson('member.removed', {
+        'serverId': 's1',
+        'userId': 'u9',
+      });
       expect(event, isA<MemberRemovedEvent>());
       expect((event! as MemberRemovedEvent).userId, 'u9');
     });
 
     test('evento desconhecido retorna null', () {
-      expect(
-        RealtimeEvent.fromJson('evento.estranho', {'a': 1}),
-        isNull,
-      );
+      expect(RealtimeEvent.fromJson('evento.estranho', {'a': 1}), isNull);
     });
   });
 
@@ -236,43 +226,46 @@ void main() {
         container.read(chatControllerProvider(_arg)).valueOrNull?.messages ??
         const [];
 
-    test('send chama o repository e aplica a mensagem CONFIRMADA (sem otimismo)',
-        () async {
-      repo.onFetchMessages = (channelId, {limit = 50, before}) =>
-          const MessagePage(messages: []);
-      final notifier = await buildChat();
+    test(
+      'send chama o repository e aplica a mensagem CONFIRMADA (sem otimismo)',
+      () async {
+        repo.onFetchMessages = (channelId, {limit = 50, before}) =>
+            const MessagePage(messages: []);
+        final notifier = await buildChat();
 
-      await notifier.send('olá');
-      await pumpEventQueue();
+        await notifier.send('olá');
+        await pumpEventQueue();
 
-      expect(repo.sentContents, ['olá']);
-      // Sem otimismo: nada aparece antes do 201. Após a confirmação, a
-      // mensagem retornada pelo servidor é aplicada localmente (autor fora
-      // da room durante queda de rede não perde a própria mensagem); o
-      // dedupe por id no _applyEvent torna idempotente quando o evento
-      // message.created chegar pelo socket.
-      expect(
-        currentMessages().map((m) => m.id),
-        ['sent-olá'],
-        reason: 'mensagem confirmada aplicada localmente',
-      );
-    });
+        expect(repo.sentContents, ['olá']);
+        // Sem otimismo: nada aparece antes do 201. Após a confirmação, a
+        // mensagem retornada pelo servidor é aplicada localmente (autor fora
+        // da room durante queda de rede não perde a própria mensagem); o
+        // dedupe por id no _applyEvent torna idempotente quando o evento
+        // message.created chegar pelo socket.
+        expect(
+          currentMessages().map((m) => m.id),
+          ['sent-olá'],
+          reason: 'mensagem confirmada aplicada localmente',
+        );
+      },
+    );
 
-    test('build inverte a página (API newest-first → lista oldest-first)',
-        () async {
-      repo.onFetchMessages = (channelId, {limit = 50, before}) =>
-          MessagePage(
-            messages: [_msg('m3', 'c1', 'nova'), _msg('m2', 'c1', 'antiga')],
-            nextCursor: 'm1',
-          );
-      await buildChat();
+    test(
+      'build inverte a página (API newest-first → lista oldest-first)',
+      () async {
+        repo.onFetchMessages = (channelId, {limit = 50, before}) => MessagePage(
+          messages: [_msg('m3', 'c1', 'nova'), _msg('m2', 'c1', 'antiga')],
+          nextCursor: 'm1',
+        );
+        await buildChat();
 
-      expect(currentMessages().map((m) => m.id), ['m2', 'm3']);
-      expect(
-        container.read(chatControllerProvider(_arg)).valueOrNull?.hasMore,
-        isTrue,
-      );
-    });
+        expect(currentMessages().map((m) => m.id), ['m2', 'm3']);
+        expect(
+          container.read(chatControllerProvider(_arg)).valueOrNull?.hasMore,
+          isTrue,
+        );
+      },
+    );
 
     test('eventos durante o fetch ficam em buffer e são aplicados', () async {
       final completer = Completer<MessagePage>();
@@ -283,10 +276,12 @@ void main() {
       final buildFuture = container.read(chatControllerProvider(_arg).future);
 
       // Evento chega enquanto o fetch ainda está em voo (janela do build).
-      socket.push(MessageCreatedEvent(
-        channelId: 'c1',
-        message: _msg('mX', 'c1', 'em voo'),
-      ));
+      socket.push(
+        MessageCreatedEvent(
+          channelId: 'c1',
+          message: _msg('mX', 'c1', 'em voo'),
+        ),
+      );
       await pumpEventQueue();
       completer.complete(MessagePage(messages: [_msg('m1', 'c1', 'base')]));
       await buildFuture;
@@ -300,15 +295,19 @@ void main() {
           const MessagePage(messages: []);
       await buildChat();
 
-      socket.push(MessageCreatedEvent(
-        channelId: 'c1',
-        message: _msg('m1', 'c1', 'primeira'),
-      ));
+      socket.push(
+        MessageCreatedEvent(
+          channelId: 'c1',
+          message: _msg('m1', 'c1', 'primeira'),
+        ),
+      );
       await pumpEventQueue();
-      socket.push(MessageCreatedEvent(
-        channelId: 'c1',
-        message: _msg('m1', 'c1', 'primeira'),
-      ));
+      socket.push(
+        MessageCreatedEvent(
+          channelId: 'c1',
+          message: _msg('m1', 'c1', 'primeira'),
+        ),
+      );
       await pumpEventQueue();
 
       expect(currentMessages().length, 1, reason: 'dedupe por id');
@@ -320,10 +319,12 @@ void main() {
           const MessagePage(messages: []);
       await buildChat();
 
-      socket.push(MessageCreatedEvent(
-        channelId: 'outro-canal',
-        message: _msg('mX', 'outro-canal', 'fora'),
-      ));
+      socket.push(
+        MessageCreatedEvent(
+          channelId: 'outro-canal',
+          message: _msg('mX', 'outro-canal', 'fora'),
+        ),
+      );
       await pumpEventQueue();
 
       expect(currentMessages(), isEmpty);
@@ -333,16 +334,20 @@ void main() {
       repo.onFetchMessages = (channelId, {limit = 50, before}) =>
           const MessagePage(messages: []);
       await buildChat();
-      socket.push(MessageCreatedEvent(
-        channelId: 'c1',
-        message: _msg('m1', 'c1', 'original'),
-      ));
+      socket.push(
+        MessageCreatedEvent(
+          channelId: 'c1',
+          message: _msg('m1', 'c1', 'original'),
+        ),
+      );
       await pumpEventQueue();
 
-      socket.push(MessageUpdatedEvent(
-        channelId: 'c1',
-        message: _msg('m1', 'c1', 'editada'),
-      ));
+      socket.push(
+        MessageUpdatedEvent(
+          channelId: 'c1',
+          message: _msg('m1', 'c1', 'editada'),
+        ),
+      );
       await pumpEventQueue();
 
       expect(currentMessages().length, 1);
@@ -353,10 +358,9 @@ void main() {
       repo.onFetchMessages = (channelId, {limit = 50, before}) =>
           const MessagePage(messages: []);
       await buildChat();
-      socket.push(MessageCreatedEvent(
-        channelId: 'c1',
-        message: _msg('m1', 'c1', 'some'),
-      ));
+      socket.push(
+        MessageCreatedEvent(channelId: 'c1', message: _msg('m1', 'c1', 'some')),
+      );
       await pumpEventQueue();
 
       socket.push(const MessageDeletedEvent(channelId: 'c1', messageId: 'm1'));
@@ -396,24 +400,22 @@ void main() {
     });
 
     test('reconexão dispara resync que mescla mensagens novas', () async {
-      repo.onFetchMessages = (channelId, {limit = 50, before}) =>
-          MessagePage(
-            messages: [_msg('m3', 'c1', 'nova'), _msg('m2', 'c1', 'antiga')],
-            nextCursor: 'm1',
-          );
+      repo.onFetchMessages = (channelId, {limit = 50, before}) => MessagePage(
+        messages: [_msg('m3', 'c1', 'nova'), _msg('m2', 'c1', 'antiga')],
+        nextCursor: 'm1',
+      );
       await buildChat();
       expect(currentMessages().map((m) => m.id), ['m2', 'm3']);
 
       // Durante a queda chegaram m4 e m5 (mais novas que as em tela).
-      repo.onFetchMessages = (channelId, {limit = 50, before}) =>
-          MessagePage(
-            messages: [
-              _msg('m5', 'c1', 'mais nova'),
-              _msg('m4', 'c1', 'nova'),
-              _msg('m3', 'c1', 'nova'),
-              _msg('m2', 'c1', 'antiga'),
-            ],
-          );
+      repo.onFetchMessages = (channelId, {limit = 50, before}) => MessagePage(
+        messages: [
+          _msg('m5', 'c1', 'mais nova'),
+          _msg('m4', 'c1', 'nova'),
+          _msg('m3', 'c1', 'nova'),
+          _msg('m2', 'c1', 'antiga'),
+        ],
+      );
       socket.pushReconnected();
       await pumpEventQueue();
       await pumpEventQueue();
@@ -444,8 +446,7 @@ void main() {
 
     Set<String> online() => container.read(presenceProvider('s1'));
 
-    test('OFFLINE durante o fetch não é ressuscitado pelo snapshot',
-        () async {
+    test('OFFLINE durante o fetch não é ressuscitado pelo snapshot', () async {
       final completer = Completer<ServerPresence>();
       repo.onFetchPresence = (serverId) => completer.future;
       final sub = container.listen(presenceProvider('s1'), (_, _) {});
@@ -455,10 +456,12 @@ void main() {
 
       // Evento OFFLINE chega enquanto o snapshot REST está em voo (escopo
       // de membros já carregado via serverDetailProvider fake).
-      socket.push(const PresenceChangedEvent(
-        userId: 'u2',
-        status: PresenceStatus.offline,
-      ));
+      socket.push(
+        const PresenceChangedEvent(
+          userId: 'u2',
+          status: PresenceStatus.offline,
+        ),
+      );
       await pumpEventQueue();
       completer.complete(const ServerPresence(online: {'u1', 'u2'}));
       await pumpEventQueue();
@@ -475,10 +478,9 @@ void main() {
       await pumpEventQueue();
       await pumpEventQueue();
 
-      socket.push(const PresenceChangedEvent(
-        userId: 'u3',
-        status: PresenceStatus.online,
-      ));
+      socket.push(
+        const PresenceChangedEvent(userId: 'u3', status: PresenceStatus.online),
+      );
       await pumpEventQueue();
       completer.complete(const ServerPresence(online: {'u1'}));
       await pumpEventQueue();
