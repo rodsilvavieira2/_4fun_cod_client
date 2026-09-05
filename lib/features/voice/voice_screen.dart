@@ -759,7 +759,7 @@ class _Controls extends StatelessWidget {
               tooltip: 'Sair do canal de voz',
               style: IconButton.styleFrom(
                 minimumSize: const Size.square(48),
-                backgroundColor: AppTokens.accentPurple,
+                backgroundColor: AppTokens.accentDanger,
                 foregroundColor: Colors.white,
               ),
               icon: const Icon(Icons.call_end),
@@ -782,8 +782,12 @@ class _Controls extends StatelessWidget {
     return IconButton.filledTonal(
       onPressed: onPressed,
       tooltip: tooltip,
-      style: IconButton.styleFrom(minimumSize: const Size.square(48)),
-      icon: Icon(icon, color: active ? activeColor : AppTokens.textPrimary),
+      style: IconButton.styleFrom(
+        minimumSize: const Size.square(48),
+        backgroundColor: active ? activeColor : null,
+        foregroundColor: AppTokens.textPrimary,
+      ),
+      icon: Icon(icon),
     );
   }
 }
