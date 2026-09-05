@@ -654,7 +654,9 @@ class _Controls extends StatelessWidget {
       );
     }
 
-    final theme = Theme.of(context);
+    // Um controle ativo executa a ação inversa ao ser pressionado (parar).
+    // O vermelho deixa isso inequívoco no dock de stream/voz.
+    const stopActionColor = Color(0xFFC62828);
     return Material(
       color: Colors.transparent,
       child: Container(
@@ -671,30 +673,27 @@ class _Controls extends StatelessWidget {
           runSpacing: 8,
           children: [
             _mediaToggleButton(
-              theme: theme,
               icon: state.isMicrophoneEnabled ? Icons.mic : Icons.mic_off,
               active: state.isMicrophoneEnabled,
-              activeColor: theme.colorScheme.primary,
+              activeColor: stopActionColor,
               tooltip: state.isMicrophoneEnabled
                   ? 'Desativar microfone'
                   : 'Ativar microfone',
               onPressed: onToggleMicrophone,
             ),
             _mediaToggleButton(
-              theme: theme,
               icon: state.isCameraEnabled ? Icons.videocam : Icons.videocam_off,
               active: state.isCameraEnabled,
-              activeColor: AppTokens.accentGreen,
+              activeColor: stopActionColor,
               tooltip: state.isCameraEnabled
                   ? 'Desativar câmera'
                   : 'Ativar câmera',
               onPressed: onToggleCamera,
             ),
             _mediaToggleButton(
-              theme: theme,
               icon: Icons.present_to_all,
               active: state.isScreenSharing,
-              activeColor: AppTokens.accentPurple,
+              activeColor: stopActionColor,
               tooltip: state.isScreenSharing
                   ? 'Parar compartilhamento'
                   : 'Compartilhar tela',
@@ -702,10 +701,7 @@ class _Controls extends StatelessWidget {
             ),
             PopupMenuButton<String>(
               tooltip: 'Mais opções de voz',
-              icon: const Icon(
-                Icons.more_horiz,
-                color: AppTokens.textPrimary,
-              ),
+              icon: const Icon(Icons.more_horiz, color: AppTokens.textPrimary),
               onSelected: (value) {
                 switch (value) {
                   case 'quality':
@@ -780,7 +776,6 @@ class _Controls extends StatelessWidget {
   /// Botão circular de mídia: o dock usa o mesmo controle em qualquer
   /// largura, quebrando linhas só quando a janela fica estreita.
   Widget _mediaToggleButton({
-    required ThemeData theme,
     required IconData icon,
     required bool active,
     required Color activeColor,
@@ -791,10 +786,7 @@ class _Controls extends StatelessWidget {
       onPressed: onPressed,
       tooltip: tooltip,
       style: IconButton.styleFrom(minimumSize: const Size.square(48)),
-      icon: Icon(
-        icon,
-        color: active ? activeColor : AppTokens.textPrimary,
-      ),
+      icon: Icon(icon, color: active ? activeColor : AppTokens.textPrimary),
     );
   }
 }
