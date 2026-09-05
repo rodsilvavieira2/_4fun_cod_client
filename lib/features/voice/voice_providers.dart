@@ -221,6 +221,11 @@ class VoiceController
   StreamSubscription<RtcEvent>? _eventsSub;
   bool _disposed = false;
 
+  /// Geração do join em voo: [leave] incrementa para cancelar um [join]
+  /// anterior ainda aguardando token/conexão. Sem isso, o connect tardio
+  /// criaria uma sala órfã depois de o usuário já ter saído.
+  int _joinGeneration = 0;
+
   /// Dedupe de qualidade por participante remoto: o tile reaplica a
   /// qualidade ao assumir/mudar de papel; o mapa evita chamadas repetidas
   /// de [RtcService.setQuality] para o mesmo par (id, qualidade).
@@ -278,10 +283,23 @@ class VoiceController
       selectedCameraId: null,
     );
     try {
-      await ref.read(voiceControlsProvider.notifier).ensureInitialized();
-      await ref.read(audioDevicesProvider.notifier).ensureInitialized();
-      final info = await _freshJoinInfo();
-      await _connect(info);
+      // Segura o provider vivo durante o join assíncrono: no primeiro clique
+      // ainda não há nenhum `watch` ativo e o autoDispose descartaria esta
+      // instância no frame seguinte — o connect tardio criaria uma sala órfã
+      // enquanto a UI já observa uma instância nova em `idle`.
+      final keepAlive = ref.keepAlive();
+      final generation = ++_joinGeneration;
+      try {
+        await ref.read(voiceControlsProvider.notifier).ensureInitialized();
+        if (_disposed || generation != _joinGeneration) return;
+        await ref.read(audioDevicesProvider.notifier).ensureInitialized();
+        if (_disposed || generation != _joinGeneration) return;
+        final info = await _freshJoinInfo();
+        if (_disposed || generation != _joinGeneration) return;
+        await _connect(info, generation);
+      } finally {
+        keepAlive.close();
+      }
     } catch (_) {
       if (_disposed) return;
       state = state.copyWith(
@@ -293,6 +311,9 @@ class VoiceController
 
   /// Sai do canal de voz e volta para `idle`.
   Future<void> leave() async {
+    // Cancela um join em voo: sem isso, o connect tardio criaria uma sala
+    // órfã depois de o usuário já ter saído.
+    ++_joinGeneration;
     await ref.read(rtcServiceProvider).disconnect();
     await ref.read(voiceControlsProvider.notifier).resetPushToTalkPress();
     if (_disposed) return;
@@ -642,9 +663,12 @@ class VoiceController
   /// falhar, refaz o `/join` uma vez e reconecta com token fresco (janela
   /// POST→handshake pode estourar o token; o `tokenGenerator` do contrato
   /// cobre reconexões futuras do mesmo jeito).
-  Future<void> _connect(VoiceJoinInfo info) async {
+  Future<void> _connect(VoiceJoinInfo info, int generation) async {
     final rtc = ref.read(rtcServiceProvider);
     final log = ref.read(appLoggerProvider);
+    // Instância descartada (ou join cancelado por leave) não pode tocar o
+    // serviço compartilhado: o connect aqui criaria uma sala órfã.
+    if (_disposed || generation != _joinGeneration) return;
     try {
       await rtc.connect(
         info.livekitUrl,
@@ -660,9 +684,10 @@ class VoiceController
         stackTrace: st,
         tag: 'voice',
       );
-      if (_disposed) return;
+      if (_disposed || generation != _joinGeneration) return;
       try {
         final fresh = await _freshJoinInfo();
+        if (_disposed || generation != _joinGeneration) return;
         await rtc.connect(
           fresh.livekitUrl,
           fresh.token,
@@ -675,7 +700,7 @@ class VoiceController
           stackTrace: st2,
           tag: 'voice',
         );
-        if (_disposed) return;
+        if (_disposed || generation != _joinGeneration) return;
         state = state.copyWith(
           status: VoiceSessionStatus.error,
           errorMessage: 'Não foi possível entrar no canal de voz.',
@@ -683,7 +708,12 @@ class VoiceController
         return;
       }
     }
-    if (_disposed) return;
+    if (_disposed || generation != _joinGeneration) {
+      // Conectou após o descarte/cancelamento: desfaz na hora para não
+      // deixar uma sala órfã no LiveKit.
+      await rtc.disconnect();
+      return;
+    }
     // O serviço já publicou o mic na preferência global restaurada antes do
     // connect; câmera continua OFF e só liga pelo respectivo botão.
     final controls = ref.read(voiceControlsProvider);

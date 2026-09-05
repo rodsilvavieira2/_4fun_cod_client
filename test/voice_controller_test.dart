@@ -425,6 +425,62 @@ void main() {
       },
     );
 
+    test(
+      'leave durante join em voo cancela o connect (sem sala órfã)',
+      () async {
+        final tokenGate = Completer<VoiceJoinInfo>();
+        repo.onJoinVoice = (_, _) => tokenGate.future;
+        final notifier = buildVoice();
+
+        final joining = notifier.join();
+        await pumpEventQueue(); // join parado aguardando o token
+        await notifier.leave();
+        tokenGate.complete(_joinInfo);
+        await joining;
+        await settle();
+
+        expect(
+          rtc.connections,
+          isEmpty,
+          reason: 'connect tardio após leave criaria sala órfã',
+        );
+        expect(state().status, VoiceSessionStatus.idle);
+      },
+    );
+
+    test(
+      'join com watch chegando no meio (rebuild) termina connected sem órfã',
+      () async {
+        final tokenGate = Completer<VoiceJoinInfo>();
+        repo.onJoinVoice = (_, _) => tokenGate.future;
+        // Só read, sem watch — como o primeiro clique antes do rebuild.
+        final notifier = container.read(
+          voiceControllerProvider(_arg).notifier,
+        );
+
+        final joining = notifier.join();
+        await pumpEventQueue(); // autoDispose descartaria aqui sem keepAlive
+        // Rebuild chegou: a UI passa a observar a MESMA instância.
+        final sub = container.listen(voiceControllerProvider(_arg), (_, _) {});
+        tokenGate.complete(_joinInfo);
+        await joining;
+        await settle();
+
+        expect(rtc.connections.length, 1);
+        expect(
+          rtc.disconnectCalls,
+          0,
+          reason: 'nenhum dispose-disconnect concorrendo com o connect',
+        );
+        expect(
+          container.read(voiceControllerProvider(_arg)).status,
+          VoiceSessionStatus.connected,
+          reason: 'a instância observada é a que conectou (sem órfã)',
+        );
+        sub.close();
+      },
+    );
+
     test('leave desconecta e volta para idle', () async {
       repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
       final notifier = buildVoice();

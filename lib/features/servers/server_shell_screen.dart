@@ -91,6 +91,23 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
       if (channel.type == ChannelType.voice) {
         if (_activeVoiceChannelId != channelId) {
           setState(() => _activeVoiceChannelId = channelId);
+          // Pós-frame: o `watch` do provider só existe após o rebuild. Sem
+          // isso, o join rodaria numa instância sem listeners que o
+          // autoDispose descartaria (sala órfã — ver VoiceController.join).
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted || _activeVoiceChannelId != channelId) return;
+            unawaited(
+              ref
+                  .read(
+                    voiceControllerProvider((
+                      serverId: widget.serverId,
+                      channelId: channelId,
+                    )).notifier,
+                  )
+                  .join(),
+            );
+          });
+          return;
         }
         final controller = ref.read(
           voiceControllerProvider((
@@ -136,14 +153,23 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
     }
     if (!mounted || epoch != _voiceSwitchEpoch) return;
     setState(() => _activeVoiceChannelId = channelId);
-    await ref
-        .read(
-          voiceControllerProvider((
-            serverId: widget.serverId,
-            channelId: channelId,
-          )).notifier,
-        )
-        .join();
+    // Pós-frame: o `watch` do provider só existe após o rebuild. Iniciar o
+    // join aqui (só com `read`) deixaria o autoDispose sem listeners e a
+    // instância seria descartada no frame seguinte, órfã da sala LiveKit.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || epoch != _voiceSwitchEpoch) return;
+      if (_activeVoiceChannelId != channelId) return;
+      unawaited(
+        ref
+            .read(
+              voiceControllerProvider((
+                serverId: widget.serverId,
+                channelId: channelId,
+              )).notifier,
+            )
+            .join(),
+      );
+    });
   }
 
   void _leaveActiveVoice() {
