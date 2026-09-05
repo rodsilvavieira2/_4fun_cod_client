@@ -702,7 +702,10 @@ class _Controls extends StatelessWidget {
             ),
             PopupMenuButton<String>(
               tooltip: 'Mais opções de voz',
-              icon: const Icon(Icons.more_horiz),
+              icon: const Icon(
+                Icons.more_horiz,
+                color: AppTokens.textPrimary,
+              ),
               onSelected: (value) {
                 switch (value) {
                   case 'quality':
@@ -790,7 +793,7 @@ class _Controls extends StatelessWidget {
       style: IconButton.styleFrom(minimumSize: const Size.square(48)),
       icon: Icon(
         icon,
-        color: active ? activeColor : theme.colorScheme.onSurfaceVariant,
+        color: active ? activeColor : AppTokens.textPrimary,
       ),
     );
   }
