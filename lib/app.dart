@@ -31,6 +31,7 @@ class App extends ConsumerWidget {
     return PushToTalkListener(
       child: MaterialApp.router(
         title: '4fun Cod',
+        debugShowCheckedModeBanner: false,
         // Design system dark-only (Discord + Vercel dark/Geist).
         theme: theme4funCod,
         routerConfig: router,

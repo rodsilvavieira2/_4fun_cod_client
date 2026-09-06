@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/ui/ui.dart';
 import '../../shared/models/message.dart';
 import '../../shared/models/user.dart';
+import 'chat_grouping.dart';
 import 'chat_providers.dart';
 
 /// Chat de um canal de texto estilo macOS / Vercel:
@@ -214,21 +215,76 @@ class _MessageListState extends State<_MessageList> {
           );
         }
         final message = messages[messages.length - 1 - index];
-        return _MessageTile(
-          message: message,
-          showHeader: _shouldShowHeader(messages, index),
+        // A lista interna é oldest-first e a UI usa reverse:true, então o
+        // índice visual é invertido. O agrupamento compara cada mensagem com
+        // a anterior CRONOLÓGICA (mais antiga), não com a mais nova seguinte.
+        final chronologicalIndex = messages.length - 1 - index;
+        final previous = chronologicalIndex > 0
+            ? messages[chronologicalIndex - 1]
+            : null;
+        final showDayDivider = ChatGrouping.shouldShowDayDivider(
+          current: message,
+          previous: previous,
+        );
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (showDayDivider) _DayDivider(time: message.createdAt),
+            _MessageTile(
+              message: message,
+              showHeader: ChatGrouping.shouldStartNewGroup(
+                current: message,
+                previous: previous,
+              ),
+            ),
+          ],
         );
       },
     );
   }
+}
 
-  bool _shouldShowHeader(List<ChatMessage> messages, int index) {
-    if (index == 0) return true;
-    final message = messages[messages.length - 1 - index];
-    final newer = messages[messages.length - index];
-    if (newer.author.id != message.author.id) return true;
-    return newer.createdAt.difference(message.createdAt) >
-        const Duration(minutes: 5);
+class _DayDivider extends StatelessWidget {
+  const _DayDivider({required this.time});
+
+  final DateTime time;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Row(
+        children: [
+          const Expanded(child: Divider(color: AppTokens.borderHairline)),
+          const SizedBox(width: 12),
+          Text(
+            _formatDay(time),
+            style: const TextStyle(
+              fontFamily: 'Geist',
+              fontSize: 11.5,
+              fontWeight: FontWeight.w600,
+              color: AppTokens.textMuted,
+            ),
+          ),
+          const SizedBox(width: 12),
+          const Expanded(child: Divider(color: AppTokens.borderHairline)),
+        ],
+      ),
+    );
+  }
+
+  String _formatDay(DateTime time) {
+    final local = time.toLocal();
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final day = DateTime(local.year, local.month, local.day);
+    final diff = today.difference(day).inDays;
+    if (diff == 0) return 'Hoje';
+    if (diff == 1) return 'Ontem';
+    final dd = local.day.toString().padLeft(2, '0');
+    final mo = local.month.toString().padLeft(2, '0');
+    return '$dd/$mo/${local.year}';
   }
 }
 
@@ -249,87 +305,127 @@ class _MessageTileState extends State<_MessageTile> {
   Widget build(BuildContext context) {
     final author = widget.message.author;
     final authorColorIndex = author.id.codeUnits.fold(0, (a, b) => a + b) % 4;
+    final edited =
+        widget.message.updatedAt != null &&
+        widget.message.updatedAt!.isAfter(widget.message.createdAt);
 
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 120),
+        // Hover sutil na linha inteira, sem raio de "cartão": o fluxo
+        // contínuo estilo Discord não quebra o grupo visualmente.
         decoration: BoxDecoration(
           color: _hovered ? AppTokens.chatRowHover : Colors.transparent,
-          borderRadius: BorderRadius.circular(AppRadius.sm),
         ),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (widget.showHeader) ...[
-              const SizedBox(height: 8),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      color: AppTokens.surface2,
-                      borderRadius: BorderRadius.circular(AppRadius.sm),
-                      border: Border.all(
-                        color: AppTokens.borderHairline,
-                        width: 1,
+        child: Semantics(
+          label:
+              '${author.name}, ${_formatTime(widget.message.createdAt)}: ${widget.message.content}${edited ? ' (editada)' : ''}',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (widget.showHeader) ...[
+                const SizedBox(height: 8),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: AppTokens.surface2,
+                        borderRadius: BorderRadius.circular(AppRadius.sm),
+                        border: Border.all(
+                          color: AppTokens.borderHairline,
+                          width: 1,
+                        ),
+                      ),
+                      alignment: Alignment.center,
+                      clipBehavior: Clip.antiAlias,
+                      child: author.avatarUrl != null
+                          ? Image.network(
+                              author.avatarUrl!,
+                              width: 36,
+                              height: 36,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, _, _) =>
+                                  _avatarInitial(author),
+                            )
+                          : _avatarInitial(author),
+                    ),
+                    const SizedBox(width: 12),
+                    Flexible(
+                      child: Text(
+                        author.name,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontFamily: 'Geist',
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: AppTokens.authorColors[authorColorIndex],
+                        ),
                       ),
                     ),
-                    alignment: Alignment.center,
-                    clipBehavior: Clip.antiAlias,
-                    child: author.avatarUrl != null
-                        ? Image.network(
-                            author.avatarUrl!,
-                            width: 36,
-                            height: 36,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, _, _) => _avatarInitial(author),
+                    const SizedBox(width: 8),
+                    Text(
+                      _formatTime(widget.message.createdAt),
+                      style: const TextStyle(
+                        fontFamily: 'Geist Mono',
+                        fontSize: 11,
+                        color: AppTokens.textMuted,
+                      ),
+                    ),
+                    if (edited) ...[
+                      const SizedBox(width: 6),
+                      const Text(
+                        '(editada)',
+                        style: TextStyle(
+                          fontFamily: 'Geist',
+                          fontSize: 11,
+                          color: AppTokens.textMuted,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 4),
+              ],
+              // Linha de conteúdo: avatar ocupa 36 + gap 12 = 48 de recuo.
+              // Mensagens compactas mostram o horário curto no hover.
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: 48,
+                    child: _hovered && !widget.showHeader
+                        ? Text(
+                            _formatCompactTime(widget.message.createdAt),
+                            textAlign: TextAlign.left,
+                            style: const TextStyle(
+                              fontFamily: 'Geist Mono',
+                              fontSize: 10.5,
+                              color: AppTokens.textMuted,
+                            ),
                           )
-                        : _avatarInitial(author),
+                        : null,
                   ),
-                  const SizedBox(width: 12),
-                  Flexible(
+                  Expanded(
                     child: Text(
-                      author.name,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
+                      widget.message.content,
+                      style: const TextStyle(
                         fontFamily: 'Geist',
                         fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: AppTokens.authorColors[authorColorIndex],
+                        height: 1.45,
+                        color: AppTokens.textPrimary,
                       ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    _formatTime(widget.message.createdAt),
-                    style: const TextStyle(
-                      fontFamily: 'Geist Mono',
-                      fontSize: 11,
-                      color: AppTokens.textMuted,
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 4),
             ],
-            Padding(
-              padding: const EdgeInsets.only(left: 48),
-              child: Text(
-                widget.message.content,
-                style: const TextStyle(
-                  fontFamily: 'Geist',
-                  fontSize: 14,
-                  height: 1.45,
-                  color: AppTokens.textPrimary,
-                ),
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -360,6 +456,13 @@ class _MessageTileState extends State<_MessageTile> {
     final dd = local.day.toString().padLeft(2, '0');
     final mo = local.month.toString().padLeft(2, '0');
     return '$dd/$mo/${local.year} $hh:$mm';
+  }
+
+  String _formatCompactTime(DateTime time) {
+    final local = time.toLocal();
+    final hh = local.hour.toString().padLeft(2, '0');
+    final mm = local.minute.toString().padLeft(2, '0');
+    return '$hh:$mm';
   }
 }
 

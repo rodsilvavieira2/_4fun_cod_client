@@ -6,6 +6,7 @@ import '../../core/websocket/realtime_event.dart';
 import '../../core/websocket/socket_service.dart';
 import '../../shared/models/message.dart';
 import '../servers/servers_providers.dart';
+import 'chat_grouping.dart';
 
 /// Estado do chat de um canal: mensagens carregadas (mais antigas primeiro)
 /// + paginação. `firstMessageId` é o cursor do `loadMore` (mensagem mais
@@ -112,7 +113,10 @@ class ChatController
 
     // A API retorna as mais recentes primeiro; a lista interna é oldest-first
     // (índice 0 = mais antiga, compatível com o scroll reverso da UI).
-    var messages = page.messages.reversed.toList();
+    // Ordenação determinística por (createdAt, id): a API/paginação pode
+    // devolver rajadas fora de ordem e isso quebrava o agrupamento visual.
+    var messages = page.messages.reversed.toList()
+      ..sort(ChatGrouping.compare);
     if (_disposed) return ChatState(messages: messages, hasMore: false);
 
     // Publica o estado base e então aplica o buffer de eventos que chegaram
@@ -167,9 +171,11 @@ class ChatController
         for (final message in page.messages.reversed)
           if (!existingIds.contains(message.id)) message,
       ];
+      final merged = [...older, ...next.messages]
+        ..sort(ChatGrouping.compare);
       state = AsyncData(
         next.copyWith(
-          messages: [...older, ...next.messages],
+          messages: merged,
           hasMore: page.nextCursor != null,
           loadingMore: false,
         ),
@@ -229,9 +235,11 @@ class ChatController
       case MessageCreatedEvent(:final channelId, :final message):
         if (channelId != arg.channelId) return;
         if (current.messages.any((m) => m.id == message.id)) return; // dedupe
-        state = AsyncData(
-          current.copyWith(messages: [...current.messages, message]),
-        );
+        // Inserção ordenada por (createdAt, id): eventos realtime podem
+        // chegar fora de ordem; append puro quebrava o agrupamento.
+        final merged = [...current.messages, message]
+          ..sort(ChatGrouping.compare);
+        state = AsyncData(current.copyWith(messages: merged));
       case MessageUpdatedEvent(:final channelId, :final message):
         if (channelId != arg.channelId) return;
         state = AsyncData(
