@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../config/app_config.dart';
 import '../logging/app_logger.dart';
 import '../logging/dio_logging_interceptor.dart';
+import '../telemetry/telemetry_service.dart';
 
 /// Provider do cliente HTTP compartilhado (dio).
 ///
@@ -13,7 +14,10 @@ import '../logging/dio_logging_interceptor.dart';
 /// é anexado aqui (primeiro da cadeia) para logar TODAS as requisições.
 final apiClientProvider = Provider<Dio>((ref) {
   final dio = Dio(_apiBaseOptions(ref.watch(appConfigProvider)));
-  dio.interceptors.add(DioLoggingInterceptor(ref.watch(appLoggerProvider)));
+  dio.interceptors.add(DioLoggingInterceptor(
+      ref.watch(appLoggerProvider),
+      ref.watch(telemetryServiceProvider),
+    ));
   ref.onDispose(dio.close);
   return dio;
 });
@@ -26,7 +30,10 @@ final apiClientProvider = Provider<Dio>((ref) {
 /// fila de interceptor não tem timeout). Também logado (sem headers).
 final apiBareClientProvider = Provider<Dio>((ref) {
   final dio = Dio(_apiBaseOptions(ref.watch(appConfigProvider)));
-  dio.interceptors.add(DioLoggingInterceptor(ref.watch(appLoggerProvider)));
+  dio.interceptors.add(DioLoggingInterceptor(
+      ref.watch(appLoggerProvider),
+      ref.watch(telemetryServiceProvider),
+    ));
   ref.onDispose(dio.close);
   return dio;
 });

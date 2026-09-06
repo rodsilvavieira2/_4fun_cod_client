@@ -17,6 +17,7 @@ import '../../features/splash/splash_screen.dart';
 import '../auth/auth_controller.dart';
 import '../auth/auth_state.dart';
 import '../logging/app_logger.dart';
+import '../telemetry/telemetry_service.dart';
 
 /// Observer de navegação: loga todas as transições de rota (diagnóstico).
 class RouterLogObserver extends NavigatorObserver {
@@ -70,10 +71,14 @@ class GoRouterRefreshStream extends ChangeNotifier {
 /// - Authenticated → `/` (home); rotas de auth redirecionam para a home.
 final routerProvider = Provider<GoRouter>((ref) {
   final refreshStream = GoRouterRefreshStream(ref);
+  final telemetry = ref.watch(telemetryServiceProvider);
   final router = GoRouter(
     initialLocation: '/',
     refreshListenable: refreshStream,
-    observers: [RouterLogObserver(ref.watch(appLoggerProvider))],
+    observers: [
+      RouterLogObserver(ref.watch(appLoggerProvider)),
+      telemetry.navigatorObserver(),
+    ],
     redirect: (context, state) {
       final authState = ref.read(authControllerProvider).valueOrNull;
       final location = state.matchedLocation;

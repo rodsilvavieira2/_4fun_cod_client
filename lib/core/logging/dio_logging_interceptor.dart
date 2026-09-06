@@ -1,5 +1,7 @@
+import 'package:dartastic_opentelemetry/dartastic_opentelemetry.dart';
 import 'package:dio/dio.dart';
 
+import '../telemetry/telemetry_service.dart';
 import 'app_logger.dart';
 
 /// Interceptor de log de todas as requisições HTTP do client.
@@ -8,10 +10,15 @@ import 'app_logger.dart';
 /// **nunca** headers (Authorization), bodies de auth ou dados sensíveis.
 /// Útil para diagnóstico: acompanhar exatamente o que o client chama e o
 /// que responde, sem expor segredos.
+///
+/// Com telemetria ligada (`OTEL_ENABLED=true`), abre um span OTel por
+/// request (fechado na resposta/erro) — sem telemetria, comportamento
+/// idêntico ao anterior (só log local).
 class DioLoggingInterceptor extends Interceptor {
-  DioLoggingInterceptor(this._log);
+  DioLoggingInterceptor(this._log, [this._telemetry]);
 
   final AppLogger _log;
+  final TelemetryService? _telemetry;
   static const _tag = 'http';
 
   static final _sensitivePaths = <String>[
@@ -28,6 +35,16 @@ class DioLoggingInterceptor extends Interceptor {
     options.extra['_logStart'] = DateTime.now();
     // Path já inclui o prefixo /api/v1 quando resolvido; loga o path cru.
     _log.d('→ ${options.method} ${options.path}', tag: _tag);
+    final telemetry = _telemetry;
+    if (telemetry != null) {
+      options.extra['_otelSpan'] = telemetry.startSpan(
+        '${options.method} ${options.path}',
+        attributes: {
+          'http.method': options.method,
+          'http.path': options.path,
+        },
+      );
+    }
     handler.next(options);
   }
 
@@ -44,6 +61,7 @@ class DioLoggingInterceptor extends Interceptor {
       '← ${response.statusCode} ${response.requestOptions.path}$elapsed',
       tag: _tag,
     );
+    _endSpan(response.requestOptions);
     handler.next(response);
   }
 
@@ -71,6 +89,12 @@ class DioLoggingInterceptor extends Interceptor {
       '${body == null ? '' : ' body=$body'}',
       tag: _tag,
     );
+    _endSpan(options, error: err);
     handler.next(err);
+  }
+
+  void _endSpan(RequestOptions options, {Object? error}) {
+    final span = options.extra.remove('_otelSpan') as Span?;
+    _telemetry?.endSpan(span, error: error);
   }
 }
