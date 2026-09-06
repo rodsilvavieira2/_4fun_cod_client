@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/api/api_exception.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/ui/invite_dialog.dart';
 import '../../core/ui/settings_modal.dart';
@@ -17,6 +18,7 @@ import '../voice/voice_screen.dart';
 import '../voice/voice_providers.dart';
 import 'members_panel.dart';
 import 'server_rail.dart';
+import 'server_settings_modal.dart';
 import 'servers_providers.dart';
 import 'user_panel.dart';
 
@@ -42,6 +44,7 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
   String? _activeVoiceChannelId;
   int _voiceSwitchEpoch = 0;
   bool _didSelectInitialChannel = false;
+  bool _leavingServer = false;
 
   /// Painel de membros lateral (desktop): alternável pela ação do header.
   bool _showMembers = true;
@@ -194,7 +197,8 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
   Widget build(BuildContext context) {
     final detail = ref.watch(serverDetailProvider(widget.serverId));
     final channels = ref.watch(channelsControllerProvider(widget.serverId));
-    final canManageServer = detail.valueOrNull?.canManageServer ?? false;
+    final canManageServer =
+        !detail.isLoading && (detail.valueOrNull?.canManageServer ?? false);
     final channelList = channels.valueOrNull ?? const <ServerChannel>[];
     final selectedChannel = channelList
         .where((c) => c.id == _selectedChannelId)
@@ -256,6 +260,7 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
                     ? _channelContent(
                         context,
                         selectedChannel,
+                        canManageServer: canManageServer,
                         onBack: () {
                           setState(() => _selectedChannelId = null);
                         },
@@ -322,7 +327,13 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
           ),
         ),
         const VerticalDivider(width: 1),
-        Expanded(child: _channelContent(context, selectedChannel)),
+        Expanded(
+          child: _channelContent(
+            context,
+            selectedChannel,
+            canManageServer: canManageServer,
+          ),
+        ),
         if (_showMembers && canDockMembers) ...[
           const VerticalDivider(width: 1),
           MembersPanel(serverId: widget.serverId),
@@ -363,9 +374,12 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
                       ref.invalidate(serverDetailProvider(widget.serverId)),
                 ),
               ),
-              data: (_) => ChannelList(
+              data: (serverDetail) => ChannelList(
                 serverId: widget.serverId,
                 canManageServer: canManageServer,
+                canLeaveServer:
+                    serverDetail.myRole != null &&
+                    !serverDetail.myRole!.isOwner,
                 selectedChannelId: _selectedChannelId,
                 activeVoiceChannelId: activeVoiceChannel?.id,
                 activeVoiceParticipants:
@@ -375,12 +389,15 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
                     showInviteDialog(context, serverId: widget.serverId),
                 onOpenMembers: () =>
                     context.push('/servers/${widget.serverId}/members'),
-                onOpenSettings: () => _openSettings(context),
+                onOpenSettings: canManageServer
+                    ? () => _openServerSettings(context)
+                    : null,
+                onLeaveServer: () => unawaited(_leaveServer()),
               ),
             ),
           ),
           UserPanel(
-            onOpenSettings: () => _openSettings(context),
+            onOpenSettings: () => _openUserSettings(context),
             voiceArg: activeVoiceChannel == null
                 ? null
                 : (serverId: widget.serverId, channelId: activeVoiceChannel.id),
@@ -396,6 +413,7 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
   Widget _channelContent(
     BuildContext context,
     ServerChannel? selectedChannel, {
+    required bool canManageServer,
     VoidCallback? onBack,
   }) {
     final channel = selectedChannel;
@@ -420,7 +438,9 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
               },
               onOpenInvites: () =>
                   showInviteDialog(context, serverId: widget.serverId),
-              onOpenSettings: () => _openSettings(context),
+              onOpenSettings: canManageServer
+                  ? () => _openServerSettings(context)
+                  : null,
             ),
           Expanded(
             child: channel == null
@@ -445,10 +465,56 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
     );
   }
 
-  /// Gatilho do modal de configurações (SPEC 3): abre via
-  /// [showSettingsModal] com o servidor ativo (seção "Servidor" do modal).
-  void _openSettings(BuildContext context) {
-    showSettingsModal(context, serverId: widget.serverId);
+  void _openUserSettings(BuildContext context) {
+    unawaited(showSettingsModal(context));
+  }
+
+  void _openServerSettings(BuildContext context) {
+    unawaited(showServerSettingsModal(context, serverId: widget.serverId));
+  }
+
+  Future<void> _leaveServer() async {
+    if (_leavingServer) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Sair do servidor'),
+        content: const Text('Você não fará mais parte deste servidor.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Sair'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    _leavingServer = true;
+    try {
+      await ref.read(serversProvider.notifier).leave(widget.serverId);
+      ref.invalidate(serverDetailProvider(widget.serverId));
+      ref.invalidate(channelsControllerProvider(widget.serverId));
+      if (mounted) context.go('/');
+    } on ApiException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.message)));
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Não foi possível sair do servidor.')),
+        );
+      }
+    } finally {
+      _leavingServer = false;
+    }
   }
 }
 

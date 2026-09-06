@@ -44,13 +44,14 @@ final serversProvider = AsyncNotifierProvider<ServersController, List<Server>>(
 class ServerDetailController
     extends AutoDisposeFamilyAsyncNotifier<ServerDetail, String> {
   StreamSubscription<RealtimeEvent>? _membershipSubscription;
+  StreamSubscription<void>? _reconnectedSubscription;
 
   @override
   Future<ServerDetail> build(String serverId) async {
     _membershipSubscription?.cancel();
-    _membershipSubscription = ref.read(socketServiceProvider).events.listen((
-      event,
-    ) {
+    _reconnectedSubscription?.cancel();
+    final socket = ref.read(socketServiceProvider);
+    _membershipSubscription = socket.events.listen((event) {
       final eventServerId = switch (event) {
         MemberRemovedEvent(:final serverId) => serverId,
         MemberRoleUpdatedEvent(:final serverId) => serverId,
@@ -58,7 +59,15 @@ class ServerDetailController
       };
       if (eventServerId == serverId) ref.invalidateSelf();
     });
-    ref.onDispose(() => _membershipSubscription?.cancel());
+    // A role event may have been missed while offline. Refetch on reconnect
+    // so a demoted manager immediately loses the restricted UI as well.
+    _reconnectedSubscription = socket.reconnected.listen(
+      (_) => ref.invalidateSelf(),
+    );
+    ref.onDispose(() {
+      _membershipSubscription?.cancel();
+      _reconnectedSubscription?.cancel();
+    });
     final log = ref.watch(appLoggerProvider);
     log.d('detail fetch: $serverId', tag: 'server-detail');
     // Timeout defensivo: mesmo com o interceptor corrigido, um fetch preso
@@ -99,11 +108,27 @@ class ServerDetailController
     ref.invalidate(serversProvider);
   }
 
-  /// Atualiza o ícone do servidor (OWNER ou ADMIN).
-  Future<void> updateIcon(String iconUrl) async {
+  /// Envia um novo ícone do servidor (OWNER ou ADMIN).
+  Future<void> uploadIcon({
+    required List<int> bytes,
+    required String fileName,
+    required String contentType,
+  }) async {
     await ref
         .read(serversRepositoryProvider)
-        .updateServer(arg, iconUrl: iconUrl);
+        .uploadServerIcon(
+          arg,
+          bytes: bytes,
+          fileName: fileName,
+          contentType: contentType,
+        );
+    ref.invalidateSelf();
+    ref.invalidate(serversProvider);
+  }
+
+  /// Remove o ícone do servidor (OWNER ou ADMIN).
+  Future<void> removeIcon() async {
+    await ref.read(serversRepositoryProvider).deleteServerIcon(arg);
     ref.invalidateSelf();
     ref.invalidate(serversProvider);
   }

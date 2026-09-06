@@ -106,12 +106,14 @@ class ChannelHeader extends StatelessWidget {
                 tooltip: 'Convites',
                 onPressed: onOpenInvites,
               ),
-              const SizedBox(width: 4),
-              AppIconButton(
-                icon: Icons.settings_outlined,
-                tooltip: 'Configurações',
-                onPressed: onOpenSettings,
-              ),
+              if (onOpenSettings != null) ...[
+                const SizedBox(width: 4),
+                AppIconButton(
+                  icon: Icons.settings_outlined,
+                  tooltip: 'Configurações do servidor',
+                  onPressed: onOpenSettings,
+                ),
+              ],
             ],
           ),
         ),

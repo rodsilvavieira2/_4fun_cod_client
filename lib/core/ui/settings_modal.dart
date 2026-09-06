@@ -6,14 +6,12 @@ import 'settings_modal_sidebar.dart';
 import 'settings_sections/account_section.dart';
 import 'settings_sections/appearance_section.dart';
 import 'settings_sections/notifications_section.dart';
-import 'settings_sections/server_section.dart';
 import 'settings_sections/voice_video_section.dart';
 import 'ui.dart';
 
 /// Modal de configurações estilo janela macOS (660x460 com backdrop blur e alto contraste).
 Future<void> showSettingsModal(
   BuildContext context, {
-  String? serverId,
   SettingsSection initialSection = SettingsSection.account,
 }) {
   return showGeneralDialog(
@@ -36,15 +34,14 @@ Future<void> showSettingsModal(
       );
     },
     pageBuilder: (context, animation, secondaryAnimation) {
-      return _SettingsModal(serverId: serverId, initialSection: initialSection);
+      return _SettingsModal(initialSection: initialSection);
     },
   );
 }
 
 class _SettingsModal extends StatefulWidget {
-  const _SettingsModal({this.serverId, required this.initialSection});
+  const _SettingsModal({required this.initialSection});
 
-  final String? serverId;
   final SettingsSection initialSection;
 
   @override
@@ -91,7 +88,6 @@ class _SettingsModalState extends State<_SettingsModal> {
                         width: 190,
                         child: SettingsModalSidebar(
                           section: _section,
-                          serverId: widget.serverId,
                           onSectionChanged: (section) =>
                               setState(() => _section = section),
                           onClose: () => Navigator.of(context).pop(),
@@ -100,7 +96,6 @@ class _SettingsModalState extends State<_SettingsModal> {
                       Expanded(
                         child: _SettingsBody(
                           section: _section,
-                          serverId: widget.serverId,
                           onClose: () => Navigator.of(context).pop(),
                         ),
                       ),
@@ -117,14 +112,9 @@ class _SettingsModalState extends State<_SettingsModal> {
 }
 
 class _SettingsBody extends StatelessWidget {
-  const _SettingsBody({
-    required this.section,
-    required this.onClose,
-    this.serverId,
-  });
+  const _SettingsBody({required this.section, required this.onClose});
 
   final SettingsSection section;
-  final String? serverId;
   final VoidCallback onClose;
 
   @override
@@ -170,7 +160,6 @@ class _SettingsBody extends StatelessWidget {
               SettingsSection.appearance => const AppearanceSection(),
               SettingsSection.voiceVideo => const VoiceVideoSection(),
               SettingsSection.notifications => const NotificationsSection(),
-              SettingsSection.server => ServerSection(serverId: serverId),
               SettingsSection.signOut => const SizedBox.shrink(),
             },
           ),

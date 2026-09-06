@@ -9,7 +9,6 @@ import '../../features/home/home_screen.dart';
 import '../../features/profile/profile_settings_redirect_screen.dart';
 import '../../features/servers/invite_screen.dart';
 import '../../features/servers/members_screen.dart';
-import '../../features/servers/server_settings_screen.dart';
 import '../../features/servers/server_shell_screen.dart';
 import '../../features/splash/splash_screen.dart';
 import '../auth/auth_controller.dart';
@@ -134,12 +133,6 @@ final routerProvider = Provider<GoRouter>((ref) {
         name: 'server-shell',
         builder: (context, state) =>
             ServerShellScreen(serverId: state.pathParameters['serverId']!),
-      ),
-      GoRoute(
-        path: '/servers/:serverId/settings',
-        name: 'server-settings',
-        builder: (context, state) =>
-            ServerSettingsScreen(serverId: state.pathParameters['serverId']!),
       ),
       GoRoute(
         path: '/servers/:serverId/members',

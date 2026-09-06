@@ -9,7 +9,6 @@ enum SettingsSection {
   appearance('Aparência', Icons.palette_outlined),
   voiceVideo('Voz e Vídeo', Icons.mic_none),
   notifications('Notificações', Icons.notifications_none),
-  server('Servidor', Icons.dns_outlined),
   signOut('Sair', Icons.logout);
 
   const SettingsSection(this.title, this.icon);
@@ -25,13 +24,11 @@ class SettingsModalSidebar extends ConsumerWidget {
     required this.section,
     required this.onSectionChanged,
     required this.onClose,
-    this.serverId,
   });
 
   final SettingsSection section;
   final ValueChanged<SettingsSection> onSectionChanged;
   final VoidCallback onClose;
-  final String? serverId;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -40,7 +37,6 @@ class SettingsModalSidebar extends ConsumerWidget {
       SettingsSection.appearance,
       SettingsSection.voiceVideo,
       SettingsSection.notifications,
-      if (serverId != null) SettingsSection.server,
     ];
 
     return Container(
@@ -83,12 +79,7 @@ class SettingsModalSidebar extends ConsumerWidget {
             child: Divider(height: 1, color: AppTokens.borderHairline),
           ),
           const SizedBox(height: 6),
-          _SidebarItem(
-            item: SettingsSection.signOut,
-            selected: false,
-            color: AppTokens.accentPurple,
-            onTap: onClose,
-          ),
+          _SignOutButton(onTap: onClose),
           const SizedBox(height: 8),
         ],
       ),
@@ -101,13 +92,11 @@ class _SidebarItem extends StatefulWidget {
     required this.item,
     required this.selected,
     required this.onTap,
-    this.color,
   });
 
   final SettingsSection item;
   final bool selected;
   final VoidCallback onTap;
-  final Color? color;
 
   @override
   State<_SidebarItem> createState() => _SidebarItemState();
@@ -119,10 +108,9 @@ class _SidebarItemState extends State<_SidebarItem> {
   @override
   Widget build(BuildContext context) {
     final selected = widget.selected;
-    final fgColor = widget.color ??
-        (selected
-            ? AppTokens.textPrimary
-            : (_hovered ? AppTokens.textPrimary : AppTokens.textSecondary));
+    final fgColor = selected
+        ? AppTokens.textPrimary
+        : (_hovered ? AppTokens.textPrimary : AppTokens.textSecondary);
 
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
@@ -156,6 +144,67 @@ class _SidebarItemState extends State<_SidebarItem> {
                     fontSize: 13,
                     fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
                     color: fgColor,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Botão "Sair": preenchimento vermelho ([AppTokens.accentDanger]) com
+/// texto/ícone brancos. Mantém as mesmas medidas do [_SidebarItem].
+class _SignOutButton extends StatefulWidget {
+  const _SignOutButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  State<_SignOutButton> createState() => _SignOutButtonState();
+}
+
+class _SignOutButtonState extends State<_SignOutButton> {
+  bool _hovered = false;
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final bgColor = _pressed
+        ? const Color(0xFF9E1F1F)
+        : (_hovered ? const Color(0xFFD32F2F) : AppTokens.accentDanger);
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        onTapDown: (_) => setState(() => _pressed = true),
+        onTapUp: (_) => setState(() => _pressed = false),
+        onTapCancel: () => setState(() => _pressed = false),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          height: 32,
+          margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 1.5),
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          decoration: BoxDecoration(
+            color: bgColor,
+            borderRadius: BorderRadius.circular(AppRadius.sm),
+          ),
+          child: const Row(
+            children: [
+              Icon(Icons.logout, size: 15, color: Colors.white),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Sair',
+                  style: TextStyle(
+                    fontFamily: 'Geist',
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
                   ),
                 ),
               ),

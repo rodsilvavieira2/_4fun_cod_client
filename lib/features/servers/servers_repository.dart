@@ -45,18 +45,49 @@ class ServersRepository {
     }
   }
 
-  /// `PATCH /servers/:id { name?, iconUrl? }` → 200 com o servidor.
-  Future<Server> updateServer(
-    String serverId, {
-    String? name,
-    String? iconUrl,
-  }) async {
+  /// `PATCH /servers/:id { name }` → 200 com o servidor.
+  Future<Server> updateServer(String serverId, {required String name}) async {
     try {
       final response = await _dio.patch(
         '/servers/$serverId',
-        data: {'name': ?name, 'iconUrl': ?iconUrl},
+        data: {'name': name},
       );
       return Server.fromJson(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      throw ApiException.fromDio(e);
+    }
+  }
+
+  /// `PATCH /servers/:id/icon` multipart → URL do ícone persistido.
+  Future<String> uploadServerIcon(
+    String serverId, {
+    required List<int> bytes,
+    required String fileName,
+    required String contentType,
+  }) async {
+    try {
+      final formData = FormData.fromMap({
+        'file': MultipartFile.fromBytes(
+          bytes,
+          filename: fileName,
+          contentType: DioMediaType.parse(contentType),
+        ),
+      });
+      final response = await _dio.patch(
+        '/servers/$serverId/icon',
+        data: formData,
+      );
+      final data = response.data as Map<String, dynamic>;
+      return data['iconUrl'] as String;
+    } on DioException catch (e) {
+      throw ApiException.fromDio(e);
+    }
+  }
+
+  /// `DELETE /servers/:id/icon` → 204.
+  Future<void> deleteServerIcon(String serverId) async {
+    try {
+      await _dio.delete('/servers/$serverId/icon');
     } on DioException catch (e) {
       throw ApiException.fromDio(e);
     }

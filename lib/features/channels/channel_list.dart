@@ -15,6 +15,7 @@ class ChannelList extends ConsumerWidget {
     super.key,
     required this.serverId,
     required this.canManageServer,
+    this.canLeaveServer = false,
     this.selectedChannelId,
     this.activeVoiceChannelId,
     this.activeVoiceParticipants = const [],
@@ -22,10 +23,12 @@ class ChannelList extends ConsumerWidget {
     this.onOpenInvites,
     this.onOpenMembers,
     this.onOpenSettings,
+    this.onLeaveServer,
   });
 
   final String serverId;
   final bool canManageServer;
+  final bool canLeaveServer;
   final String? selectedChannelId;
 
   /// Fonte local e imediata para a sala ativa: evita depender do atraso do
@@ -36,6 +39,7 @@ class ChannelList extends ConsumerWidget {
   final VoidCallback? onOpenInvites;
   final VoidCallback? onOpenMembers;
   final VoidCallback? onOpenSettings;
+  final VoidCallback? onLeaveServer;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -98,7 +102,10 @@ class ChannelList extends ConsumerWidget {
                         onOpenMembers?.call();
                         break;
                       case 'settings':
-                        onOpenSettings?.call();
+                        if (canManageServer) onOpenSettings?.call();
+                        break;
+                      case 'leave':
+                        if (canLeaveServer) onLeaveServer?.call();
                         break;
                     }
                   },
@@ -126,14 +133,26 @@ class ChannelList extends ConsumerWidget {
                         label: 'Membros e cargos',
                       ),
                     ),
-                    const PopupMenuDivider(),
-                    const PopupMenuItem(
-                      value: 'settings',
-                      child: _ServerMenuEntry(
-                        icon: Icons.settings_outlined,
-                        label: 'Configurações do servidor',
+                    if (canManageServer) ...[
+                      const PopupMenuDivider(),
+                      const PopupMenuItem(
+                        value: 'settings',
+                        child: _ServerMenuEntry(
+                          icon: Icons.settings_outlined,
+                          label: 'Configurações do servidor',
+                        ),
                       ),
-                    ),
+                    ],
+                    if (canLeaveServer) ...[
+                      const PopupMenuDivider(),
+                      const PopupMenuItem(
+                        value: 'leave',
+                        child: _ServerMenuEntry(
+                          icon: Icons.logout,
+                          label: 'Sair do servidor',
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ],
