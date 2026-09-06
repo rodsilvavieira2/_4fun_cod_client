@@ -62,6 +62,7 @@ class DioLoggingInterceptor extends Interceptor {
       tag: _tag,
     );
     _endSpan(response.requestOptions);
+    _recordMetrics(response.requestOptions, response.statusCode);
     handler.next(response);
   }
 
@@ -90,11 +91,27 @@ class DioLoggingInterceptor extends Interceptor {
       tag: _tag,
     );
     _endSpan(options, error: err);
+    _recordMetrics(options, status);
+    // Erros 5xx/sem-resposta viram evento OTel ERROR; 4xx de rotina (ex.
+    // 401 do refresh) ficam só no log local para não gerar ruído.
+    if (status == null || status >= 500) {
+      _telemetry?.reportError('http ${options.method} ${options.path}', err);
+    }
     handler.next(err);
   }
 
   void _endSpan(RequestOptions options, {Object? error}) {
     final span = options.extra.remove('_otelSpan') as Span?;
     _telemetry?.endSpan(span, error: error);
+  }
+
+  void _recordMetrics(RequestOptions options, int? statusCode) {
+    final start = options.extra['_logStart'] as DateTime?;
+    if (start == null) return;
+    _telemetry?.recordHttpRequest(
+      method: options.method,
+      durationMs: DateTime.now().difference(start).inMilliseconds.toDouble(),
+      statusCode: statusCode,
+    );
   }
 }

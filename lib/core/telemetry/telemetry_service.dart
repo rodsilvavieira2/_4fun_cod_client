@@ -79,7 +79,10 @@ class TelemetryService {
           OtlpHttpLogRecordExporterConfig(
               endpoint: _otlpBase, headers: _headers),
         ),
-        enableMetrics: false,
+        metricExporter: OtlpHttpMetricExporter(
+          OtlpHttpMetricExporterConfig(endpoint: _otlpBase, headers: _headers),
+        ),
+        enableMetrics: true,
       );
       _ready = true;
       _log.i('telemetria ligada → $endpoint', tag: 'otel');
@@ -152,6 +155,66 @@ class TelemetryService {
   /// argumentos/query — redação estrita do grill.
   NavigatorObserver navigatorObserver() => _TelemetryRouteObserver(this);
 
+  // -- Métricas (Fase 1c) -------------------------------------------------
+  // Instrumentos lazy sobre um único Meter; sem `user_id` de propósito
+  // (métricas = agregados de baixa cardinalidade; o drill por usuário
+  // continua nos logs/traces). Atributos: só nomes de rota, métodos e
+  // status — nunca paths com UUID.
+
+  Meter? _meter;
+  APICounter<int>? _navCounter;
+  APICounter<int>? _httpCounter;
+  APIHistogram<double>? _httpDuration;
+
+  Meter? get _m {
+    if (!_ready) return null;
+    try {
+      return _meter ??= OTel.meter(_scope);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Conta um `navigation.push` por nome de rota.
+  void countNavigation(String route) {
+    try {
+      final meter = _m;
+      if (meter == null) return;
+      _navCounter ??= meter.createCounter<int>(
+        name: 'navigation.push',
+        description: 'Telas visitadas por rota',
+      );
+      _navCounter!.add(1, Attributes.of({'route': route}));
+    } catch (_) {}
+  }
+
+  /// Conta a request e registra a duração (ms) — método + status apenas.
+  void recordHttpRequest({
+    required String method,
+    required double durationMs,
+    int? statusCode,
+  }) {
+    try {
+      final meter = _m;
+      if (meter == null) return;
+      final attrs = Attributes.of({
+        'http.method': method,
+        'http.status_code': '${statusCode ?? 0}',
+      });
+      _httpCounter ??= meter.createCounter<int>(
+        name: 'http.client.requests',
+        description: 'Requisições HTTP do client',
+      );
+      _httpCounter!.add(1, attrs);
+      _httpDuration ??= meter.createHistogram<double>(
+        name: 'http.client.request.duration',
+        unit: 'ms',
+        description: 'Duração das requisições HTTP do client',
+      );
+      _httpDuration!.record(durationMs, attrs);
+    } catch (_) {}
+  }
+
   /// Soma `user_id` aos atributos quando há usuário vinculado. Chamador
   /// nunca sobrescreve: um `user_id` explícito no mapa vence (defesa).
   Map<String, String> _withUser(Map<String, String> attrs) {
@@ -199,9 +262,9 @@ class _TelemetryRouteObserver extends NavigatorObserver {
 
   @override
   void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
-    _telemetry.logEvent('navigation.push', attributes: {
-      'route': route.settings.name ?? 'unknown',
-    });
+    final name = route.settings.name ?? 'unknown';
+    _telemetry.logEvent('navigation.push', attributes: {'route': name});
+    _telemetry.countNavigation(name);
   }
 
   @override
