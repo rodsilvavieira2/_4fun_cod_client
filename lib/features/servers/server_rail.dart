@@ -323,7 +323,7 @@ class _AddServerRailItemState extends State<_AddServerRailItem> {
           message: 'Criar servidor',
           child: InkWell(
             borderRadius: BorderRadius.circular(radius + 4),
-            onTap: () => context.push('/create-server'),
+            onTap: () => showServerEntryDialog(context),
             child: SizedBox(
               height: itemSize,
               child: Center(

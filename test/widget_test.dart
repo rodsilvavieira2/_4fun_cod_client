@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fourfun_cod_client/app.dart';
 import 'package:fourfun_cod_client/core/auth/auth_controller.dart';
 import 'package:fourfun_cod_client/core/auth/auth_state.dart';
-import 'package:fourfun_cod_client/features/servers/create_server_screen.dart';
+import 'package:fourfun_cod_client/core/ui/server_entry_dialog.dart';
 import 'package:fourfun_cod_client/features/servers/server_rail.dart';
 import 'package:fourfun_cod_client/features/servers/servers_providers.dart';
 import 'package:fourfun_cod_client/shared/models/servers.dart';
@@ -114,7 +114,7 @@ void main() {
         overrides: [
           serversProvider.overrideWith(() => _FakeServersController(const [])),
         ],
-        child: const MaterialApp(home: CreateServerScreen()),
+        child: const MaterialApp(home: Scaffold(body: ServerEntryDialog())),
       ),
     );
     await tester.pumpAndSettle();

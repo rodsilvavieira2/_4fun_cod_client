@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/theme/app_theme.dart';
+import '../../core/ui/invite_dialog.dart';
 import '../../core/ui/settings_modal.dart';
 import '../../core/websocket/socket_service.dart';
 import '../../shared/models/servers.dart';
@@ -371,7 +372,7 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
                     activeVoiceState?.participants ?? const [],
                 onChannelSelected: (id) => _onChannelSelected(id, channelList),
                 onOpenInvites: () =>
-                    context.push('/servers/${widget.serverId}/invites'),
+                    showInviteDialog(context, serverId: widget.serverId),
                 onOpenMembers: () =>
                     context.push('/servers/${widget.serverId}/members'),
                 onOpenSettings: () => _openSettings(context),
@@ -418,7 +419,7 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
                 }
               },
               onOpenInvites: () =>
-                  context.push('/servers/${widget.serverId}/invites'),
+                  showInviteDialog(context, serverId: widget.serverId),
               onOpenSettings: () => _openSettings(context),
             ),
           Expanded(

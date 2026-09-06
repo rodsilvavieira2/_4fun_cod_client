@@ -2,21 +2,39 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/api/api_exception.dart';
+import '../api/api_exception.dart';
+import '../../features/servers/servers_providers.dart';
 import '../../shared/models/servers.dart';
-import 'servers_providers.dart';
+import 'overlays/app_modal_window.dart';
 
-/// Criação de convite por OWNER/ADMIN com URL copiável.
-class InvitesScreen extends ConsumerStatefulWidget {
-  const InvitesScreen({super.key, required this.serverId});
+/// Abre o modal de convites do servidor (mesmo padrão visual de
+/// [showMacModalWindow]/`showSettingsModal`: blur, ESC fecha, dismiss fora).
+///
+/// Substitui a antiga página `/servers/:id/invites` com paridade exata de
+/// recursos: criar convite (OWNER/ADMIN), card com URL copiável e erro.
+Future<void> showInviteDialog(
+  BuildContext context, {
+  required String serverId,
+}) {
+  return showMacModalWindow(
+    context: context,
+    title: 'Convites',
+    maxWidth: 480,
+    child: InviteDialog(serverId: serverId),
+  );
+}
+
+/// Conteúdo do modal de convites — lógica extraída da antiga `InvitesScreen`.
+class InviteDialog extends ConsumerStatefulWidget {
+  const InviteDialog({super.key, required this.serverId});
 
   final String serverId;
 
   @override
-  ConsumerState<InvitesScreen> createState() => _InvitesScreenState();
+  ConsumerState<InviteDialog> createState() => _InviteDialogState();
 }
 
-class _InvitesScreenState extends ConsumerState<InvitesScreen> {
+class _InviteDialogState extends ConsumerState<InviteDialog> {
   bool _creating = false;
   String? _error;
   InviteInfo? _invite;
@@ -56,61 +74,50 @@ class _InvitesScreenState extends ConsumerState<InvitesScreen> {
     final detail = ref.watch(serverDetailProvider(widget.serverId));
     final canManageServer = detail.valueOrNull?.canManageServer ?? false;
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('Convites')),
-      body: SafeArea(
-        child: detail.when(
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (error, _) => Center(
-            child: IconButton(
-              icon: const Icon(Icons.refresh),
-              tooltip: 'Tentar novamente',
-              onPressed: () =>
-                  ref.invalidate(serverDetailProvider(widget.serverId)),
-            ),
-          ),
-          data: (_) => Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 480),
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: !canManageServer
-                    ? const Text('Apenas administradores podem criar convites.')
-                    : Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          FilledButton.icon(
-                            onPressed: _creating ? null : _createInvite,
-                            icon: _creating
-                                ? const SizedBox(
-                                    height: 18,
-                                    width: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : const Icon(Icons.link),
-                            label: const Text('Criar convite'),
-                          ),
-                          if (_error != null) ...[
-                            const SizedBox(height: 16),
-                            Text(
-                              _error!,
-                              style: TextStyle(
-                                color: Theme.of(context).colorScheme.error,
-                              ),
-                            ),
-                          ],
-                          if (_invite != null) ...[
-                            const SizedBox(height: 24),
-                            _InviteCard(invite: _invite!, onCopy: _copy),
-                          ],
-                        ],
-                      ),
-              ),
-            ),
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: detail.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (error, _) => Center(
+          child: IconButton(
+            icon: const Icon(Icons.refresh),
+            tooltip: 'Tentar novamente',
+            onPressed: () =>
+                ref.invalidate(serverDetailProvider(widget.serverId)),
           ),
         ),
+        data: (_) => !canManageServer
+            ? const Text('Apenas administradores podem criar convites.')
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  FilledButton.icon(
+                    onPressed: _creating ? null : _createInvite,
+                    icon: _creating
+                        ? const SizedBox(
+                            height: 18,
+                            width: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.link),
+                    label: const Text('Criar convite'),
+                  ),
+                  if (_error != null) ...[
+                    const SizedBox(height: 16),
+                    Text(
+                      _error!,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                  ],
+                  if (_invite != null) ...[
+                    const SizedBox(height: 24),
+                    _InviteCard(invite: _invite!, onCopy: _copy),
+                  ],
+                ],
+              ),
       ),
     );
   }

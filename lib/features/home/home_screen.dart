@@ -97,7 +97,7 @@ class _HomeNavigation extends StatelessWidget {
           _HomeNavItem(
             icon: Icons.add_circle_outline,
             label: 'Criar ou entrar',
-            onTap: () => context.push('/create-server'),
+            onTap: () => showServerEntryDialog(context),
           ),
           const Padding(
             padding: EdgeInsets.fromLTRB(16, 22, 16, 8),
@@ -248,7 +248,7 @@ class _HomeContent extends ConsumerWidget {
                 AppIconButton(
                   icon: Icons.add,
                   tooltip: 'Criar ou entrar em um servidor',
-                  onPressed: () => context.push('/create-server'),
+                  onPressed: () => showServerEntryDialog(context),
                 ),
                 const SizedBox(width: 4),
                 AppIconButton(
@@ -344,7 +344,7 @@ class _EmptyHome extends StatelessWidget {
                 label: 'Criar ou entrar',
                 icon: Icons.add,
                 size: AppButtonSize.lg,
-                onPressed: () => context.push('/create-server'),
+                onPressed: () => showServerEntryDialog(context),
               ),
             ],
           ),

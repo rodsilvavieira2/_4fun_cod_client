@@ -7,9 +7,7 @@ import '../../features/auth/register_screen.dart';
 import '../../features/dms/dm_shell_screen.dart';
 import '../../features/home/home_screen.dart';
 import '../../features/profile/profile_settings_redirect_screen.dart';
-import '../../features/servers/create_server_screen.dart';
 import '../../features/servers/invite_screen.dart';
-import '../../features/servers/invites_screen.dart';
 import '../../features/servers/members_screen.dart';
 import '../../features/servers/server_settings_screen.dart';
 import '../../features/servers/server_shell_screen.dart';
@@ -132,11 +130,6 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const DmShellScreen(),
       ),
       GoRoute(
-        path: '/create-server',
-        name: 'create-server',
-        builder: (context, state) => const CreateServerScreen(),
-      ),
-      GoRoute(
         path: '/servers/:serverId',
         name: 'server-shell',
         builder: (context, state) =>
@@ -153,12 +146,6 @@ final routerProvider = Provider<GoRouter>((ref) {
         name: 'server-members',
         builder: (context, state) =>
             MembersScreen(serverId: state.pathParameters['serverId']!),
-      ),
-      GoRoute(
-        path: '/servers/:serverId/invites',
-        name: 'server-invites',
-        builder: (context, state) =>
-            InvitesScreen(serverId: state.pathParameters['serverId']!),
       ),
       GoRoute(
         path: '/invite/:code',
