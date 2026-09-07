@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// Configuração da aplicação, lida de `--dart-define` com defaults locais.
@@ -11,8 +13,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 ///   `/api/<OTEL_ORG>` é anexado pelo [TelemetryService].
 /// - `OTEL_ORG`: organização do OpenObserve (default `default`).
 /// - `OTEL_BASIC_AUTH`: `base64(email:senha)` para o header
-///   `Authorization: Basic ...` do OTLP (default vazio = sem auth).
-///   Só para o lab local — nunca commitar valor real.
+///   `Authorization: Basic *** do OTLP (default vazio = sem auth).
+///   NUNCA vai baked na release: lido de `--dart-define` (lab/dev) com
+///   fallback para a env de runtime `OTEL_BASIC_AUTH` (desktop lê
+///   `Platform.environment`). Nunca commitar valor real.
 /// - `OTEL_ENABLED`: `true` liga a telemetria (default `false`).
 class AppConfig {
   const AppConfig({
@@ -41,15 +45,21 @@ class AppConfig {
       'OTEL_ORG',
       defaultValue: 'default',
     );
-    const otelBasicAuth = String.fromEnvironment(
+    const otelBasicAuthDefine = String.fromEnvironment(
       'OTEL_BASIC_AUTH',
       defaultValue: '',
     );
+    // P2 (review t_34728661): credencial nunca baked no binário da release.
+    // Lab/dev injeta via --dart-define; release distribuída lê da env de
+    // runtime (ex.: `OTEL_BASIC_AUTH=... ./4fun-cod-*.AppImage`).
+    final otelBasicAuth = otelBasicAuthDefine.isNotEmpty
+        ? otelBasicAuthDefine
+        : Platform.environment['OTEL_BASIC_AUTH'] ?? '';
     const otelEnabled = bool.fromEnvironment(
       'OTEL_ENABLED',
       defaultValue: false,
     );
-    return const AppConfig(
+    return AppConfig(
       apiBaseUrl: apiBaseUrl,
       livekitUrl: livekitUrl,
       otelEndpoint: otelEndpoint,

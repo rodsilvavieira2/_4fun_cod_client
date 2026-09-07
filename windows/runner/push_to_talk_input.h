@@ -129,18 +129,14 @@ class PushToTalkInput {
   }
 
  private:
-  using flutter::EncodableMap;
-  using flutter::EncodableValue;
-  using flutter::MethodCall;
-  using flutter::MethodResult;
-  using push_to_talk_detail::value_bool;
-  using push_to_talk_detail::value_int;
-  using push_to_talk_detail::value_string;
-  using push_to_talk_detail::virtual_key_for_hid_usage;
+  using EncodableMap = flutter::EncodableMap;
+  using EncodableValue = flutter::EncodableValue;
+  using MethodCall = flutter::MethodCall<flutter::EncodableValue>;
+  using MethodResult = flutter::MethodResult<flutter::EncodableValue>;
 
   void HandleMethodCall(
-      const MethodCall<EncodableValue>& call,
-      std::unique_ptr<MethodResult<EncodableValue>> result) {
+      const MethodCall& call,
+      std::unique_ptr<MethodResult> result) {
     if (call.method_name() != "configure") {
       result->NotImplemented();
       return;
@@ -155,18 +151,18 @@ class PushToTalkInput {
       return;
     }
     const auto& map = std::get<EncodableMap>(*call.arguments());
-    const auto kind = value_string(map, "kind");
+    const auto kind = push_to_talk_detail::value_string(map, "kind");
     if (!kind) {
       result->Success(EncodableValue(false));
       return;
     }
-    control_ = value_bool(map, "control");
-    alt_ = value_bool(map, "alt");
-    shift_ = value_bool(map, "shift");
+    control_ = push_to_talk_detail::value_bool(map, "control");
+    alt_ = push_to_talk_detail::value_bool(map, "alt");
+    shift_ = push_to_talk_detail::value_bool(map, "shift");
     if (*kind == "keyboard") {
-      const auto physical_key_usage = value_int(map, "physicalKeyUsage");
+      const auto physical_key_usage = push_to_talk_detail::value_int(map, "physicalKeyUsage");
       key_ = physical_key_usage
-          ? virtual_key_for_hid_usage(
+          ? push_to_talk_detail::virtual_key_for_hid_usage(
                 static_cast<uint32_t>(*physical_key_usage))
           : 0;
       if (key_ == 0) {
@@ -179,7 +175,7 @@ class PushToTalkInput {
       return;
     }
     if (*kind == "mouse") {
-      const auto button = value_int(map, "mouseButton");
+      const auto button = push_to_talk_detail::value_int(map, "mouseButton");
       mouse_button_ = button ? static_cast<int>(*button) : 0;
       if (mouse_button_ != 4 && mouse_button_ != 8 && mouse_button_ != 16) {
         result->Success(EncodableValue(false));

@@ -48,7 +48,8 @@ jobs:
             libudev-dev \
             libgstreamer1.0-dev \
             libgstreamer-plugins-base1.0-dev \
-            libunwind-dev
+            libunwind-dev \
+            libayatana-appindicator3-dev
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -73,14 +74,21 @@ jobs:
           echo "Release version: $VERSION"
 
       - name: Build Linux
+        env:
+          API_URL: ${{ vars.API_URL }}
+          LIVEKIT_URL: ${{ vars.LIVEKIT_URL }}
+          OTEL_ENABLED: ${{ vars.OTEL_ENABLED }}
+          OTEL_ENDPOINT: ${{ vars.OTEL_ENDPOINT }}
+          OTEL_ORG: ${{ vars.OTEL_ORG }}
         run: |
           DEFINES=()
-          [ -n "${{ vars.API_URL }}" ] && DEFINES+=(--dart-define=API_URL=${{ vars.API_URL }})
-          [ -n "${{ vars.LIVEKIT_URL }}" ] && DEFINES+=(--dart-define=LIVEKIT_URL=${{ vars.LIVEKIT_URL }})
-          [ -n "${{ vars.OTEL_ENABLED }}" ] && DEFINES+=(--dart-define=OTEL_ENABLED=${{ vars.OTEL_ENABLED }})
-          [ -n "${{ vars.OTEL_ENDPOINT }}" ] && DEFINES+=(--dart-define=OTEL_ENDPOINT=${{ vars.OTEL_ENDPOINT }})
-          [ -n "${{ vars.OTEL_ORG }}" ] && DEFINES+=(--dart-define=OTEL_ORG=${{ vars.OTEL_ORG }})
-          [ -n "${{ secrets.OTEL_BASIC_AUTH }}" ] && DEFINES+=(--dart-define=OTEL_BASIC_AUTH=${{ secrets.OTEL_BASIC_AUTH }})
+          [ -n "$API_URL" ] && DEFINES+=(--dart-define=API_URL="$API_URL")
+          [ -n "$LIVEKIT_URL" ] && DEFINES+=(--dart-define=LIVEKIT_URL="$LIVEKIT_URL")
+          [ -n "$OTEL_ENABLED" ] && DEFINES+=(--dart-define=OTEL_ENABLED="$OTEL_ENABLED")
+          [ -n "$OTEL_ENDPOINT" ] && DEFINES+=(--dart-define=OTEL_ENDPOINT="$OTEL_ENDPOINT")
+          [ -n "$OTEL_ORG" ] && DEFINES+=(--dart-define=OTEL_ORG="$OTEL_ORG")
+          # P2 (review t_34728661): OTEL_BASIC_AUTH NUNCA baked via
+          # --dart-define — release lê da env de runtime (ver AppConfig).
 
           flutter build linux \
             --release \
@@ -179,14 +187,21 @@ jobs:
 
       - name: Build Windows
         shell: pwsh
+        env:
+          API_URL: ${{ vars.API_URL }}
+          LIVEKIT_URL: ${{ vars.LIVEKIT_URL }}
+          OTEL_ENABLED: ${{ vars.OTEL_ENABLED }}
+          OTEL_ENDPOINT: ${{ vars.OTEL_ENDPOINT }}
+          OTEL_ORG: ${{ vars.OTEL_ORG }}
         run: |
           $defines = @()
-          if ("${{ vars.API_URL }}") { $defines += "--dart-define=API_URL=${{ vars.API_URL }}" }
-          if ("${{ vars.LIVEKIT_URL }}") { $defines += "--dart-define=LIVEKIT_URL=${{ vars.LIVEKIT_URL }}" }
-          if ("${{ vars.OTEL_ENABLED }}") { $defines += "--dart-define=OTEL_ENABLED=${{ vars.OTEL_ENABLED }}" }
-          if ("${{ vars.OTEL_ENDPOINT }}") { $defines += "--dart-define=OTEL_ENDPOINT=${{ vars.OTEL_ENDPOINT }}" }
-          if ("${{ vars.OTEL_ORG }}") { $defines += "--dart-define=OTEL_ORG=${{ vars.OTEL_ORG }}" }
-          if ("${{ secrets.OTEL_BASIC_AUTH }}") { $defines += "--dart-define=OTEL_BASIC_AUTH=${{ secrets.OTEL_BASIC_AUTH }}" }
+          if ($env:API_URL) { $defines += "--dart-define=API_URL=$env:API_URL" }
+          if ($env:LIVEKIT_URL) { $defines += "--dart-define=LIVEKIT_URL=$env:LIVEKIT_URL" }
+          if ($env:OTEL_ENABLED) { $defines += "--dart-define=OTEL_ENABLED=$env:OTEL_ENABLED" }
+          if ($env:OTEL_ENDPOINT) { $defines += "--dart-define=OTEL_ENDPOINT=$env:OTEL_ENDPOINT" }
+          if ($env:OTEL_ORG) { $defines += "--dart-define=OTEL_ORG=$env:OTEL_ORG" }
+          # P2 (review t_34728661): OTEL_BASIC_AUTH NUNCA baked via
+          # --dart-define — release lê da env de runtime (ver AppConfig).
 
           flutter build windows `
             --release `

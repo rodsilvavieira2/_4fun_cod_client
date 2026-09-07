@@ -16,9 +16,34 @@ Artefatos de `v1.0.0`:
 
 ```text
 4fun-cod-linux-x64-1.0.0.tar.gz
+4fun-cod-linux-x64-1.0.0.AppImage
 4fun-cod-windows-x64-1.0.0-portable.zip
 4fun-cod-windows-x64-1.0.0-setup.exe
 SHA256SUMS.txt
+```
+
+## AppImage (Linux)
+
+Montado com `appimagetool` a partir do bundle Flutter
+(`packaging/linux/4fun-cod.desktop` + `packaging/linux/4fun-cod.png`).
+**Não é totalmente autocontido** (P3 review t_34728661): as `.so` dos
+plugins resolvem via `$ORIGIN/lib`, mas libs de sistema (`libgtk-3`,
+`libsecret-1`, `libgstreamer-*`, `libayatana-appindicator3`) precisam
+existir no host. Pré-requisitos mínimos (Debian/Ubuntu):
+
+```bash
+sudo apt install libgtk-3-0 libsecret-1-0 libgstreamer1.0-0 \
+  libgstreamer-plugins-base1.0-0 libayatana-appindicator3-1
+```
+
+## Telemetria (OTEL) na release
+
+`API_URL`/`OTEL_*` (exceto auth) vão baked via `--dart-define` a partir
+das variables do repo. **`OTEL_BASIC_AUTH` nunca vai no binário**
+(P2 review t_34728661) — a release lê da env de runtime:
+
+```bash
+OTEL_BASIC_AUTH='<base64(email:senha)>' ./4fun-cod-linux-x64-*.AppImage
 ```
 
 ## Variáveis do pipeline
