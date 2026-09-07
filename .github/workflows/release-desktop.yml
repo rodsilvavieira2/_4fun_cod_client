@@ -127,9 +127,21 @@ jobs:
           cp "packaging/linux/4fun-cod.desktop" "AppDir/4fun-cod.desktop"
           cp "packaging/linux/4fun-cod.png" "AppDir/4fun-cod.png"
 
+          # P3 (review t_34728661 + erro real em runtime): tray_manager faz
+          # dlopen da pilha appindicator — embarca as .so no AppDir para o
+          # AppImage abrir em host sem libayatana instalada.
+          mkdir -p "AppDir/usr/lib"
+          for lib in libayatana-appindicator3.so.1 libayatana-ido3-0.4.so.0 \
+                     libdbusmenu-glib.so.4 libdbusmenu-gtk3.so.4; do
+            path="$(ldconfig -p | grep -m1 "$lib" | awk '{print $NF}')"
+            if [ -n "$path" ]; then cp -L "$path" "AppDir/usr/lib/"; fi
+          done
+          ls AppDir/usr/lib
+
           cat > AppDir/AppRun <<'EOF'
           #!/bin/sh
           HERE="$(dirname "$(readlink -f "$0")")"
+          export LD_LIBRARY_PATH="$HERE/usr/lib:$HERE/usr/bin/lib:$LD_LIBRARY_PATH"
           exec "$HERE/usr/bin/_4fun_cod_client" "$@"
           EOF
           chmod +x AppDir/AppRun
