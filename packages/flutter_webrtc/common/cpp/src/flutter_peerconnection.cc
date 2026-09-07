@@ -814,6 +814,11 @@ scoped_refptr<RTCRtpParameters> FlutterPeerConnection::updateRtpParameters(
     }
   }
 
+  // Write the mutated encodings back: parameters->encodings() returns
+  // wrappers over copies, so without this the loop above is a no-op and
+  // sender->set_parameters() resubmits the original state (flutter-webrtc#2138).
+  parameters->set_encodings(params);
+
   return parameters;
 }
 

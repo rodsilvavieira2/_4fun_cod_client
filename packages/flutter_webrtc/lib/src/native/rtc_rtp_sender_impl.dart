@@ -66,7 +66,6 @@ class RTCRtpSenderNative extends RTCRtpSender {
 
   @override
   Future<bool> setParameters(RTCRtpParameters parameters) async {
-    _parameters = parameters;
     try {
       final response =
           await WebRTC.invokeMethod('rtpSenderSetParameters', <String, dynamic>{
@@ -74,7 +73,14 @@ class RTCRtpSenderNative extends RTCRtpSender {
         'rtpSenderId': _id,
         'parameters': parameters.toMap()
       });
-      return response['result'];
+      final applied = response['result'] as bool;
+      // Update the cache only after native confirms: otherwise a failed or
+      // dropped update (e.g. flutter-webrtc#2138) would still read back as
+      // applied via the `parameters` getter.
+      if (applied) {
+        _parameters = parameters;
+      }
+      return applied;
     } on PlatformException catch (e) {
       throw 'Unable to RTCRtpSenderNative::setParameters: ${e.message}';
     }
