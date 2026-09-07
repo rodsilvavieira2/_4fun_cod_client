@@ -253,6 +253,54 @@ jobs:
             --build-number "${{ github.run_number }}" `
             @defines
 
+      - name: Assert Windows native deps (dumpbin)
+        shell: pwsh
+        run: |
+          # Primo do assert linux: toda DLL importada pelo bundle precisa estar
+          # (a) dentro do bundle, (b) no VC++ redist (instalado pelo setup.exe),
+          # ou (c) no System32. Limite conhecido: o runner tem VS instalado, entao
+          # uma dep de terceiro presente no runner mas ausente no usuario passaria —
+          # plugin novo com DLL propria exige revisao manual.
+          $dumpbin = Get-ChildItem 'C:\Program Files\Microsoft Visual Studio\2022\*\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe' -ErrorAction SilentlyContinue |
+            Select-Object -First 1 -ExpandProperty FullName
+          if (-not $dumpbin) { Write-Error 'dumpbin não encontrado no runner'; exit 1 }
+
+          $bindir = 'build\windows\x64\runner\Release'
+          $bundle = Get-ChildItem $bindir -Include *.exe, *.dll -Recurse | ForEach-Object { $_.Name.ToLower() }
+          $redist = @('concrt140.dll','msvcp140.dll','msvcp140_1.dll','msvcp140_2.dll','msvcp140_atomic_wait.dll','msvcp140_codecvt_ids.dll','vccorlib140.dll','vcruntime140.dll','vcruntime140_1.dll')
+          $system32 = Join-Path $env:SystemRoot 'System32'
+
+          $imports = @()
+          $unknown = @()
+          Get-ChildItem $bindir -Include *.exe, *.dll -Recurse | ForEach-Object {
+            $bin = $_
+            $deps = @()
+            foreach ($line in (& $dumpbin /DEPENDENTS $bin.FullName 2>$null)) {
+              if ($line -match '^\s+([A-Za-z0-9_\-\+\.]+\.dll)\s*$') { $deps += $Matches[1].ToLower() }
+            }
+            foreach ($d in ($deps | Sort-Object -Unique)) {
+              if ($imports -notcontains $d) { $imports += $d }
+              if (($bundle -notcontains $d) -and ($redist -notcontains $d) -and (-not (Test-Path (Join-Path $system32 $d)))) {
+                $entry = "$d (via $($bin.Name))"
+                if ($unknown -notcontains $entry) { $unknown += $entry }
+              }
+            }
+          }
+          Write-Host ('Imports: ' + ($imports -join ', '))
+          Write-Host ('Via VC++ redist: ' + (($imports | Where-Object { $redist -contains $_ }) -join ', '))
+          if ($unknown.Count -gt 0) { Write-Error ('Dependências fora do bundle/sistema/redist: ' + ($unknown -join '; ')); exit 1 }
+
+      - name: Download VC++ Redistributable
+        shell: pwsh
+        run: |
+          # Payload do setup.exe (installer/windows.iss instala via [Run] se
+          # ausente) e do ZIP portable.
+          New-Item -ItemType Directory -Force -Path "installer\vendor" | Out-Null
+          Invoke-WebRequest `
+            -Uri "https://aka.ms/vs/17/release/vc_redist.x64.exe" `
+            -OutFile "installer\vendor\vc_redist.x64.exe"
+          Get-ChildItem installer\vendor
+
       # --------------------------------------------------------
       # Portable ZIP
       # --------------------------------------------------------
@@ -274,6 +322,13 @@ jobs:
             -Path "build\windows\x64\runner\Release\*" `
             -Destination "package\$env:APP_SLUG" `
             -Recurse `
+            -Force
+
+          # Runtime MSVC nao vai no bundle flutter — se o app nao abrir em
+          # Windows limpo (VCRUNTIME140.dll), rode este instalador.
+          Copy-Item `
+            -Path "installer\vendor\vc_redist.x64.exe" `
+            -Destination "package\$env:APP_SLUG" `
             -Force
 
           Compress-Archive `

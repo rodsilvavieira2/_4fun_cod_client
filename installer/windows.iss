@@ -47,6 +47,12 @@ Source: "..\build\windows\x64\runner\Release\*"; \
     DestDir: "{app}"; \
     Flags: ignoreversion recursesubdirs createallsubdirs
 
+; VC++ redist (VCRUNTIME140.dll etc.) — baixado pelo CI em installer/vendor
+; (ver release-desktop.yml). Build manual via IDE sem o arquivo compila igual.
+#if FileExists("vendor\vc_redist.x64.exe")
+Source: "vendor\vc_redist.x64.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall
+#endif
+
 [Tasks]
 Name: "desktopicon"; \
     Description: "Create a desktop shortcut"; \
@@ -61,6 +67,29 @@ Name: "{autodesktop}\{#AppName}"; \
     Tasks: desktopicon
 
 [Run]
+; Runtime MSVC — flutter build windows nao embarca VCRUNTIME140/MSVCP140.
+; Instala silencioso so se ausente (NeedsVCRedist) e so se o payload existir.
+Filename: "{tmp}\vc_redist.x64.exe"; \
+    Parameters: "/install /quiet /norestart"; \
+    StatusMsg: "Installing Visual C++ Redistributable..."; \
+    Check: NeedsVCRedist; \
+    Flags: waituntilterminated
+
 Filename: "{app}\{#AppExeName}"; \
     Description: "Launch {#AppName}"; \
     Flags: nowait postinstall skipifsilent
+
+[Code]
+{ Verifica o runtime MSVC x64 pela chave que o proprio redist grava. }
+function NeedsVCRedist(): Boolean;
+var
+  Version: String;
+begin
+  Result :=
+    FileExists(ExpandConstant('{tmp}\vc_redist.x64.exe')) and
+    (not RegQueryStringValue(
+      HKLM,
+      'SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64',
+      'Version',
+      Version));
+end;

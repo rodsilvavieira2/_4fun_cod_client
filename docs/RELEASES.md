@@ -46,6 +46,15 @@ das variables do repo. **`OTEL_BASIC_AUTH` nunca vai no binário**
 OTEL_BASIC_AUTH='<base64(email:senha)>' ./4fun-cod-linux-x64-*.AppImage
 ```
 
+## Windows (VC++ Redistributable)
+
+O `flutter build windows` não embarca o runtime MSVC. Em Windows limpo
+o app pode falhar com `VCRUNTIME140.dll was not found`:
+
+- `setup.exe`: instala o `vc_redist.x64.exe` automaticamente se ausente.
+- Portable `.zip`: inclui `vc_redist.x64.exe` ao lado do `.exe` — rode-o
+  uma vez se o app não abrir.
+
 ## Variáveis do pipeline
 
 | Var | Valor | Origem |
