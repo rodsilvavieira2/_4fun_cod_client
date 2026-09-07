@@ -7,14 +7,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'app.dart';
 import 'core/config/lab_ca_overrides.dart';
 import 'core/desktop/desktop_lifecycle.dart';
+import 'core/desktop/single_instance.dart';
 import 'core/telemetry/telemetry_service.dart';
 
-Future<void> main() async {
+Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Desktop: confia na CA do lab para o wss:// do LiveKit (dart:io não lê
   // o trust store do sistema; ver lab_ca_overrides.dart). Web = no-op.
   await trustLabCa();
+  // Linux/Windows release: segunda cópia sinaliza a primeira e sai aqui,
+  // antes de criar tray. Debug e web nunca impõem a trava.
+  await ensureSingleInstanceOrExit(args);
   await initializeDesktopLifecycle();
 
   // Captura global de erros → OpenObserve (via `reportError`, com redação).

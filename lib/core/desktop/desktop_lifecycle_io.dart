@@ -36,6 +36,24 @@ Future<void> initializeDesktopLifecycle() async {
   }
 }
 
+/// Traz a primeira instância para frente quando uma segunda cópia é lançada.
+///
+/// Reusa o controller do close-to-tray (restaura da bandeja/minimizado).
+/// Se a bandeja falhou na inicialização, cai para show/focus direto.
+Future<void> restoreDesktopWindow() async {
+  final controller = _desktopLifecycleController;
+  if (controller == null) {
+    await windowManager.ensureInitialized();
+    if (await windowManager.isMinimized()) {
+      await windowManager.restore();
+    }
+    await windowManager.show();
+    await windowManager.focus();
+    return;
+  }
+  await controller.showWindow();
+}
+
 class _WindowManagerPort with WindowListener implements DesktopWindowPort {
   DesktopCloseHandler? _onClose;
   bool _listening = false;
