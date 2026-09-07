@@ -96,6 +96,45 @@ jobs:
             --build-number "$GITHUB_RUN_NUMBER" \
             "${DEFINES[@]}"
 
+      - name: Bundle tray native deps (fecho transitivo)
+        shell: bash
+        run: |
+          BUNDLE="build/linux/x64/release/bundle"
+          # tray_manager linka contra a pilha ayatana/appindicator, que varia
+          # por distro (whack-a-mole real: v0.1.7 esqueceu indicator3.so.7).
+          # Fecha a arvore via NEEDEDs e copia tudo p/ bundle/lib
+          # (RUNPATH $ORIGIN/lib do executavel ja resolve — vale p/ tar.gz e AppImage).
+          PAT='lib(ayatana|appindicator|indicator|ido|dbusmenu)[^ ]*\.so\.[0-9]+'
+          for pass in 1 2 3 4; do
+            NEW=0
+            for so in "$BUNDLE"/lib/*.so "$BUNDLE"/_4fun_cod_client; do
+              [ -f "$so" ] || continue
+              for need in $(readelf -d "$so" 2>/dev/null | grep -o -E "$PAT" | sort -u); do
+                if [ ! -f "$BUNDLE/lib/$need" ]; then
+                  path="$(ldconfig -p | grep -m1 -F "$need" | awk '{print $NF}')"
+                  if [ -n "$path" ]; then
+                    cp -L "$path" "$BUNDLE/lib/"
+                    echo "bundled: $need"
+                    NEW=1
+                  fi
+                fi
+              done
+            done
+            [ "$NEW" = 0 ] && break
+          done
+          # Assert: todo NEEDED do fecho precisa existir dentro do bundle.
+          MISSING=0
+          for so in "$BUNDLE"/lib/*.so; do
+            for need in $(readelf -d "$so" 2>/dev/null | grep -o -E "$PAT" | sort -u); do
+              if [ ! -f "$BUNDLE/lib/$need" ]; then
+                echo "FALTANDO no bundle: $need (pedido por $so)"
+                MISSING=1
+              fi
+            done
+          done
+          [ "$MISSING" = 0 ] || exit 1
+          echo "tray deps OK:"; ls "$BUNDLE/lib" | grep -E 'ayatana|appindicator|indicator|ido|dbusmenu'
+
       - name: Create Linux package
         shell: bash
         run: |
@@ -127,16 +166,9 @@ jobs:
           cp "packaging/linux/4fun-cod.desktop" "AppDir/4fun-cod.desktop"
           cp "packaging/linux/4fun-cod.png" "AppDir/4fun-cod.png"
 
-          # P3 (review t_34728661 + erro real em runtime): tray_manager faz
-          # dlopen da pilha appindicator — embarca as .so no AppDir para o
-          # AppImage abrir em host sem libayatana instalada.
-          mkdir -p "AppDir/usr/lib"
-          for lib in libayatana-appindicator3.so.1 libayatana-ido3-0.4.so.0 \
-                     libdbusmenu-glib.so.4 libdbusmenu-gtk3.so.4; do
-            path="$(ldconfig -p | grep -m1 "$lib" | awk '{print $NF}')"
-            if [ -n "$path" ]; then cp -L "$path" "AppDir/usr/lib/"; fi
-          done
-          ls AppDir/usr/lib
+          # Deps nativas do tray ja estao em bundle/lib (step "Bundle tray
+          # native deps"); o AppRun exporta usr/bin/lib via LD_LIBRARY_PATH.
+          ls AppDir/usr/bin/lib | grep -E 'ayatana|appindicator|indicator|ido|dbusmenu' || true
 
           cat > AppDir/AppRun <<'EOF'
           #!/bin/sh
