@@ -82,14 +82,14 @@ class PushToTalkStreamHandler
   PushToTalkStreamHandler(ListenFn on_listen, CancelFn on_cancel)
       : on_listen_(std::move(on_listen)), on_cancel_(std::move(on_cancel)) {}
 
-  std::unique_ptr<StreamHandlerError<EncodableValue>> OnListen(
+  std::unique_ptr<StreamHandlerError<EncodableValue>> OnListenInternal(
       const EncodableValue*,
       std::unique_ptr<EventSink<EncodableValue>>&& sink) override {
     on_listen_(std::move(sink));
     return nullptr;
   }
 
-  std::unique_ptr<StreamHandlerError<EncodableValue>> OnCancel(
+  std::unique_ptr<StreamHandlerError<EncodableValue>> OnCancelInternal(
       const EncodableValue*) override {
     on_cancel_();
     return nullptr;
