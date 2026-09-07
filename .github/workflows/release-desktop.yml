@@ -284,6 +284,10 @@ jobs:
           $bindir = 'build\windows\x64\runner\Release'
           $bundle = Get-ChildItem $bindir -Include *.exe, *.dll -Recurse | ForEach-Object { $_.Name.ToLower() }
           $redist = @('concrt140.dll','msvcp140.dll','msvcp140_1.dll','msvcp140_2.dll','msvcp140_atomic_wait.dll','msvcp140_codecvt_ids.dll','vccorlib140.dll','vcruntime140.dll','vcruntime140_1.dll')
+          # Delay-load conhecido: dartjni carrega jvm.dll so se o recurso JVM
+          # for usado; o app abre e roda sem ela (cinturao + suspensorio junto
+          # do filtro de secao acima).
+          $delayOk = @('jvm.dll')
           $system32 = Join-Path $env:SystemRoot 'System32'
 
           $imports = @()
@@ -296,7 +300,7 @@ jobs:
             # se o recurso for usado; app abre sem ela). So a 1a reprova o build.
             $inDeps = $false
             foreach ($line in (& $dumpbin /DEPENDENTS $bin.FullName 2>$null)) {
-              if ($line -match 'delay load dependencies') { $inDeps = $false }
+              if ($line -match 'delay.{0,5}load.{0,5}dependenc') { $inDeps = $false }
               elseif ($line -match 'following dependencies:') { $inDeps = $true }
               elseif ($inDeps -and ($line -match '^\s+([A-Za-z0-9_\-\+\.]+\.dll)\s*$')) { $deps += $Matches[1].ToLower() }
             }
@@ -305,7 +309,7 @@ jobs:
               # api-ms-win-* = API Sets do Universal CRT: contratos virtuais do
               # loader, presentes em todo Win10+ e no VC++ redist — nao sao
               # arquivos em System32, entao o Test-Path falharia a toa.
-              if (($bundle -notcontains $d) -and ($redist -notcontains $d) -and ($d -notmatch '^api-ms-win-') -and (-not (Test-Path (Join-Path $system32 $d)))) {
+              if (($bundle -notcontains $d) -and ($redist -notcontains $d) -and ($delayOk -notcontains $d) -and ($d -notmatch '^api-ms-win-') -and (-not (Test-Path (Join-Path $system32 $d)))) {
                 $entry = "$d (via $($bin.Name))"
                 if ($unknown -notcontains $entry) { $unknown += $entry }
               }
