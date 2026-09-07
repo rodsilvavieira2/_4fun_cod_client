@@ -6,6 +6,7 @@ import 'settings_modal_sidebar.dart';
 import 'settings_sections/account_section.dart';
 import 'settings_sections/appearance_section.dart';
 import 'settings_sections/notifications_section.dart';
+import 'settings_sections/updates_section.dart';
 import 'settings_sections/voice_video_section.dart';
 import 'ui.dart';
 
@@ -160,6 +161,7 @@ class _SettingsBody extends StatelessWidget {
               SettingsSection.appearance => const AppearanceSection(),
               SettingsSection.voiceVideo => const VoiceVideoSection(),
               SettingsSection.notifications => const NotificationsSection(),
+              SettingsSection.updates => const UpdatesSection(),
               SettingsSection.signOut => const SizedBox.shrink(),
             },
           ),

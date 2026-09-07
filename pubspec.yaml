@@ -49,6 +49,9 @@ dependencies:
   dartastic_opentelemetry: ^0.11.0
   windows_single_instance: ^1.2.0
   unix_single_instance: ^0.0.4
+  desktop_updater: ^3.1.6
+  path_provider: ^2.1.6
+  package_info_plus: ^10.2.1
 
 dev_dependencies:
   flutter_test:
@@ -67,6 +70,14 @@ dependency_overrides:
       ref: fix/web-audio-playback-gate
   flutter_webrtc:
     path: packages/flutter_webrtc
+  # Vendored tray_manager 0.5.3 (path override, como flutter_webrtc): o
+  # upstream marca app_indicator_new como deprecated e o -Werror do projeto
+  # quebrava o build linux (leanflutter/tray_manager#67, sem fix até 0.5.3).
+  # Fix local em packages/tray_manager/linux/tray_manager_plugin.cc
+  # (G_GNUC_BEGIN/END_IGNORE_DEPRECATIONS). Não atualizar via pub sem
+  # re-aplicar o fix; revisar a cada upgrade do plugin.
+  tray_manager:
+    path: packages/tray_manager
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is

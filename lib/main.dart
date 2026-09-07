@@ -9,6 +9,7 @@ import 'core/config/lab_ca_overrides.dart';
 import 'core/desktop/desktop_lifecycle.dart';
 import 'core/desktop/single_instance.dart';
 import 'core/telemetry/telemetry_service.dart';
+import 'core/updates/update_providers.dart';
 
 Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -24,19 +25,21 @@ Future<void> main(List<String> args) async {
   // Captura global de erros → OpenObserve (via `reportError`, com redação).
   // Container próprio para alcançar o TelemetryService fora da árvore.
   final container = ProviderContainer();
+  // Windows/Linux: checagem de update em background (web/stub = no-op,
+  // falha silenciosa — update nunca derruba o boot).
+  unawaited(scheduleStartupUpdateCheck(container));
   final telemetry = container.read(telemetryServiceProvider);
-  FlutterError.onError = (details) => telemetry.reportError(
-        'flutter',
-        details.exception,
-        details.stack,
-      );
+  FlutterError.onError = (details) =>
+      telemetry.reportError('flutter', details.exception, details.stack);
   PlatformDispatcher.instance.onError = (error, stack) {
     telemetry.reportError('platform', error, stack);
     return true;
   };
 
   runZonedGuarded(
-    () => runApp(UncontrolledProviderScope(container: container, child: const App())),
+    () => runApp(
+      UncontrolledProviderScope(container: container, child: const App()),
+    ),
     (error, stack) => telemetry.reportError('zone', error, stack),
   );
   // O bootstrap de sessão acontece no AuthController.build() (disparado pelo

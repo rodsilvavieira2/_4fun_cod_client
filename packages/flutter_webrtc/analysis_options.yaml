@@ -31,6 +31,10 @@ linter:
     - void_checks
   
 analyzer:
+  exclude:
+    # Cópia vendored: o app de exemplo é código third-party do upstream,
+    # com deps próprias; não faz parte do 4fun_cod e não é analisado.
+    - example/**
   errors:
     # treat missing required parameters as a warning (not a hint)
     missing_required_param: warning

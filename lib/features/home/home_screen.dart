@@ -19,30 +19,37 @@ class HomeScreen extends ConsumerWidget {
     final servers = ref.watch(serversProvider);
 
     return Scaffold(
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          final compact = constraints.maxWidth < AppLayout.compactBreakpoint;
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              ServerRail(
-                width: compact
-                    ? AppLayout.compactServerRailWidth
-                    : AppLayout.serverRailWidth,
-                compact: compact,
-              ),
-              if (!compact) ...[
-                const VerticalDivider(width: 1),
-                const SizedBox(
-                  width: AppLayout.navigationWidth,
-                  child: _HomeNavigation(),
-                ),
-              ],
-              const VerticalDivider(width: 1),
-              Expanded(child: _HomeContent(servers: servers)),
-            ],
-          );
-        },
+      body: Stack(
+        children: [
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final compact =
+                  constraints.maxWidth < AppLayout.compactBreakpoint;
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  ServerRail(
+                    width: compact
+                        ? AppLayout.compactServerRailWidth
+                        : AppLayout.serverRailWidth,
+                    compact: compact,
+                  ),
+                  if (!compact) ...[
+                    const VerticalDivider(width: 1),
+                    const SizedBox(
+                      width: AppLayout.navigationWidth,
+                      child: _HomeNavigation(),
+                    ),
+                  ],
+                  const VerticalDivider(width: 1),
+                  Expanded(child: _HomeContent(servers: servers)),
+                ],
+              );
+            },
+          ),
+          // Toast de update (só renderiza em available/downloading/ready).
+          const Positioned(right: 16, bottom: 16, child: UpdateBanner()),
+        ],
       ),
     );
   }

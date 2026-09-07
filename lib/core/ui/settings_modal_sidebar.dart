@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -9,6 +10,7 @@ enum SettingsSection {
   appearance('Aparência', Icons.palette_outlined),
   voiceVideo('Voz e Vídeo', Icons.mic_none),
   notifications('Notificações', Icons.notifications_none),
+  updates('Atualizações', Icons.system_update_alt),
   signOut('Sair', Icons.logout);
 
   const SettingsSection(this.title, this.icon);
@@ -37,6 +39,8 @@ class SettingsModalSidebar extends ConsumerWidget {
       SettingsSection.appearance,
       SettingsSection.voiceVideo,
       SettingsSection.notifications,
+      // Update in-place só existe no desktop (web = stub sem updater).
+      if (!kIsWeb) SettingsSection.updates,
     ];
 
     return Container(

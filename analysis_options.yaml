@@ -11,6 +11,11 @@ include:
   - package:flutter_lints/flutter.yaml
 
 analyzer:
+  exclude:
+    # Apps de exemplo dos pacotes vendored (flutter_webrtc, tray_manager):
+    # código third-party com deps próprias não resolvidas; nunca fizeram
+    # parte do app e quebravam o gate sem relação com nossas mudanças.
+    - packages/**/example/**
   plugins:
     # Riverpod lints (riverpod_lint 2.6.5): as regras vêm habilitadas por
     # padrão via custom_lint — não há mais include de riverpod_lint.yaml
