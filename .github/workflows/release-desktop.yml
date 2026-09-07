@@ -261,9 +261,25 @@ jobs:
           # ou (c) no System32. Limite conhecido: o runner tem VS instalado, entao
           # uma dep de terceiro presente no runner mas ausente no usuario passaria —
           # plugin novo com DLL propria exige revisao manual.
-          $dumpbin = Get-ChildItem 'C:\Program Files\Microsoft Visual Studio\2022\*\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe' -ErrorAction SilentlyContinue |
-            Select-Object -First 1 -ExpandProperty FullName
+          $roots = @()
+          $vswhere = 'C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe'
+          if (Test-Path $vswhere) {
+            $roots += & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          }
+          $roots += @(
+            'C:\Program Files\Microsoft Visual Studio\2022\Enterprise',
+            'C:\Program Files\Microsoft Visual Studio\2022\Professional',
+            'C:\Program Files\Microsoft Visual Studio\2022\Community',
+            'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools'
+          )
+          $dumpbin = $null
+          foreach ($r in ($roots | Where-Object { $_ } | Sort-Object -Unique)) {
+            $cand = Get-ChildItem "$r\VC\Tools\MSVC" -Filter dumpbin.exe -Recurse -ErrorAction SilentlyContinue |
+              Select-Object -First 1 -ExpandProperty FullName
+            if ($cand) { $dumpbin = $cand; break }
+          }
           if (-not $dumpbin) { Write-Error 'dumpbin não encontrado no runner'; exit 1 }
+          Write-Host "dumpbin: $dumpbin"
 
           $bindir = 'build\windows\x64\runner\Release'
           $bundle = Get-ChildItem $bindir -Include *.exe, *.dll -Recurse | ForEach-Object { $_.Name.ToLower() }
