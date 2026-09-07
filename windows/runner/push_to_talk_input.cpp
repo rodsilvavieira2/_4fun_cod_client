@@ -5,6 +5,7 @@
 #include <flutter/standard_method_codec.h>
 
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <string>
 #include <variant>
@@ -19,7 +20,6 @@ using flutter::MethodCall;
 using flutter::MethodChannel;
 using flutter::MethodResult;
 using flutter::StreamHandlerError;
-using flutter::StreamHandlerFunctions;
 
 int virtual_key_for_hid_usage(uint32_t usage) {
   // Flutter PhysicalKeyboardKey.usbHidUsage includes the HID usage page
@@ -70,6 +70,36 @@ std::optional<int64_t> value_int(const EncodableMap& map, const char* key) {
 
 }  // namespace
 
+// Substituto de flutter::StreamHandlerFunctions (removido do embedder):
+// repassa OnListen/OnCancel para a instância dona do sink.
+class PushToTalkStreamHandler
+    : public flutter::StreamHandler<EncodableValue> {
+ public:
+  using ListenFn = std::function<void(
+      std::unique_ptr<EventSink<EncodableValue>>&&)>;
+  using CancelFn = std::function<void()>;
+
+  PushToTalkStreamHandler(ListenFn on_listen, CancelFn on_cancel)
+      : on_listen_(std::move(on_listen)), on_cancel_(std::move(on_cancel)) {}
+
+  std::unique_ptr<StreamHandlerError<EncodableValue>> OnListen(
+      const EncodableValue*,
+      std::unique_ptr<EventSink<EncodableValue>>&& sink) override {
+    on_listen_(std::move(sink));
+    return nullptr;
+  }
+
+  std::unique_ptr<StreamHandlerError<EncodableValue>> OnCancel(
+      const EncodableValue*) override {
+    on_cancel_();
+    return nullptr;
+  }
+
+ private:
+  ListenFn on_listen_;
+  CancelFn on_cancel_;
+};
+
 class PushToTalkInput {
  public:
   explicit PushToTalkInput(flutter::BinaryMessenger* messenger) {
@@ -85,18 +115,11 @@ class PushToTalkInput {
         messenger, "fourfun_cod/push_to_talk_events",
         &flutter::StandardMethodCodec::GetInstance());
     events_->SetStreamHandler(
-        std::make_unique<StreamHandlerFunctions<EncodableValue>>(
-            [this](const EncodableValue*,
-                   std::unique_ptr<EventSink<EncodableValue>>&& sink)
-                -> std::unique_ptr<StreamHandlerError<EncodableValue>> {
+        std::make_unique<PushToTalkStreamHandler>(
+            [this](std::unique_ptr<EventSink<EncodableValue>>&& sink) {
               sink_ = std::move(sink);
-              return nullptr;
             },
-            [this](const EncodableValue*)
-                -> std::unique_ptr<StreamHandlerError<EncodableValue>> {
-              sink_.reset();
-              return nullptr;
-            }));
+            [this]() { sink_.reset(); }));
   }
 
   ~PushToTalkInput() {
