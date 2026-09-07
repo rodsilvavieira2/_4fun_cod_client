@@ -290,7 +290,7 @@ jobs:
       - name: Checkout (tags para --verify-tag)
         uses: actions/checkout@v5
         with:
-          fetch-tags: true
+          fetch-depth: 0
 
       - name: Download release artifacts
         uses: actions/download-artifact@v4
