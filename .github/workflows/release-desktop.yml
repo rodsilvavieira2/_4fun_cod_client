@@ -291,12 +291,21 @@ jobs:
           Get-ChildItem $bindir -Include *.exe, *.dll -Recurse | ForEach-Object {
             $bin = $_
             $deps = @()
+            # dumpbin lista 2 secoes: "dependencies" (load-time, obrigatorias)
+            # e "delay load dependencies" (ex.: jvm.dll via dartjni — so carrega
+            # se o recurso for usado; app abre sem ela). So a 1a reprova o build.
+            $inDeps = $false
             foreach ($line in (& $dumpbin /DEPENDENTS $bin.FullName 2>$null)) {
-              if ($line -match '^\s+([A-Za-z0-9_\-\+\.]+\.dll)\s*$') { $deps += $Matches[1].ToLower() }
+              if ($line -match 'delay load dependencies') { $inDeps = $false }
+              elseif ($line -match 'following dependencies:') { $inDeps = $true }
+              elseif ($inDeps -and ($line -match '^\s+([A-Za-z0-9_\-\+\.]+\.dll)\s*$')) { $deps += $Matches[1].ToLower() }
             }
             foreach ($d in ($deps | Sort-Object -Unique)) {
               if ($imports -notcontains $d) { $imports += $d }
-              if (($bundle -notcontains $d) -and ($redist -notcontains $d) -and (-not (Test-Path (Join-Path $system32 $d)))) {
+              # api-ms-win-* = API Sets do Universal CRT: contratos virtuais do
+              # loader, presentes em todo Win10+ e no VC++ redist — nao sao
+              # arquivos em System32, entao o Test-Path falharia a toa.
+              if (($bundle -notcontains $d) -and ($redist -notcontains $d) -and ($d -notmatch '^api-ms-win-') -and (-not (Test-Path (Join-Path $system32 $d)))) {
                 $entry = "$d (via $($bin.Name))"
                 if ($unknown -notcontains $entry) { $unknown += $entry }
               }
