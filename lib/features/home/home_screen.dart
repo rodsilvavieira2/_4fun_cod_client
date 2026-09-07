@@ -90,11 +90,6 @@ class _HomeNavigation extends StatelessWidget {
             selected: true,
           ),
           _HomeNavItem(
-            icon: Icons.chat_bubble_outline,
-            label: 'Mensagens diretas',
-            onTap: () => context.push('/dms'),
-          ),
-          _HomeNavItem(
             icon: Icons.add_circle_outline,
             label: 'Criar ou entrar',
             onTap: () => showServerEntryDialog(context),

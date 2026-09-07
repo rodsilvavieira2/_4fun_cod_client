@@ -7,11 +7,14 @@ import '../../shared/models/servers.dart';
 import 'servers_providers.dart';
 
 /// Coluna esquerda estilo macOS / Discord refinado (wireframe v4):
-/// Item de DMs no topo → divisor sutil → servidores → divisor → criar servidor.
+/// servidores → divisor → criar servidor.
+/// TODO(dms): botão de DMs oculto até concluir a funcionalidade (rota /dms
+/// mantida, sem entrada visível no rail).
 class ServerRail extends ConsumerWidget {
   const ServerRail({
     super.key,
     this.selectedServerId,
+    // Mantido para reativação das DMs sem quebrar DmShellScreen.
     this.dmActive = false,
     this.width = AppLayout.serverRailWidth,
     this.compact = false,
@@ -51,11 +54,6 @@ class ServerRail extends ConsumerWidget {
         data: (list) => ListView(
           padding: const EdgeInsets.symmetric(vertical: 12),
           children: [
-            _DmRailItem(active: dmActive, compact: compact),
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Divider(height: 1, color: AppTokens.borderHairline),
-            ),
             for (final server in list)
               _ServerRailItem(
                 server: server,
@@ -68,104 +66,6 @@ class ServerRail extends ConsumerWidget {
             ),
             _AddServerRailItem(compact: compact),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-class _DmRailItem extends StatefulWidget {
-  const _DmRailItem({required this.active, this.compact = false});
-
-  final bool active;
-  final bool compact;
-
-  @override
-  State<_DmRailItem> createState() => _DmRailItemState();
-}
-
-class _DmRailItemState extends State<_DmRailItem> {
-  bool _hovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final active = widget.active;
-    final compact = widget.compact;
-    final itemSize = compact ? 36.0 : 44.0;
-    final radius = compact ? 10.0 : 14.0;
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
-      child: MouseRegion(
-        onEnter: (_) => setState(() => _hovered = true),
-        onExit: (_) => setState(() => _hovered = false),
-        child: Tooltip(
-          message: 'Mensagens diretas',
-          child: InkWell(
-            borderRadius: BorderRadius.circular(radius + 4),
-            onTap: () => context.push('/dms'),
-            child: SizedBox(
-              height: itemSize,
-              child: Stack(
-                alignment: Alignment.center,
-                clipBehavior: Clip.none,
-                children: [
-                  // Pill branca Vercel à esquerda
-                  Positioned(
-                    left: 0,
-                    top: 0,
-                    bottom: 0,
-                    child: Center(
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 150),
-                        curve: Curves.easeOutCubic,
-                        width: active ? 3.5 : (_hovered ? 3.5 : 0),
-                        height: active ? 28 : (_hovered ? 14 : 0),
-                        decoration: BoxDecoration(
-                          color: AppTokens.textPrimary,
-                          borderRadius: const BorderRadius.horizontal(
-                            right: Radius.circular(3),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 150),
-                    curve: Curves.easeOutCubic,
-                    width: itemSize,
-                    height: itemSize,
-                    decoration: BoxDecoration(
-                      color: active
-                          ? AppTokens.textPrimary
-                          : (_hovered
-                                ? AppTokens.surface3
-                                : AppTokens.surface1),
-                      borderRadius: BorderRadius.circular(
-                        active || _hovered ? radius : AppRadius.full,
-                      ),
-                      border: Border.all(
-                        color: active
-                            ? Colors.transparent
-                            : (_hovered
-                                  ? AppTokens.borderSubtle
-                                  : AppTokens.borderHairline),
-                        width: 1,
-                      ),
-                    ),
-                    alignment: Alignment.center,
-                    child: Icon(
-                      active ? Icons.chat : Icons.chat_outlined,
-                      size: compact ? 16 : 18,
-                      color: active
-                          ? AppTokens.textInverse
-                          : AppTokens.textPrimary,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
         ),
       ),
     );
