@@ -70,10 +70,19 @@ jobs:
 
       - name: Build Linux
         run: |
+          DEFINES=()
+          [ -n "${{ vars.API_URL }}" ] && DEFINES+=(--dart-define=API_URL=${{ vars.API_URL }})
+          [ -n "${{ vars.LIVEKIT_URL }}" ] && DEFINES+=(--dart-define=LIVEKIT_URL=${{ vars.LIVEKIT_URL }})
+          [ -n "${{ vars.OTEL_ENABLED }}" ] && DEFINES+=(--dart-define=OTEL_ENABLED=${{ vars.OTEL_ENABLED }})
+          [ -n "${{ vars.OTEL_ENDPOINT }}" ] && DEFINES+=(--dart-define=OTEL_ENDPOINT=${{ vars.OTEL_ENDPOINT }})
+          [ -n "${{ vars.OTEL_ORG }}" ] && DEFINES+=(--dart-define=OTEL_ORG=${{ vars.OTEL_ORG }})
+          [ -n "${{ secrets.OTEL_BASIC_AUTH }}" ] && DEFINES+=(--dart-define=OTEL_BASIC_AUTH=${{ secrets.OTEL_BASIC_AUTH }})
+
           flutter build linux \
             --release \
             --build-name "$APP_VERSION" \
-            --build-number "$GITHUB_RUN_NUMBER"
+            --build-number "$GITHUB_RUN_NUMBER" \
+            "${DEFINES[@]}"
 
       - name: Create Linux package
         shell: bash
@@ -92,6 +101,34 @@ jobs:
 
       - name: Show Linux package
         run: |
+          ls -lh dist/linux
+
+      - name: Build AppImage
+        shell: bash
+        run: |
+          BUNDLE="build/linux/x64/release/bundle"
+
+          rm -rf AppDir
+          mkdir -p "AppDir/usr/bin" dist/linux
+
+          cp -a "$BUNDLE/." "AppDir/usr/bin/"
+          cp "packaging/linux/4fun-cod.desktop" "AppDir/4fun-cod.desktop"
+          cp "packaging/linux/4fun-cod.png" "AppDir/4fun-cod.png"
+
+          cat > AppDir/AppRun <<'EOF'
+          #!/bin/sh
+          HERE="$(dirname "$(readlink -f "$0")")"
+          exec "$HERE/usr/bin/_4fun_cod_client" "$@"
+          EOF
+          chmod +x AppDir/AppRun
+
+          wget -q "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage" -O appimagetool
+          chmod +x appimagetool
+
+          ./appimagetool --appimage-extract-and-run \
+            AppDir \
+            "dist/linux/${APP_SLUG}-linux-x64-${APP_VERSION}.AppImage"
+
           ls -lh dist/linux
 
       - name: Upload Linux artifact
@@ -139,10 +176,19 @@ jobs:
       - name: Build Windows
         shell: pwsh
         run: |
+          $defines = @()
+          if ("${{ vars.API_URL }}") { $defines += "--dart-define=API_URL=${{ vars.API_URL }}" }
+          if ("${{ vars.LIVEKIT_URL }}") { $defines += "--dart-define=LIVEKIT_URL=${{ vars.LIVEKIT_URL }}" }
+          if ("${{ vars.OTEL_ENABLED }}") { $defines += "--dart-define=OTEL_ENABLED=${{ vars.OTEL_ENABLED }}" }
+          if ("${{ vars.OTEL_ENDPOINT }}") { $defines += "--dart-define=OTEL_ENDPOINT=${{ vars.OTEL_ENDPOINT }}" }
+          if ("${{ vars.OTEL_ORG }}") { $defines += "--dart-define=OTEL_ORG=${{ vars.OTEL_ORG }}" }
+          if ("${{ secrets.OTEL_BASIC_AUTH }}") { $defines += "--dart-define=OTEL_BASIC_AUTH=${{ secrets.OTEL_BASIC_AUTH }}" }
+
           flutter build windows `
             --release `
             --build-name "$env:APP_VERSION" `
-            --build-number "${{ github.run_number }}"
+            --build-number "${{ github.run_number }}" `
+            @defines
 
       # --------------------------------------------------------
       # Portable ZIP
