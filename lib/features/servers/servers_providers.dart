@@ -178,6 +178,12 @@ class PresenceController
   // Membros do servidor (filtro de escopo: o payload de presença não traz
   // serverId — eventos de outros servidores não podem vazar para este).
   Set<String>? _memberIds;
+  // Enquanto o detalhe ainda carrega, guarda o ÚLTIMO status de cada user.
+  // Descartar aqui abre uma janela fetch-presença → fetch-membros na qual um
+  // ONLINE/OFFLINE real some para sempre (até a próxima transição).
+  final Map<String, PresenceStatus> _pendingEvents = {};
+  int _generation = 0;
+  int _fetchGeneration = 0;
 
   @override
   Set<String> build(String serverId) {
@@ -188,6 +194,9 @@ class PresenceController
     _reconnectedSub?.cancel();
     _subscription = null;
     _reconnectedSub = null;
+    _seenEvents.clear();
+    _pendingEvents.clear();
+    final generation = ++_generation;
     // Escopo de membros: lido de forma SÍNCRONA via ref.read — o detail pode
     // já estar resolvido quando este controller nasce, e o ref.listen sem
     // fireImmediately não dispararia com o valor atual; com fireImmediately
@@ -199,54 +208,80 @@ class PresenceController
         .map((m) => m.userId)
         .toSet();
     ref.listen(serverDetailProvider(serverId), (_, next) {
+      if (_disposed || generation != _generation) return;
       final members = next.valueOrNull?.members.map((m) => m.userId).toSet();
       _memberIds = members;
-      if (members != null && !_disposed) {
+      if (members != null) {
         _seenEvents.removeWhere((id) => !members.contains(id));
         final cleaned = {...state}..removeWhere((id) => !members.contains(id));
         if (cleaned.length != state.length) state = cleaned;
+        final pending = Map<String, PresenceStatus>.from(_pendingEvents);
+        _pendingEvents.clear();
+        for (final entry in pending.entries) {
+          if (members.contains(entry.key)) {
+            _applyEvent(entry.key, entry.value);
+          }
+        }
       }
     });
     _subscription = ref.read(socketServiceProvider).events.listen((event) {
-      if (event is! PresenceChangedEvent) return;
-      final members = _memberIds;
-      // Sem escopo (members ainda não carregou) → descarta o evento: o
-      // snapshot REST do _fetch cobre o estado durante a carga; aceitar
-      // eventos sem escopo poluiria _seenEvents com ids de outros servers.
-      if (members == null || !members.contains(event.userId)) return;
-      _seenEvents.add(event.userId);
-      final online = {...state};
-      if (event.status == PresenceStatus.online) {
-        online.add(event.userId);
-      } else {
-        online.remove(event.userId);
+      if (event is! PresenceChangedEvent ||
+          _disposed ||
+          generation != _generation) {
+        return;
       }
-      state = online;
+      final members = _memberIds;
+      if (members == null) {
+        // O payload não tem serverId; posterga o filtro até conhecermos os
+        // membros, mantendo apenas o status mais recente por usuário.
+        _pendingEvents[event.userId] = event.status;
+        return;
+      }
+      if (!members.contains(event.userId)) return;
+      _applyEvent(event.userId, event.status);
     });
     // Reconexão: presença é efêmera (TTL 60s) — refaz o snapshot para não
     // deixar fantasmas online após uma queda. Eventos pré-queda são MAIS
     // ANTIGOS que o snapshot novo: limpa o rastro (_seenEvents/state) para
     // que o snapshot decida tudo de novo.
     _reconnectedSub = ref.read(socketServiceProvider).reconnected.listen((_) {
+      if (_disposed || generation != _generation) return;
       _seenEvents.clear();
+      _pendingEvents.clear();
       state = const {};
-      _fetch(serverId);
+      _fetch(serverId, generation);
     });
     ref.onDispose(() {
       _disposed = true;
       _subscription?.cancel();
       _reconnectedSub?.cancel();
     });
-    _fetch(serverId);
+    _fetch(serverId, generation);
     return const {};
   }
 
-  Future<void> _fetch(String serverId) async {
+  void _applyEvent(String userId, PresenceStatus status) {
+    _seenEvents.add(userId);
+    final online = {...state};
+    if (status == PresenceStatus.online) {
+      online.add(userId);
+    } else {
+      online.remove(userId);
+    }
+    state = online;
+  }
+
+  Future<void> _fetch(String serverId, int generation) async {
+    final fetchGeneration = ++_fetchGeneration;
     try {
       final presence = await ref
           .read(serversRepositoryProvider)
           .fetchPresence(serverId);
-      if (_disposed) return;
+      if (_disposed ||
+          generation != _generation ||
+          fetchGeneration != _fetchGeneration) {
+        return;
+      }
       // Snapshot REST como base, exceto usuários com evento (o estado de
       // eventos é sempre mais recente que o snapshot).
       final fromSnapshot = {
@@ -274,14 +309,21 @@ class VoicePresenceController
   StreamSubscription<void>? _reconnectedSub;
   bool _disposed = false;
   final Map<({String channelId, String userId}), bool> _eventStates = {};
+  int _generation = 0;
+  int _fetchGeneration = 0;
 
   @override
   Map<String, Set<String>> build(String serverId) {
     _disposed = false;
     _subscription?.cancel();
     _reconnectedSub?.cancel();
+    _eventStates.clear();
+    final generation = ++_generation;
     _subscription = ref.read(socketServiceProvider).events.listen((event) {
-      if (event is! VoicePresenceChangedEvent || event.serverId != serverId) {
+      if (event is! VoicePresenceChangedEvent ||
+          event.serverId != serverId ||
+          _disposed ||
+          generation != _generation) {
         return;
       }
       _eventStates[(channelId: event.channelId, userId: event.userId)] =
@@ -298,25 +340,31 @@ class VoicePresenceController
       state = next;
     });
     _reconnectedSub = ref.read(socketServiceProvider).reconnected.listen((_) {
+      if (_disposed || generation != _generation) return;
       _eventStates.clear();
       state = const {};
-      _fetch(serverId);
+      _fetch(serverId, generation);
     });
     ref.onDispose(() {
       _disposed = true;
       _subscription?.cancel();
       _reconnectedSub?.cancel();
     });
-    _fetch(serverId);
+    _fetch(serverId, generation);
     return const {};
   }
 
-  Future<void> _fetch(String serverId) async {
+  Future<void> _fetch(String serverId, int generation) async {
+    final fetchGeneration = ++_fetchGeneration;
     try {
       final presence = await ref
           .read(serversRepositoryProvider)
           .fetchPresence(serverId);
-      if (_disposed) return;
+      if (_disposed ||
+          generation != _generation ||
+          fetchGeneration != _fetchGeneration) {
+        return;
+      }
       final next = <String, Set<String>>{
         for (final entry in presence.voiceByChannel.entries)
           entry.key: {...entry.value},

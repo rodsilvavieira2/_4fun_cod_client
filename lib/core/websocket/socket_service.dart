@@ -1,11 +1,33 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 
 import '../config/app_config.dart';
 import '../logging/app_logger.dart';
 import 'realtime_event.dart';
+
+typedef SocketFactory = io.Socket Function(dynamic uri, dynamic options);
+
+io.Socket _defaultSocketFactory(dynamic uri, dynamic options) =>
+    io.io(uri, options);
+
+/// O Socket.IO usa o gateway no namespace raiz, enquanto a API REST pode ser
+/// configurada com o prefixo `/api/v1`. Passar esse path para `io.io` faria o
+/// pacote interpretá-lo como namespace e conectar em um gateway inexistente.
+@visibleForTesting
+String socketOriginFromApiUrl(String apiUrl) {
+  final value = apiUrl.trim();
+  final uri = Uri.tryParse(value);
+  if (uri == null || !uri.hasScheme || !uri.hasAuthority) return value;
+  return Uri(
+    scheme: uri.scheme,
+    userInfo: uri.userInfo,
+    host: uri.host,
+    port: uri.hasPort ? uri.port : null,
+  ).toString();
+}
 
 /// Cliente Socket.IO encapsulado — único lugar do app que importa
 /// `socket_io_client` (a UI só enxerga [events] e os métodos de join/leave).
@@ -18,13 +40,18 @@ import 'realtime_event.dart';
 /// joins de servidores/canais abertos são reemitidos a partir do estado
 /// registrado por [joinServer]/[joinChannel], sem interação do usuário.
 class SocketService {
-  SocketService({required this.apiUrl, AppLogger? logger})
-    : _log = logger ?? AppLogger();
+  SocketService({
+    required this.apiUrl,
+    AppLogger? logger,
+    this.socketFactory = _defaultSocketFactory,
+  }) : _log = logger ?? AppLogger();
 
   /// Base URL da API (mesma usada pelo dio; o gateway responde nela).
   final String apiUrl;
 
   final AppLogger _log;
+  @visibleForTesting
+  final SocketFactory socketFactory;
 
   io.Socket? _socket;
   final StreamController<RealtimeEvent> _events =
@@ -34,6 +61,23 @@ class SocketService {
   final StreamController<void> _reconnected =
       StreamController<void>.broadcast();
   Timer? _heartbeat;
+
+  /// Invalida restaurações assíncronas de uma conexão anterior. O evento
+  /// `connect` do Socket.IO pode chegar antes de o `handleConnection` async do
+  /// gateway terminar; por isso heartbeat/joins exigem ack e retry explícito
+  /// antes de considerarmos a sessão realtime restaurada.
+  int _connectionGeneration = 0;
+
+  static const int _ackTimeoutMs = 1000;
+  static const int _ackRetries = 5;
+  static const List<Duration> _ackRetryDelays = [
+    Duration(milliseconds: 50),
+    Duration(milliseconds: 100),
+    Duration(milliseconds: 200),
+    Duration(milliseconds: 400),
+    Duration(milliseconds: 800),
+  ];
+  static const Duration _restoreRetryDelay = Duration(seconds: 2);
 
   /// Alguma conexão já foi estabelecida nesta sessão (não reseta em
   /// reconexões — inclusive as pós-auth-failure; só em logout/dispose).
@@ -60,8 +104,8 @@ class SocketService {
   /// `connect` (cobre também a reconexão automática).
   void connect(String token) {
     _teardownSocket();
-    final socket = io.io(
-      apiUrl,
+    final socket = socketFactory(
+      socketOriginFromApiUrl(apiUrl),
       io.OptionBuilder()
           .setTransports(['websocket'])
           .setAuth({'token': token})
@@ -111,9 +155,9 @@ class SocketService {
     // Timeout obrigatório: um ack perdido (queda no meio do emit) não pode
     // pendurar o fetch inicial do chat em loading para sempre — o resync da
     // reconexão cobre a janela.
-    await socket
-        .emitWithAckAsync('channel:join', {'channelId': channelId})
-        .timeout(const Duration(seconds: 5));
+    await _emitWithAck(socket, 'channel:join', {
+      'channelId': channelId,
+    }).timeout(const Duration(seconds: 12));
   }
 
   void leaveChannel(String channelId) {
@@ -124,20 +168,26 @@ class SocketService {
 
   void _wire(io.Socket socket) {
     socket.on('connect', (_) {
+      if (!identical(_socket, socket)) return;
       final wasConnected = _hasConnectedOnce;
       _hasConnectedOnce = true;
+      final generation = ++_connectionGeneration;
       _log.i(
         'socket conectado${wasConnected ? ' (reconexão)' : ''} '
         'id=${socket.id}',
         tag: 'socket',
       );
       _startHeartbeat();
-      _rejoin();
-      if (wasConnected) {
-        _reconnected.add(null);
-      }
+      // Primeiro heartbeat funciona também como barreira de prontidão do
+      // gateway. Só depois dele restauramos rooms e anunciamos reconexão aos
+      // providers, para os snapshots REST não correrem antes dos joins.
+      unawaited(
+        _restoreRealtimeState(socket, generation, wasConnected: wasConnected),
+      );
     });
     socket.on('disconnect', (data) {
+      if (!identical(_socket, socket)) return;
+      _connectionGeneration++;
       _stopHeartbeat();
       _log.w('socket desconectado (data=$data)', tag: 'socket');
       // 'io server disconnect' = o servidor encerrou a conexão: handshake
@@ -170,6 +220,87 @@ class SocketService {
     socket.on(
       'voice.presence.changed',
       (data) => _dispatch('voice.presence.changed', data),
+    );
+  }
+
+  Future<void> _restoreRealtimeState(
+    io.Socket socket,
+    int generation, {
+    required bool wasConnected,
+  }) async {
+    try {
+      // Imediato: sem isto, o primeiro heartbeat ocorria apenas 30s depois
+      // do login e todos apareciam offline nesse intervalo.
+      await _emitWithAck(socket, 'presence:heartbeat');
+      if (!_isCurrentConnection(socket, generation)) return;
+
+      for (final serverId in {..._openServers}) {
+        if (!_openServers.contains(serverId)) continue;
+        await _emitWithAck(socket, 'server:join', {'serverId': serverId});
+        if (!_isCurrentConnection(socket, generation)) return;
+      }
+      final channelId = _openChannelId;
+      if (channelId != null) {
+        await _emitWithAck(socket, 'channel:join', {'channelId': channelId});
+        if (!_isCurrentConnection(socket, generation)) return;
+      }
+      if (wasConnected) _reconnected.add(null);
+    } catch (error) {
+      if (_isCurrentConnection(socket, generation)) {
+        _log.w(
+          'falha ao restaurar sessão realtime; tentando novamente: $error',
+          tag: 'socket',
+        );
+        unawaited(
+          Future<void>.delayed(_restoreRetryDelay, () {
+            if (_isCurrentConnection(socket, generation)) {
+              unawaited(
+                _restoreRealtimeState(
+                  socket,
+                  generation,
+                  wasConnected: wasConnected,
+                ),
+              );
+            }
+          }),
+        );
+      }
+    }
+  }
+
+  bool _isCurrentConnection(io.Socket socket, int generation) =>
+      identical(_socket, socket) &&
+      socket.connected &&
+      generation == _connectionGeneration;
+
+  Future<void> _emitWithAck(
+    io.Socket socket,
+    String event, [
+    Map<String, dynamic>? data,
+  ]) async {
+    Object? lastError;
+    for (var attempt = 0; attempt <= _ackRetries; attempt++) {
+      if (!identical(_socket, socket) || !socket.connected) {
+        throw StateError('socket desconectado durante $event');
+      }
+      try {
+        // Retry explícito em vez de `OptionBuilder.setRetries`: a fila da
+        // versão 3.1.6 muta os argumentos do pacote ao reenviar e pode
+        // corromper a segunda tentativa.
+        final ack = await socket
+            .timeout(_ackTimeoutMs)
+            .emitWithAckAsync(event, data);
+        if (ack == true) return;
+        lastError = StateError('ack inválido: $ack');
+      } catch (error) {
+        lastError = error;
+      }
+      if (attempt < _ackRetries) {
+        await Future<void>.delayed(_ackRetryDelays[attempt]);
+      }
+    }
+    throw StateError(
+      'sem ack para $event após ${_ackRetries + 1} tentativas: $lastError',
     );
   }
 
@@ -214,18 +345,6 @@ class SocketService {
     return data.toString();
   }
 
-  /// Re-emite os joins registrados (chamado em todo `connect`, inclusive
-  /// após reconexão automática).
-  void _rejoin() {
-    for (final serverId in _openServers) {
-      _emit('server:join', {'serverId': serverId});
-    }
-    final channelId = _openChannelId;
-    if (channelId != null) {
-      _emit('channel:join', {'channelId': channelId});
-    }
-  }
-
   void _emit(String event, [Map<String, dynamic>? data]) {
     final socket = _socket;
     if (socket == null || !socket.connected) {
@@ -254,6 +373,7 @@ class SocketService {
   }
 
   void _teardownSocket() {
+    _connectionGeneration++;
     _stopHeartbeat();
     final socket = _socket;
     _socket = null;

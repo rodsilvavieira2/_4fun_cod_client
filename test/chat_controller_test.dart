@@ -105,6 +105,15 @@ class FakeServerDetailController extends ServerDetailController {
   );
 }
 
+class DelayedServerDetailController extends ServerDetailController {
+  DelayedServerDetailController(this.completer);
+
+  final Completer<ServerDetail> completer;
+
+  @override
+  Future<ServerDetail> build(String serverId) => completer.future;
+}
+
 final _epoch = DateTime.fromMillisecondsSinceEpoch(0);
 
 ChatMessage _msg(String id, String channelId, String content) => ChatMessage(
@@ -488,5 +497,216 @@ void main() {
 
       expect(online(), {'u1', 'u3'});
     });
+
+    test(
+      'evento recebido antes dos membros carregarem é aplicado depois',
+      () async {
+        final detailCompleter = Completer<ServerDetail>();
+        final delayedContainer = ProviderContainer(
+          overrides: [
+            serversRepositoryProvider.overrideWithValue(repo),
+            socketServiceProvider.overrideWithValue(socket),
+            serverDetailProvider.overrideWith(
+              () => DelayedServerDetailController(detailCompleter),
+            ),
+          ],
+        );
+        addTearDown(delayedContainer.dispose);
+        repo.onFetchPresence = (_) async => const ServerPresence(online: {});
+        final sub = delayedContainer.listen(presenceProvider('s1'), (_, _) {});
+        addTearDown(sub.close);
+        await pumpEventQueue();
+
+        socket.push(
+          const PresenceChangedEvent(
+            userId: 'u2',
+            status: PresenceStatus.online,
+          ),
+        );
+        await pumpEventQueue();
+        expect(delayedContainer.read(presenceProvider('s1')), isEmpty);
+
+        detailCompleter.complete(_serverDetail());
+        await pumpEventQueue();
+        await pumpEventQueue();
+
+        expect(delayedContainer.read(presenceProvider('s1')), {'u2'});
+      },
+    );
+
+    test('fetch anterior à reconexão não sobrescreve snapshot novo', () async {
+      final oldFetch = Completer<ServerPresence>();
+      var presenceFetches = 0;
+      repo.onFetchPresence = (_) {
+        presenceFetches++;
+        return presenceFetches == 1
+            ? oldFetch.future
+            : Future.value(const ServerPresence(online: {'u3'}));
+      };
+      final sub = container.listen(presenceProvider('s1'), (_, _) {});
+      addTearDown(sub.close);
+      await pumpEventQueue();
+
+      socket.pushReconnected();
+      await pumpEventQueue();
+      await pumpEventQueue();
+      expect(online(), {'u3'});
+
+      oldFetch.complete(const ServerPresence(online: {'u1'}));
+      await pumpEventQueue();
+      await pumpEventQueue();
+
+      expect(online(), {'u3'});
+    });
+  });
+
+  group('VoicePresenceController', () {
+    late ProviderContainer container;
+    late FakeServersRepository repo;
+    late FakeSocketService socket;
+
+    setUp(() {
+      repo = FakeServersRepository();
+      socket = FakeSocketService();
+      container = ProviderContainer(
+        overrides: [
+          serversRepositoryProvider.overrideWithValue(repo),
+          socketServiceProvider.overrideWithValue(socket),
+        ],
+      );
+    });
+
+    tearDown(() => container.dispose());
+
+    Map<String, Set<String>> occupants() =>
+        container.read(voicePresenceProvider('s1'));
+
+    test('entrada durante fetch é preservada no snapshot de voz', () async {
+      final fetch = Completer<ServerPresence>();
+      repo.onFetchPresence = (_) => fetch.future;
+      final sub = container.listen(voicePresenceProvider('s1'), (_, _) {});
+      addTearDown(sub.close);
+      await pumpEventQueue();
+
+      socket.push(
+        const VoicePresenceChangedEvent(
+          serverId: 's1',
+          channelId: 'c1',
+          userId: 'u2',
+          connected: true,
+        ),
+      );
+      await pumpEventQueue();
+      fetch.complete(
+        const ServerPresence(
+          online: {},
+          voiceByChannel: {
+            'c1': ['u1'],
+          },
+        ),
+      );
+      await pumpEventQueue();
+      await pumpEventQueue();
+
+      expect(occupants()['c1'], {'u1', 'u2'});
+    });
+
+    test('saída durante fetch vence ocupante do snapshot', () async {
+      final fetch = Completer<ServerPresence>();
+      repo.onFetchPresence = (_) => fetch.future;
+      final sub = container.listen(voicePresenceProvider('s1'), (_, _) {});
+      addTearDown(sub.close);
+      await pumpEventQueue();
+
+      socket.push(
+        const VoicePresenceChangedEvent(
+          serverId: 's1',
+          channelId: 'c1',
+          userId: 'u1',
+          connected: false,
+        ),
+      );
+      fetch.complete(
+        const ServerPresence(
+          online: {},
+          voiceByChannel: {
+            'c1': ['u1'],
+          },
+        ),
+      );
+      await pumpEventQueue();
+      await pumpEventQueue();
+
+      expect(occupants()['c1'], isEmpty);
+    });
+
+    test('fetch de voz anterior à reconexão é ignorado', () async {
+      final oldFetch = Completer<ServerPresence>();
+      var presenceFetches = 0;
+      repo.onFetchPresence = (_) {
+        presenceFetches++;
+        return presenceFetches == 1
+            ? oldFetch.future
+            : Future.value(
+                const ServerPresence(
+                  online: {},
+                  voiceByChannel: {
+                    'c2': ['u3'],
+                  },
+                ),
+              );
+      };
+      final sub = container.listen(voicePresenceProvider('s1'), (_, _) {});
+      addTearDown(sub.close);
+      await pumpEventQueue();
+
+      socket.pushReconnected();
+      await pumpEventQueue();
+      await pumpEventQueue();
+      expect(occupants()['c2'], {'u3'});
+
+      oldFetch.complete(
+        const ServerPresence(
+          online: {},
+          voiceByChannel: {
+            'c1': ['u1'],
+          },
+        ),
+      );
+      await pumpEventQueue();
+      await pumpEventQueue();
+
+      expect(occupants().containsKey('c1'), isFalse);
+      expect(occupants()['c2'], {'u3'});
+    });
   });
 }
+
+ServerDetail _serverDetail() => ServerDetail(
+  server: const Server(id: 's1', name: 'Servidor'),
+  channels: const [],
+  members: [
+    ServerMember(
+      id: 'm1',
+      userId: 'u1',
+      role: ServerRole.owner,
+      joinedAt: _epoch,
+      user: const User(id: 'u1', name: 'Ana', username: 'ana'),
+    ),
+    ServerMember(
+      id: 'm2',
+      userId: 'u2',
+      role: ServerRole.member,
+      joinedAt: _epoch,
+      user: const User(id: 'u2', name: 'Bia', username: 'bia'),
+    ),
+    ServerMember(
+      id: 'm3',
+      userId: 'u3',
+      role: ServerRole.member,
+      joinedAt: _epoch,
+      user: const User(id: 'u3', name: 'Caio', username: 'caio'),
+    ),
+  ],
+  myRole: ServerRole.owner,
+);
