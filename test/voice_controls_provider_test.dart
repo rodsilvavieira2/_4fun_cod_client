@@ -1,9 +1,11 @@
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:fourfun_cod_client/core/rtc/rtc_providers.dart';
 import 'package:fourfun_cod_client/core/rtc/rtc_service.dart';
+import 'package:fourfun_cod_client/features/voice/push_to_talk.dart';
 import 'package:fourfun_cod_client/features/voice/push_to_talk_input.dart';
 import 'package:fourfun_cod_client/features/voice/voice_controls_provider.dart';
 
@@ -32,16 +34,18 @@ class _FakeRtcService implements RtcService {
 
 class _FakePushToTalkInputService extends PushToTalkInputService {
   final List<Object?> configured = [];
-  bool result = true;
+  PushToTalkConfigResult result = const PushToTalkConfigResult.ok();
 
   @override
-  Future<bool> configure(binding) async {
+  Future<PushToTalkConfigResult> configure(binding) async {
     configured.add(binding);
     return result;
   }
 }
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   group('VoiceControlsController', () {
     late _FakeRtcService rtc;
     late _FakePushToTalkInputService input;
@@ -150,11 +154,17 @@ void main() {
       final controls = container.read(voiceControlsProvider.notifier);
 
       expect(await controls.setPushToTalkEnabled(true), isFalse);
-      expect(container.read(voiceControlsProvider).isRecordingPushToTalk, isTrue);
+      expect(
+        container.read(voiceControlsProvider).isRecordingPushToTalk,
+        isTrue,
+      );
 
       await controls.recordPushToTalkMouse(4);
       expect(container.read(voiceControlsProvider).isPushToTalkEnabled, isTrue);
-      expect(container.read(voiceControlsProvider).isMicrophoneEnabled, isFalse);
+      expect(
+        container.read(voiceControlsProvider).isMicrophoneEnabled,
+        isFalse,
+      );
       expect(input.configured.last, isNotNull);
 
       rtc.calls.clear();
@@ -165,7 +175,10 @@ void main() {
 
       await controls.setPushToTalkPressed(false);
       await Future<void>.delayed(Duration.zero);
-      expect(container.read(voiceControlsProvider).isMicrophoneEnabled, isFalse);
+      expect(
+        container.read(voiceControlsProvider).isMicrophoneEnabled,
+        isFalse,
+      );
       expect(rtc.calls, ['remote:true', 'mic:on', 'remote:true', 'mic:off']);
     });
 
@@ -184,27 +197,109 @@ void main() {
       expect(state.isMicrophoneEnabled, isFalse);
     });
 
-    test(
-      'falha posterior do atalho global mantém PTT fechado',
-      () async {
-        await start();
-        final controls = container.read(voiceControlsProvider.notifier);
-        await controls.recordPushToTalkMouse(4);
-        await controls.setPushToTalkEnabled(true);
-        await controls.setPushToTalkPressed(true);
-        rtc.calls.clear();
+    test('Ctrl+Alt+Del rejeita com mensagem e mantém gravando', () async {
+      await start();
+      final controls = container.read(voiceControlsProvider.notifier);
+      controls.startPushToTalkRecording();
 
-        await controls.handlePushToTalkRegistrationFailure();
+      KeyEvent down(PhysicalKeyboardKey physical, LogicalKeyboardKey logical) =>
+          KeyDownEvent(
+            physicalKey: physical,
+            logicalKey: logical,
+            timeStamp: Duration.zero,
+          );
+      KeyEvent up(PhysicalKeyboardKey physical, LogicalKeyboardKey logical) =>
+          KeyUpEvent(
+            physicalKey: physical,
+            logicalKey: logical,
+            timeStamp: Duration.zero,
+          );
 
-        final state = container.read(voiceControlsProvider);
-        final preferences = await SharedPreferences.getInstance();
-        expect(state.isPushToTalkEnabled, isTrue);
-        expect(state.isPushToTalkRegistered, isFalse);
-        expect(state.isMicrophoneEnabled, isFalse);
-        expect(state.errorMessage, contains('atalho global'));
-        expect(preferences.getBool('voice.push_to_talk.enabled'), isTrue);
-        expect(rtc.calls, ['remote:true', 'mic:off']);
-      },
-    );
+      await controls.recordPushToTalkKey(
+        down(PhysicalKeyboardKey.controlLeft, LogicalKeyboardKey.controlLeft),
+        control: true,
+      );
+      await controls.recordPushToTalkKey(
+        down(PhysicalKeyboardKey.altLeft, LogicalKeyboardKey.altLeft),
+        control: true,
+        alt: true,
+      );
+      await controls.recordPushToTalkKey(
+        down(PhysicalKeyboardKey.delete, LogicalKeyboardKey.delete),
+        control: true,
+        alt: true,
+      );
+      await controls.recordPushToTalkKey(
+        up(PhysicalKeyboardKey.delete, LogicalKeyboardKey.delete),
+        control: true,
+        alt: true,
+      );
+      await controls.recordPushToTalkKey(
+        up(PhysicalKeyboardKey.altLeft, LogicalKeyboardKey.altLeft),
+        control: true,
+      );
+      await controls.recordPushToTalkKey(
+        up(PhysicalKeyboardKey.controlLeft, LogicalKeyboardKey.controlLeft),
+      );
+
+      final state = container.read(voiceControlsProvider);
+      expect(state.isRecordingPushToTalk, isTrue);
+      expect(state.pushToTalkBinding, isNull);
+      expect(state.errorMessage, contains('Ctrl+Alt+Del'));
+    });
+
+    test('Ctrl isolado grava atalho só-modificadores e registra', () async {
+      await start();
+      final controls = container.read(voiceControlsProvider.notifier);
+      controls.startPushToTalkRecording();
+
+      await controls.recordPushToTalkKey(
+        KeyDownEvent(
+          physicalKey: PhysicalKeyboardKey.controlLeft,
+          logicalKey: LogicalKeyboardKey.controlLeft,
+          timeStamp: Duration.zero,
+        ),
+        control: true,
+      );
+      await controls.recordPushToTalkKey(
+        KeyUpEvent(
+          physicalKey: PhysicalKeyboardKey.controlLeft,
+          logicalKey: LogicalKeyboardKey.controlLeft,
+          timeStamp: Duration.zero,
+        ),
+      );
+
+      final state = container.read(voiceControlsProvider);
+      expect(state.isRecordingPushToTalk, isFalse);
+      expect(state.pushToTalkBinding?.isModifierOnly, isTrue);
+      expect(state.pushToTalkBinding?.displayLabel, 'Ctrl');
+
+      expect(await controls.setPushToTalkEnabled(true), isTrue);
+      expect(
+        container.read(voiceControlsProvider).isPushToTalkRegistered,
+        isTrue,
+      );
+      expect(input.configured.last, state.pushToTalkBinding);
+    });
+
+    test('falha posterior do atalho global mantém PTT fechado', () async {
+      await start();
+      final controls = container.read(voiceControlsProvider.notifier);
+      await controls.recordPushToTalkMouse(4);
+      await controls.setPushToTalkEnabled(true);
+      await controls.setPushToTalkPressed(true);
+      rtc.calls.clear();
+
+      await controls.handlePushToTalkRegistrationFailure();
+
+      final state = container.read(voiceControlsProvider);
+      final preferences = await SharedPreferences.getInstance();
+      expect(state.isPushToTalkEnabled, isTrue);
+      expect(state.isPushToTalkRegistered, isFalse);
+      expect(state.isMicrophoneEnabled, isFalse);
+      expect(state.errorMessage, contains('atalho global'));
+      expect(preferences.getBool('voice.push_to_talk.enabled'), isTrue);
+      expect(rtc.calls, ['remote:true', 'mic:off']);
+    });
   });
 }

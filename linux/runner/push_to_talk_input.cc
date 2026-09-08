@@ -181,6 +181,10 @@ std::string portal_key(const char* label) {
   if (key == "Tab") return "Tab";
   if (key == "Escape") return "Escape";
   if (key.size() == 1) return std::string(1, g_ascii_tolower(key[0]));
+  // Nomes de exibição do Dart para teclas sem keyLabel lógico.
+  if (key == "Page Up") return "Prior";
+  if (key == "Page Down") return "Next";
+  if (key == "Caps Lock") return "Caps_Lock";
   return key;  // F1..F24 and named XKB keys already use this spelling.
 }
 

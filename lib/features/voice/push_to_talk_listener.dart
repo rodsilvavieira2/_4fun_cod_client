@@ -67,18 +67,10 @@ class _PushToTalkListenerState extends ConsumerState<PushToTalkListener>
     final controls = ref.read(voiceControlsProvider.notifier);
     final state = ref.read(voiceControlsProvider);
     if (state.isRecordingPushToTalk) {
-      if (event is KeyDownEvent &&
-          event.logicalKey == LogicalKeyboardKey.escape) {
-        controls.cancelPushToTalkRecording();
-        return true;
-      }
-      if (event is KeyDownEvent &&
-          (event.logicalKey == LogicalKeyboardKey.backspace ||
-              event.logicalKey == LogicalKeyboardKey.delete)) {
-        unawaited(controls.clearPushToTalkBinding());
-        return true;
-      }
-      if (event is KeyDownEvent) {
+      // Gravação por chord (v2): o recorder acumula o conjunto pressionado
+      // em qualquer ordem e confirma ao soltar. Esc cancela e
+      // Backspace/Delete isolado limpa — tudo dentro do recorder.
+      if (event is KeyDownEvent || event is KeyUpEvent) {
         unawaited(controls.recordPushToTalkKey(event));
       }
       return true;
@@ -107,7 +99,15 @@ class _PushToTalkListenerState extends ConsumerState<PushToTalkListener>
     final controls = ref.read(voiceControlsProvider.notifier);
     final state = ref.read(voiceControlsProvider);
     if (state.isRecordingPushToTalk) {
-      unawaited(controls.recordPushToTalkMouse(event.buttons));
+      final keyboard = HardwareKeyboard.instance;
+      unawaited(
+        controls.recordPushToTalkMouse(
+          event.buttons,
+          control: keyboard.isControlPressed,
+          alt: keyboard.isAltPressed,
+          shift: keyboard.isShiftPressed,
+        ),
+      );
       return;
     }
     final binding = state.pushToTalkBinding;

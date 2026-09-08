@@ -60,8 +60,7 @@ class VoiceControlsState {
     isPushToTalkPressed: isPushToTalkPressed ?? this.isPushToTalkPressed,
     isPushToTalkRegistered:
         isPushToTalkRegistered ?? this.isPushToTalkRegistered,
-    isRecordingPushToTalk:
-        isRecordingPushToTalk ?? this.isRecordingPushToTalk,
+    isRecordingPushToTalk: isRecordingPushToTalk ?? this.isRecordingPushToTalk,
     isApplying: isApplying ?? this.isApplying,
     errorMessage: identical(errorMessage, _unset)
         ? this.errorMessage
@@ -84,6 +83,7 @@ class VoiceControlsController extends Notifier<VoiceControlsState> {
   Future<void>? _initialization;
   Timer? _releaseTimer;
   late PushToTalkInputService _inputService;
+  final PushToTalkChordRecorder _chordRecorder = PushToTalkChordRecorder();
   bool _enableAfterRecording = false;
   bool _disposed = false;
 
@@ -246,6 +246,7 @@ class VoiceControlsController extends Notifier<VoiceControlsState> {
 
   void startPushToTalkRecording() {
     _cancelPress();
+    _chordRecorder.reset();
     state = state.copyWith(
       isRecordingPushToTalk: true,
       isPushToTalkPressed: false,
@@ -256,16 +257,82 @@ class VoiceControlsController extends Notifier<VoiceControlsState> {
 
   void cancelPushToTalkRecording() {
     _enableAfterRecording = false;
+    _chordRecorder.reset();
     state = state.copyWith(isRecordingPushToTalk: false);
   }
 
-  Future<void> recordPushToTalkKey(KeyEvent event) async {
-    final binding = bindingFromKeyEvent(event);
-    if (binding != null) await _setPushToTalkBinding(binding);
+  /// Gravação por chord: acumula teclas em qualquer ordem e confirma ao
+  /// soltar. `control`/`alt`/`shift`/`meta` permitem injeção em testes; quando
+  /// omitidos, refletem o [HardwareKeyboard] atual.
+  Future<void> recordPushToTalkKey(
+    KeyEvent event, {
+    bool? control,
+    bool? alt,
+    bool? shift,
+    bool? meta,
+  }) async {
+    await ensureInitialized();
+    if (!state.isRecordingPushToTalk) return;
+    if (event is KeyRepeatEvent) return;
+    if (event is! KeyDownEvent && event is! KeyUpEvent) return;
+    final keyboard = HardwareKeyboard.instance;
+    final snapshot = (
+      control: control ?? keyboard.isControlPressed,
+      alt: alt ?? keyboard.isAltPressed,
+      shift: shift ?? keyboard.isShiftPressed,
+      meta: meta ?? keyboard.isMetaPressed,
+    );
+    final key = PushToTalkChordKey(
+      usage: event.physicalKey.usbHidUsage,
+      label: event.logicalKey.keyLabel,
+      isModifier: isModifierKey(event.logicalKey),
+      isEscape: event.logicalKey == LogicalKeyboardKey.escape,
+      isClearKey:
+          event.logicalKey == LogicalKeyboardKey.backspace ||
+          event.logicalKey == LogicalKeyboardKey.delete,
+    );
+    final outcome = event is KeyDownEvent
+        ? _chordRecorder.keyDown(
+            key,
+            control: snapshot.control,
+            alt: snapshot.alt,
+            shift: snapshot.shift,
+            meta: snapshot.meta,
+          )
+        : _chordRecorder.keyUp(
+            key,
+            control: snapshot.control,
+            alt: snapshot.alt,
+            shift: snapshot.shift,
+            meta: snapshot.meta,
+          );
+    switch (outcome) {
+      case PushToTalkCaptureReady(:final binding):
+        await _setPushToTalkBinding(binding);
+      case PushToTalkCaptureCancelled():
+        cancelPushToTalkRecording();
+      case PushToTalkCaptureClearRequested():
+        await clearPushToTalkBinding();
+      case PushToTalkCaptureRejected(:final message):
+        if (!_disposed) state = state.copyWith(errorMessage: message);
+      case PushToTalkCapturePending():
+      case PushToTalkCaptureIgnored():
+        break;
+    }
   }
 
-  Future<void> recordPushToTalkMouse(int buttons) async {
-    final binding = bindingFromMouseButton(buttons);
+  Future<void> recordPushToTalkMouse(
+    int buttons, {
+    bool control = false,
+    bool alt = false,
+    bool shift = false,
+  }) async {
+    final binding = bindingFromMouseButton(
+      buttons,
+      control: control,
+      alt: alt,
+      shift: shift,
+    );
     if (binding != null) await _setPushToTalkBinding(binding);
   }
 
@@ -366,13 +433,22 @@ class VoiceControlsController extends Notifier<VoiceControlsState> {
 
   Future<bool> _registerPushToTalk(PushToTalkBinding binding) async {
     state = state.copyWith(isPushToTalkRegistered: false);
-    final registered = await _inputService.configure(binding);
+    final result = await _inputService.configure(binding);
     if (_disposed) return false;
-    if (!registered) {
+    if (!result.isOk) {
       state = state.copyWith(
         isPushToTalkRegistered: false,
-        errorMessage:
-            'Não foi possível registrar o atalho global. O microfone permaneceu fechado.',
+        errorMessage: switch (result.error) {
+          PushToTalkConfigError.unsupportedKey =>
+            result.message ??
+                'Esta tecla não é suportada como atalho global nesta plataforma. Escolha outro atalho.',
+          PushToTalkConfigError.conflicting =>
+            result.message ??
+                'Este atalho já está em uso por outro aplicativo. Escolha outro atalho.',
+          _ =>
+            result.message ??
+                'Não foi possível registrar o atalho global. O microfone permaneceu fechado.',
+        },
       );
       await _savePushToTalk();
       await _applyToRtc();
@@ -395,11 +471,16 @@ class VoiceControlsController extends Notifier<VoiceControlsState> {
       if (binding == null) {
         await preferences.remove(_pttBindingKey);
       } else {
-        await preferences.setString(_pttBindingKey, jsonEncode(binding.toJson()));
+        await preferences.setString(
+          _pttBindingKey,
+          jsonEncode(binding.toJson()),
+        );
       }
     } catch (_) {
       if (!_disposed) {
-        state = state.copyWith(errorMessage: 'Não foi possível salvar o Push to Talk.');
+        state = state.copyWith(
+          errorMessage: 'Não foi possível salvar o Push to Talk.',
+        );
       }
     }
   }

@@ -296,7 +296,7 @@ class _PushToTalkSettings extends ConsumerWidget {
         const SizedBox(height: 4),
         Text(
           state.isRecordingPushToTalk
-              ? 'Pressione uma tecla ou botão do meio, voltar ou avançar. ESC cancela.'
+              ? 'Pressione o atalho em qualquer ordem e solte para confirmar. Ctrl, Alt ou Ctrl+Alt isolados valem. ESC cancela; Backspace limpa.'
               : 'No navegador, o Push to Talk funciona enquanto esta aba estiver focada.',
           style: Theme.of(context).textTheme.bodySmall,
         ),

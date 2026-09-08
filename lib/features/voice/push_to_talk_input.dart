@@ -21,9 +21,9 @@ class PushToTalkInputService {
 
   Stream<PushToTalkInputEvent> get events => _backend.events;
 
-  /// `true` significa que o runner registrou um listener global. Web não
+  /// `ok` significa que o runner registrou um listener global. Web não
   /// possui registro nativo, mas o fallback em foco continua disponível.
-  Future<bool> configure(PushToTalkBinding? binding) =>
+  Future<PushToTalkConfigResult> configure(PushToTalkBinding? binding) =>
       _backend.configure(binding);
 }
 

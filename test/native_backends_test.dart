@@ -10,13 +10,13 @@ import 'package:fourfun_cod_client/features/voice/push_to_talk_input.dart';
 class _FakePushToTalkBackend implements PushToTalkBackend {
   final eventsController = StreamController<PushToTalkInputEvent>.broadcast();
   PushToTalkBinding? configuredBinding;
-  bool registrationResult = true;
+  PushToTalkConfigResult registrationResult = const PushToTalkConfigResult.ok();
 
   @override
   Stream<PushToTalkInputEvent> get events => eventsController.stream;
 
   @override
-  Future<bool> configure(PushToTalkBinding? binding) async {
+  Future<PushToTalkConfigResult> configure(PushToTalkBinding? binding) async {
     configuredBinding = binding;
     return registrationResult;
   }
@@ -83,7 +83,7 @@ void main() {
         label: 'Botão do meio',
       );
 
-      expect(await service.configure(binding), isTrue);
+      expect((await service.configure(binding)).isOk, isTrue);
       expect(backend.configuredBinding, binding);
       expectLater(service.events, emits(PushToTalkInputEvent.pressed));
 
