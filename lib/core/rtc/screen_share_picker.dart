@@ -393,6 +393,7 @@ class _TabButton extends StatelessWidget {
     final foreground = enabled ? Colors.white : const Color(0xFF9AA1AD);
     return InkWell(
       borderRadius: BorderRadius.circular(6),
+      mouseCursor: SystemMouseCursors.click,
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 120),
@@ -550,6 +551,7 @@ class _WindowSourceTile extends StatelessWidget {
       borderRadius: BorderRadius.circular(6),
       child: InkWell(
         borderRadius: BorderRadius.circular(6),
+        mouseCursor: SystemMouseCursors.click,
         onTap: onTap,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -595,6 +597,7 @@ class _DisplaySourceCard extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         borderRadius: BorderRadius.circular(8),
+        mouseCursor: SystemMouseCursors.click,
         onTap: onTap,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 120),

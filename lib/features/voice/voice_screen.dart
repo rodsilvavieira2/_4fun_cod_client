@@ -202,6 +202,7 @@ class _AudioBlockedBanner extends StatelessWidget {
       color: theme.colorScheme.errorContainer,
       child: InkWell(
         onTap: onTap,
+        mouseCursor: SystemMouseCursors.click,
         child: Container(
           width: double.infinity,
           padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),

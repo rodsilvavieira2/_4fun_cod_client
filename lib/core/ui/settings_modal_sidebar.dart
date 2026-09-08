@@ -117,6 +117,7 @@ class _SidebarItemState extends State<_SidebarItem> {
         : (_hovered ? AppTokens.textPrimary : AppTokens.textSecondary);
 
     return MouseRegion(
+      cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
       child: GestureDetector(
@@ -181,6 +182,7 @@ class _SignOutButtonState extends State<_SignOutButton> {
         : (_hovered ? const Color(0xFFD32F2F) : AppTokens.accentDanger);
 
     return MouseRegion(
+      cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
       child: GestureDetector(

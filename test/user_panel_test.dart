@@ -1,7 +1,10 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import 'package:fourfun_cod_client/core/theme/app_theme.dart';
 
 import 'package:fourfun_cod_client/core/auth/auth_controller.dart';
 import 'package:fourfun_cod_client/core/auth/auth_state.dart';
@@ -197,10 +200,9 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     BoxDecoration cardOf() {
       return tester
-          .widget<Container>(
-            find.byKey(const Key('user-panel-card')),
-          )
-          .decoration! as BoxDecoration;
+              .widget<Container>(find.byKey(const Key('user-panel-card')))
+              .decoration!
+          as BoxDecoration;
     }
 
     Future<void> pumpPanel({required bool floating}) async {
@@ -220,5 +222,63 @@ void main() {
 
     await pumpPanel(floating: true);
     expect(cardOf().boxShadow, isNotNull);
+  });
+
+  testWidgets('Botões câmera/share mostram cursor click na área cheia', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [rtcServiceProvider.overrideWithValue(_FakeRtcService())],
+        child: MaterialApp(
+          theme: theme4funCod,
+          home: Scaffold(
+            body: UserPanel(
+              voiceArg: (serverId: 'server-1', channelId: 'voice-1'),
+              voiceChannelName: 'reunião',
+              voiceState: const VoiceState(
+                status: VoiceSessionStatus.connected,
+              ),
+              onLeaveVoice: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final cameraIcon = find.byIcon(Icons.videocam_off_outlined);
+    expect(cameraIcon, findsOneWidget);
+    // Caixa do IconButton (34px de altura, largura cheia).
+    final buttonBox = tester.getRect(
+      find.ancestor(
+        of: cameraIcon,
+        matching: find.byWidgetPredicate(
+          (w) => w is SizedBox && w.height == 34,
+        ),
+      ),
+    );
+    expect(buttonBox.height, 34);
+
+    // Cursor ativo do dispositivo de mouse (id 1 por padrão nos testes).
+    MouseCursor? cursorOf(int device) =>
+        tester.binding.mouseTracker.debugDeviceActiveCursor(device);
+
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(mouse.removePointer);
+    await mouse.addPointer();
+    await tester.pump();
+
+    // Canto do botão, fora do glifo: o tema força click (o padrão do
+    // framework no desktop seria seta via adaptiveClickable).
+    await mouse.moveTo(buttonBox.topLeft + const Offset(2, 17));
+    await tester.pump();
+    expect(cursorOf(1), SystemMouseCursors.click);
+
+    // Centro do glifo também.
+    await mouse.moveTo(tester.getCenter(cameraIcon));
+    await tester.pump();
+    expect(cursorOf(1), SystemMouseCursors.click);
   });
 }

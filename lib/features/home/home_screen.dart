@@ -158,6 +158,9 @@ class _HomeNavItemState extends State<_HomeNavItem> {
   Widget build(BuildContext context) {
     final highlighted = widget.selected || _hovered;
     return MouseRegion(
+      cursor: widget.onTap == null
+          ? SystemMouseCursors.basic
+          : SystemMouseCursors.click,
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
       child: GestureDetector(

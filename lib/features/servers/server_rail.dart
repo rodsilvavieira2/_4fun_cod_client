@@ -107,6 +107,7 @@ class _ServerRailItemState extends State<_ServerRailItem> {
           message: server.name,
           child: InkWell(
             borderRadius: BorderRadius.circular(radius + 4),
+            mouseCursor: SystemMouseCursors.click,
             onTap: () => context.go('/servers/${server.id}'),
             child: SizedBox(
               height: itemSize,
@@ -223,6 +224,7 @@ class _AddServerRailItemState extends State<_AddServerRailItem> {
           message: 'Criar servidor',
           child: InkWell(
             borderRadius: BorderRadius.circular(radius + 4),
+            mouseCursor: SystemMouseCursors.click,
             onTap: () => showServerEntryDialog(context),
             child: SizedBox(
               height: itemSize,

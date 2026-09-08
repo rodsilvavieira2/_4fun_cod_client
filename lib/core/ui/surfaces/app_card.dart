@@ -91,6 +91,7 @@ class AppCard extends StatelessWidget {
     if (onTap != null) {
       return InkWell(
         onTap: onTap,
+        mouseCursor: SystemMouseCursors.click,
         borderRadius: effectiveRadius,
         child: cardWidget,
       );

@@ -169,6 +169,7 @@ class _ConversationRowState extends State<_ConversationRow> {
         : (_hovered ? AppTokens.textPrimary : AppTokens.textSecondary);
 
     return MouseRegion(
+      cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
       child: GestureDetector(

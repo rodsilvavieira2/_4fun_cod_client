@@ -32,6 +32,16 @@ class AppThemeColors {
   static const List<Color> authorColors = AppTokens.authorColors;
 }
 
+/// Cursor "mãozinha" em todo botão clicável no desktop: o padrão do Flutter
+/// ([WidgetStateMouseCursor.adaptiveClickable]) mostra seta fora do web,
+/// então o tema força [SystemMouseCursors.click] (seta só em desabilitado).
+final WidgetStateProperty<MouseCursor?> clickableMouseCursor =
+    WidgetStateProperty.resolveWith(
+      (Set<WidgetState> states) => states.contains(WidgetState.disabled)
+          ? SystemMouseCursors.basic
+          : SystemMouseCursors.click,
+    );
+
 /// Tema dark macOS-like + Vercel Dark do 4fun_cod.
 final ThemeData theme4funCod = ThemeData(
   useMaterial3: true,
@@ -151,6 +161,9 @@ final ThemeData theme4funCod = ThemeData(
       fontFeatures: [FontFeature.tabularFigures()],
     ),
   ),
+  iconButtonTheme: IconButtonThemeData(
+    style: ButtonStyle(mouseCursor: clickableMouseCursor),
+  ),
   filledButtonTheme: FilledButtonThemeData(
     style: FilledButton.styleFrom(
       backgroundColor: AppTokens.textPrimary, // Vercel Signature: White on Dark
@@ -166,7 +179,7 @@ final ThemeData theme4funCod = ThemeData(
         borderRadius: BorderRadius.circular(AppRadius.sm),
       ),
       elevation: 0,
-    ),
+    ).copyWith(mouseCursor: clickableMouseCursor),
   ),
   textButtonTheme: TextButtonThemeData(
     style: TextButton.styleFrom(
@@ -180,7 +193,7 @@ final ThemeData theme4funCod = ThemeData(
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(AppRadius.sm),
       ),
-    ),
+    ).copyWith(mouseCursor: clickableMouseCursor),
   ),
   inputDecorationTheme: InputDecorationTheme(
     filled: true,

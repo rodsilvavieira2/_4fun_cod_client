@@ -90,9 +90,7 @@ class _VoiceVideoTileState extends ConsumerState<VoiceVideoTile> {
         VoiceVideoTileRole.grid => RtcVideoQuality.medium,
         VoiceVideoTileRole.miniature => RtcVideoQuality.low,
       };
-      final controller = ref.read(
-        voiceControllerProvider(widget.arg).notifier,
-      );
+      final controller = ref.read(voiceControllerProvider(widget.arg).notifier);
       if (widget.source == VoiceVideoSource.screen) {
         controller.applyTileScreenQuality(widget.participant.id, quality);
       } else {
@@ -115,46 +113,54 @@ class _VoiceVideoTileState extends ConsumerState<VoiceVideoTile> {
     final hasVideo = trackRef != null;
     final isMiniature = widget.role == VoiceVideoTileRole.miniature;
 
-    return GestureDetector(
-      onTap: widget.onTap,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(8),
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            if (hasVideo)
-              RtcVideoView(
-                trackRef: trackRef,
-                // Tela em destaque pede até 2x a densidade (960px → 1080p);
-                // demais casos seguem em auto para economizar banda.
-                highDensity:
-                    widget.source == VoiceVideoSource.screen &&
-                    widget.role == VoiceVideoTileRole.spotlight,
-              )
-            else
-              _AvatarPlaceholder(participant: participant),
-            if (isMiniature)
-              _MiniatureOverlay(participant: participant, source: widget.source)
-            else
-              _TileOverlay(
-                participant: participant,
-                source: widget.source,
-                isLocal: isLocal,
-              ),
-            // Active speaker: borda de 2px em primary (miniatura não tem).
-            if (participant.isSpeaking && !isMiniature)
-              IgnorePointer(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: theme.colorScheme.primary,
-                      width: 2,
+    return MouseRegion(
+      cursor: widget.onTap == null
+          ? SystemMouseCursors.basic
+          : SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (hasVideo)
+                RtcVideoView(
+                  trackRef: trackRef,
+                  // Tela em destaque pede até 2x a densidade (960px → 1080p);
+                  // demais casos seguem em auto para economizar banda.
+                  highDensity:
+                      widget.source == VoiceVideoSource.screen &&
+                      widget.role == VoiceVideoTileRole.spotlight,
+                )
+              else
+                _AvatarPlaceholder(participant: participant),
+              if (isMiniature)
+                _MiniatureOverlay(
+                  participant: participant,
+                  source: widget.source,
+                )
+              else
+                _TileOverlay(
+                  participant: participant,
+                  source: widget.source,
+                  isLocal: isLocal,
+                ),
+              // Active speaker: borda de 2px em primary (miniatura não tem).
+              if (participant.isSpeaking && !isMiniature)
+                IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: theme.colorScheme.primary,
+                        width: 2,
+                      ),
                     ),
                   ),
                 ),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
     );

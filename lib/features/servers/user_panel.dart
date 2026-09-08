@@ -611,6 +611,8 @@ class _VoiceActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Cursor click vem do tema (iconButtonTheme): mãozinha na área cheia,
+    // seta quando desabilitado.
     return SizedBox(
       height: 34,
       child: IconButton(

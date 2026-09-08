@@ -264,10 +264,16 @@ class ChannelList extends ConsumerWidget {
     }
     final userIds = {...mirroredIds, ...rtcByUserId.keys}.toList()
       ..sort((left, right) {
-        final leftName =
-            _displayName(membersById[left], rtcByUserId[left], left);
-        final rightName =
-            _displayName(membersById[right], rtcByUserId[right], right);
+        final leftName = _displayName(
+          membersById[left],
+          rtcByUserId[left],
+          left,
+        );
+        final rightName = _displayName(
+          membersById[right],
+          rtcByUserId[right],
+          right,
+        );
         return leftName.toLowerCase().compareTo(rightName.toLowerCase());
       });
     return [
@@ -485,6 +491,7 @@ class _ChannelRowState extends State<_ChannelRow> {
               : (_hovered ? AppTokens.textPrimary : AppTokens.textSecondary));
 
     return MouseRegion(
+      cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
       child: GestureDetector(

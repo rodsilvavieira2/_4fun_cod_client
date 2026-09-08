@@ -10,7 +10,8 @@ import 'settings_sections/updates_section.dart';
 import 'settings_sections/voice_video_section.dart';
 import 'ui.dart';
 
-/// Modal de configurações estilo janela macOS (660x460 com backdrop blur e alto contraste).
+/// Modal de configurações estilo janela macOS (90% da tela, backdrop blur e
+/// alto contraste).
 Future<void> showSettingsModal(
   BuildContext context, {
   SettingsSection initialSection = SettingsSection.account,
@@ -60,12 +61,14 @@ class _SettingsModalState extends State<_SettingsModal> {
 
   @override
   Widget build(BuildContext context) {
+    // Modal ocupa 90% da área disponível (largura e altura).
+    final screenSize = MediaQuery.sizeOf(context);
     return SettingsModalEscClose(
       child: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(
-            maxWidth: 680,
-            maxHeight: 460,
+          constraints: BoxConstraints(
+            maxWidth: screenSize.width * 0.9,
+            maxHeight: screenSize.height * 0.9,
             minWidth: 320,
             minHeight: 320,
           ),
