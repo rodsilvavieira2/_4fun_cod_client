@@ -124,8 +124,16 @@ void PortalVideoCapturer::StopCapture() {
       g_cancellable_cancel(cancellable_);
     }
   }
-  if (worker_.joinable() && worker_.get_id() != std::this_thread::get_id()) {
-    worker_.join();
+  if (worker_.joinable()) {
+    if (worker_.get_id() != std::this_thread::get_id()) {
+      worker_.join();
+    } else {
+      // A última referência pode morrer na própria worker thread (ex. cancel
+      // do portal: o lambda finish_capture é destruído no teardown da thread).
+      // Join em si mesma = deadlock; destruir std::thread joinable =
+      // std::terminate (SIGABRT). Detach é seguro: a thread já retornou de Run.
+      worker_.detach();
+    }
   }
   capture_started_ = false;
 }

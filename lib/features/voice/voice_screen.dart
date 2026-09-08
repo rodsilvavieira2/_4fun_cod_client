@@ -287,9 +287,7 @@ class _ParticipantsPanel extends StatelessWidget {
             'Você ainda não está neste canal de voz.\n'
             'Use o botão abaixo para entrar.',
             textAlign: TextAlign.center,
-            style: theme.textTheme.bodyLarge?.copyWith(
-              color: theme.colorScheme.outline,
-            ),
+            style: theme.textTheme.bodyLarge?.copyWith(color: Colors.white),
           ),
         );
       case VoiceSessionStatus.connected:

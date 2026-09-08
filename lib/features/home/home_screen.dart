@@ -28,19 +28,44 @@ class HomeScreen extends ConsumerWidget {
               return Row(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  ServerRail(
-                    width: compact
-                        ? AppLayout.compactServerRailWidth
-                        : AppLayout.serverRailWidth,
-                    compact: compact,
-                  ),
-                  if (!compact) ...[
-                    const VerticalDivider(width: 1),
-                    const SizedBox(
-                      width: AppLayout.navigationWidth,
-                      child: _HomeNavigation(),
+                  if (compact)
+                    ServerRail(
+                      width: AppLayout.compactServerRailWidth,
+                      compact: compact,
+                    )
+                  else
+                    // Bloco de navegação (rail + lista) como base do overlay:
+                    // o UserPanel flutua sobre os dois, mesmo padrão do servidor.
+                    SizedBox(
+                      width:
+                          AppLayout.serverRailWidth +
+                          1 +
+                          AppLayout.navigationWidth,
+                      child: Stack(
+                        children: [
+                          const Row(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              ServerRail(width: AppLayout.serverRailWidth),
+                              VerticalDivider(width: 1),
+                              SizedBox(
+                                width: AppLayout.navigationWidth,
+                                child: _HomeNavigation(),
+                              ),
+                            ],
+                          ),
+                          Positioned(
+                            left: 12,
+                            right: 12,
+                            bottom: 12,
+                            child: UserPanel(
+                              floating: true,
+                              onOpenSettings: () => showSettingsModal(context),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ],
                   const VerticalDivider(width: 1),
                   Expanded(child: _HomeContent(servers: servers)),
                 ],
@@ -127,7 +152,9 @@ class _HomeNavigation extends StatelessWidget {
             ),
           ),
           const Spacer(),
-          UserPanel(onOpenSettings: () => showSettingsModal(context)),
+          // Reserva sob o card flutuante (mesmo valor do servidor sem voz):
+          // o conteúdo nunca fica escondido atrás do overlay.
+          const SizedBox(height: 96),
         ],
       ),
     );
