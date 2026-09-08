@@ -939,7 +939,14 @@ class LiveKitRtcService implements RtcService {
     );
     final applied = await sender.setParameters(parameters);
     if (!applied) {
-      throw StateError('Sender recusou os parâmetros do screen share.');
+      final computed = parameters.encodings
+          ?.map((e) => e.toMap())
+          .toList();
+      final base = baseline.map((e) => e.toMap()).toList();
+      throw StateError(
+        'Sender recusou os parâmetros do screen share. '
+        'baseline=$base computed=$computed',
+      );
     }
   }
 
@@ -1594,15 +1601,19 @@ ScreenShareCaptureOptions screenShareCaptureOptionsFor(String? sourceId) =>
       params: LiveKitRtcService.screenShareH1080FPS60,
     );
 
-/// Transforma cada camada a partir do baseline do sender, preservando RID,
-/// active e as prioridades. A proporção de bitrate/resolução entre as
-/// camadas simulcast também é preservada. O SSRC é OMITIDO de propósito:
-/// `webrtc_interface` documenta que ele "can't be changed between
-/// getParameters/setParameters" e o libwebrtc rejeita (`set_parameters`
-/// retorna false) quando o SSRC enviado diverge do stream ativo — o nosso
-/// vinha do cache Dart capturado na publicação (podendo estar stale, além
-/// de truncar em `GetValue<int>` no C++ quando > INT32_MAX). Omitido, o
-/// parâmetro conserva o SSRC corrente e só bitrate/fps/escala mudam.
+/// Transforma cada camada a partir do baseline do sender, preservando RID e
+/// active. A proporção de bitrate/resolução entre as camadas simulcast
+/// também é preservada.
+///
+/// Payload MÍNIMO de propósito: só `maxBitrate`, `maxFramerate` e
+/// `scaleResolutionDownBy` são enviados; todo o resto vai null e o C++
+/// (`updateRtpParameters`) conserva o valor nativo corrente. Ecoar o
+/// baseline inteiro faz o libwebrtc recusar (`set_parameters` retorna
+/// false): o SSRC do cache pode estar stale (`webrtc_interface`: "can't be
+/// changed between getParameters/setParameters"), e campos como
+/// `scalabilityMode: ''` (string vazia do roundtrip nativo→Dart) são
+/// inválidos ao serem escritos de volta. Omitidos, só os 3 campos de
+/// qualidade mudam.
 List<rtc.RTCRtpEncoding> screenShareQualityEncodings({
   required List<rtc.RTCRtpEncoding> baseline,
   required RtcScreenShareQuality quality,
@@ -1627,13 +1638,11 @@ List<rtc.RTCRtpEncoding> screenShareQualityEncodings({
       maxFramerate: profile.maxFramerate,
       scaleResolutionDownBy:
           profile.scaleResolutionDownBy * scale / referenceScale,
-      minBitrate: encoding.minBitrate,
-      numTemporalLayers: encoding.numTemporalLayers,
-      // SSRC omitido de propósito (ver doc acima): ecoar o SSRC do cache
-      // faz o libwebrtc recusar o setParameters inteiro.
-      scalabilityMode: encoding.scalabilityMode,
-      priority: encoding.priority,
-      networkPriority: encoding.networkPriority,
+      // Resto null de propósito (ver doc acima): o C++ conserva o valor
+      // nativo corrente em vez de reescrever o echo do cache. Atenção:
+      // `numTemporalLayers` tem default `= 1` no construtor, por isso o
+      // null aqui é EXPLÍCITO — omitir o argumento reenviaria 1.
+      numTemporalLayers: null,
     );
   }).toList();
 }
