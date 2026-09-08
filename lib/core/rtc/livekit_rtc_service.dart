@@ -482,6 +482,7 @@ class LiveKitRtcService implements RtcService {
   Future<void> startScreenShare(
     String? sourceId, {
     bool includeSystemAudio = false,
+    RtcScreenShareQuality? quality,
   }) async {
     final room = _room;
     if (room == null || _disposed) return;
@@ -517,17 +518,16 @@ class LiveKitRtcService implements RtcService {
           sender.parameters.encodings ?? const [],
         );
         _screenShareEncodingBaseline = baseline;
+        // One-shot (modal Go Live): aplica o pedido sem tocar no pendente.
+        final requested = quality ?? _screenShareQuality;
         if (baseline.isEmpty) {
-          _screenShareQuality = RtcScreenShareQuality.auto;
+          if (quality == null) {
+            _screenShareQuality = RtcScreenShareQuality.auto;
+          }
         }
-        if (_screenShareQuality != RtcScreenShareQuality.auto &&
-            baseline.isNotEmpty) {
+        if (requested != RtcScreenShareQuality.auto && baseline.isNotEmpty) {
           try {
-            await _applyScreenShareQuality(
-              sender,
-              baseline,
-              _screenShareQuality,
-            );
+            await _applyScreenShareQuality(sender, baseline, requested);
           } catch (_) {
             try {
               await _applyScreenShareQuality(
@@ -539,7 +539,12 @@ class LiveKitRtcService implements RtcService {
               // O share já está publicado no baseline Auto. A falha de
               // ambos os ajustes não pode encerrar nem reiniciar a captura.
             }
-            _screenShareQuality = RtcScreenShareQuality.auto;
+            // Fallback silencioso para Auto: no modo one-shot o pendente é
+            // preservado — o controller então reporta o pedido em vez do
+            // efetivo neste caso raro (sender recusou os parâmetros).
+            if (quality == null) {
+              _screenShareQuality = RtcScreenShareQuality.auto;
+            }
           }
         }
       }
@@ -950,9 +955,7 @@ class LiveKitRtcService implements RtcService {
     );
     final applied = await sender.setParameters(parameters);
     if (!applied) {
-      final computed = parameters.encodings
-          ?.map((e) => e.toMap())
-          .toList();
+      final computed = parameters.encodings?.map((e) => e.toMap()).toList();
       final base = baseline.map((e) => e.toMap()).toList();
       throw StateError(
         'Sender recusou os parâmetros do screen share. '
@@ -983,16 +986,20 @@ class LiveKitRtcService implements RtcService {
       final stats = await sender.getStats();
       final outbound = stats.where((s) => s.type == 'outbound-rtp').toList();
       if (outbound.isEmpty) {
-        _statsLog('screen stats [$phase] pedido=$quality: sem outbound-rtp '
-            '(${stats.length} relatórios)');
+        _statsLog(
+          'screen stats [$phase] pedido=$quality: sem outbound-rtp '
+          '(${stats.length} relatórios)',
+        );
         return;
       }
       for (final s in outbound) {
         final v = s.values;
-        _statsLog('screen stats [$phase] pedido=$quality '
-            'rid=${v['rid']} ${v['frameWidth']}x${v['frameHeight']} '
-            'fps=${v['framesPerSecond']} bytes=${v['bytesSent']} '
-            'limit=${v['qualityLimitationReason']}');
+        _statsLog(
+          'screen stats [$phase] pedido=$quality '
+          'rid=${v['rid']} ${v['frameWidth']}x${v['frameHeight']} '
+          'fps=${v['framesPerSecond']} bytes=${v['bytesSent']} '
+          'limit=${v['qualityLimitationReason']}',
+        );
       }
     } catch (e) {
       debugPrint('[rtc] screen stats [$phase] indisponíveis: $e');

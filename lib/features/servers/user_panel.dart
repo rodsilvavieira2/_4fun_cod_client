@@ -8,7 +8,7 @@ import '../../core/auth/auth_state.dart';
 import '../../core/rtc/media_devices_provider.dart';
 import '../../core/rtc/rtc_providers.dart';
 import '../../core/rtc/rtc_service.dart';
-import '../../core/rtc/screen_share_picker.dart';
+import '../voice/go_live_modal.dart';
 import '../../core/ui/settings_modal.dart';
 import '../../core/ui/settings_modal_sidebar.dart';
 import '../../core/ui/ui.dart';
@@ -245,14 +245,19 @@ class UserPanel extends ConsumerWidget {
       await notifier.stopScreenShare();
       return;
     }
-    final selection = await RtcScreenSharePicker.show(
+    // Modal Go Live (tipo + qualidade) → seletor do tipo → start. Cancelar em
+    // qualquer etapa retorna null e nada inicia.
+    final goLive = await showGoLiveModal(
       context,
       backend: ref.read(nativeMediaServicesProvider).screenShare,
+      pendingQuality: ref.read(rtcServiceProvider).screenShareQuality,
+      channelName: voiceChannelName,
     );
-    if (selection == null) return;
+    if (goLive == null) return;
     await notifier.startScreenShare(
-      selection.sourceId,
+      goLive.sourceId,
       includeSystemAudio: current.includeSystemAudio,
+      quality: goLiveQualityFor(goLive.quality),
     );
   }
 

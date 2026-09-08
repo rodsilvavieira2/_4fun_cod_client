@@ -27,11 +27,14 @@ class RtcScreenSharePicker {
     String windowTabText = 'Janela',
     String cancelText = 'Cancelar',
     String shareText = 'Compartilhar',
+    RtcScreenShareSourceKind initialKind = RtcScreenShareSourceKind.window,
   }) {
     if (backend.capabilities.usesSystemPicker) {
+      // Portal do sistema (Linux): sem UI própria — a escolha do tipo é feita
+      // no portal, então o kind pedido é preservado em vez de forçar display.
       return Future.value(
-        const RtcScreenShareSelection(
-          kind: RtcScreenShareSourceKind.display,
+        RtcScreenShareSelection(
+          kind: initialKind,
           sourceId: null,
           usesSystemPicker: true,
         ),
@@ -48,6 +51,7 @@ class RtcScreenSharePicker {
         windowTabText: windowTabText,
         cancelText: cancelText,
         shareText: shareText,
+        initialKind: initialKind,
       ),
     );
   }
@@ -61,6 +65,7 @@ class _ScreenShareDialog extends StatefulWidget {
     required this.windowTabText,
     required this.cancelText,
     required this.shareText,
+    required this.initialKind,
   });
 
   final NativeScreenShareBackend backend;
@@ -69,13 +74,14 @@ class _ScreenShareDialog extends StatefulWidget {
   final String windowTabText;
   final String cancelText;
   final String shareText;
+  final RtcScreenShareSourceKind initialKind;
 
   @override
   State<_ScreenShareDialog> createState() => _ScreenShareDialogState();
 }
 
 class _ScreenShareDialogState extends State<_ScreenShareDialog> {
-  RtcScreenShareSourceKind _activeKind = RtcScreenShareSourceKind.window;
+  late RtcScreenShareSourceKind _activeKind = widget.initialKind;
   List<RtcScreenShareSource> _sources = const [];
   String? _selectedId;
   String? _error;

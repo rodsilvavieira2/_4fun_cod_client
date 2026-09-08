@@ -78,6 +78,9 @@ class FakeRtcService implements RtcService {
   final List<bool> startScreenShareSystemAudioFlags = [];
   int failSystemAudioTimes = 0;
 
+  // Qualidade one-shot recebida por startScreenShare (modal Go Live).
+  final List<RtcScreenShareQuality?> startScreenShareQualities = [];
+
   // Flag de falha de share (Prompt 2) — mesmo padrão do failEnableCameraTimes:
   // uma falha consumida não conta como chamada efetiva.
   int failStartScreenShareTimes = 0;
@@ -160,10 +163,7 @@ class FakeRtcService implements RtcService {
     String participantId,
     RtcVideoQuality quality,
   ) async {
-    setScreenQualityCalls.add((
-      participantId: participantId,
-      quality: quality,
-    ));
+    setScreenQualityCalls.add((participantId: participantId, quality: quality));
   }
 
   @override
@@ -204,6 +204,7 @@ class FakeRtcService implements RtcService {
   Future<void> startScreenShare(
     String? sourceId, {
     bool includeSystemAudio = false,
+    RtcScreenShareQuality? quality,
   }) async {
     if (failStartScreenShareTimes > 0) {
       failStartScreenShareTimes--;
@@ -214,6 +215,7 @@ class FakeRtcService implements RtcService {
     startScreenShareCalls++;
     startScreenShareSources.add(sourceId);
     startScreenShareSystemAudioFlags.add(includeSystemAudio);
+    startScreenShareQualities.add(quality);
     if (includeSystemAudio && failSystemAudioTimes > 0) {
       failSystemAudioTimes--;
       throw const SystemAudioPublishException(
@@ -467,9 +469,7 @@ void main() {
         final tokenGate = Completer<VoiceJoinInfo>();
         repo.onJoinVoice = (_, _) => tokenGate.future;
         // Só read, sem watch — como o primeiro clique antes do rebuild.
-        final notifier = container.read(
-          voiceControllerProvider(_arg).notifier,
-        );
+        final notifier = container.read(voiceControllerProvider(_arg).notifier);
 
         final joining = notifier.join();
         await pumpEventQueue(); // autoDispose descartaria aqui sem keepAlive
@@ -1247,6 +1247,41 @@ void main() {
       await settle();
       expect(state().screenShareQuality, RtcScreenShareQuality.q720p15);
       expect(rtc.startScreenShareSources, ['src-1', 'src-2']);
+    });
+
+    test('qualidade one-shot vale só para o share atual', () async {
+      repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
+      final notifier = buildVoice();
+      await notifier.join();
+      await settle();
+
+      await notifier.startScreenShare(
+        'src-1',
+        quality: RtcScreenShareQuality.q1080p60,
+      );
+      await settle();
+      expect(rtc.startScreenShareQualities, [RtcScreenShareQuality.q1080p60]);
+      expect(state().isScreenSharing, isTrue);
+      expect(state().screenShareQuality, RtcScreenShareQuality.q1080p60);
+      expect(
+        rtc.screenShareQualityValue,
+        RtcScreenShareQuality.auto,
+        reason: 'pendente intacto no modo one-shot',
+      );
+
+      await notifier.stopScreenShare();
+      await settle();
+      await notifier.startScreenShare('src-2');
+      await settle();
+      expect(rtc.startScreenShareQualities, [
+        RtcScreenShareQuality.q1080p60,
+        null,
+      ]);
+      expect(
+        state().screenShareQuality,
+        RtcScreenShareQuality.auto,
+        reason: 'próximo share volta ao pendente',
+      );
     });
 
     test(

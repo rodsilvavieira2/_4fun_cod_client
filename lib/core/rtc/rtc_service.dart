@@ -364,9 +364,14 @@ abstract class RtcService {
   ///
   /// Erros de captura propagam para o controller decidir a mensagem — falha
   /// de share NUNCA derruba a sessão.
+  ///
+  /// [quality], quando informado, é one-shot: vale só para este share e NÃO
+  /// altera o perfil pendente ([screenShareQuality]). Quando omitido, usa o
+  /// perfil pendente (comportamento histórico).
   Future<void> startScreenShare(
     String? sourceId, {
     bool includeSystemAudio = false,
+    RtcScreenShareQuality? quality,
   });
 
   /// Encerra o compartilhamento de tela local. DIFERENTE da câmera, DESPUBLICA

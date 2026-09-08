@@ -7,8 +7,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/rtc/rtc_providers.dart';
 import '../../core/rtc/rtc_service.dart';
 import '../../core/rtc/rtc_video_view.dart';
-import '../../core/rtc/screen_share_picker.dart';
 import '../../core/ui/ui.dart';
+import 'go_live_modal.dart';
 import 'voice_providers.dart';
 import 'voice_video_tile.dart';
 
@@ -103,14 +103,18 @@ class VoiceScreen extends ConsumerWidget {
       await notifier.stopScreenShare();
       return;
     }
-    final selection = await RtcScreenSharePicker.show(
+    // Modal Go Live (tipo + qualidade) → seletor do tipo → start. Cancelar em
+    // qualquer etapa retorna null e nada inicia.
+    final goLive = await showGoLiveModal(
       context,
       backend: ref.read(nativeMediaServicesProvider).screenShare,
+      pendingQuality: ref.read(rtcServiceProvider).screenShareQuality,
     );
-    if (selection == null) return;
+    if (goLive == null) return;
     await notifier.startScreenShare(
-      selection.sourceId,
+      goLive.sourceId,
       includeSystemAudio: current.includeSystemAudio,
+      quality: goLiveQualityFor(goLive.quality),
     );
   }
 

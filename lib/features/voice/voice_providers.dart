@@ -431,9 +431,13 @@ class VoiceController
   /// áudio (sem device monitor no SO) NÃO bloqueia o share: o vídeo já saiu
   /// e o [SystemAudioPublishException] só troca a mensagem — o
   /// [ScreenShareEnabledChangedEvent] confirma o share na sequência.
+  ///
+  /// [quality] one-shot (modal Go Live): vale só para este share, sem alterar
+  /// o perfil pendente. Omitido, usa o pendente.
   Future<void> startScreenShare(
     String? sourceId, {
     bool includeSystemAudio = false,
+    RtcScreenShareQuality? quality,
   }) async {
     final current = state;
     if (current.status != VoiceSessionStatus.connected) return;
@@ -445,6 +449,7 @@ class VoiceController
       await rtc.startScreenShare(
         sourceId,
         includeSystemAudio: includeSystemAudio,
+        quality: quality,
       );
     } on SystemAudioPublishException {
       // O VÍDEO saiu; só o áudio de sistema falhou (sem device monitor no
@@ -454,7 +459,7 @@ class VoiceController
       state = state.copyWith(
         status: VoiceSessionStatus.connected,
         isScreenSharing: true,
-        screenShareQuality: rtc.screenShareQuality,
+        screenShareQuality: quality ?? rtc.screenShareQuality,
         errorMessage: 'Compartilhamento iniciado sem áudio de sistema.',
       );
       return;
@@ -471,11 +476,13 @@ class VoiceController
       return;
     }
     if (_disposed) return;
-    final effectiveQuality = rtc.screenShareQuality;
+    // One-shot: o estado reflete o pedido (o pendente ficou intacto).
+    // Pendente: o getter já reflete o pós-start (inclui fallback para Auto).
+    final effectiveQuality = quality ?? rtc.screenShareQuality;
     state = state.copyWith(
       isScreenSharing: true,
       screenShareQuality: effectiveQuality,
-      errorMessage: effectiveQuality == current.screenShareQuality
+      errorMessage: effectiveQuality == (quality ?? current.screenShareQuality)
           ? null
           : 'Não foi possível aplicar a qualidade escolhida; transmissão mantida em Auto.',
     );
