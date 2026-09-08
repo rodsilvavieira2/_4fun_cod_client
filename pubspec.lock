@@ -659,8 +659,8 @@ packages:
     dependency: "direct main"
     description:
       path: "."
-      ref: "fix/web-audio-playback-gate"
-      resolved-ref: d81180403ab890779d7252e8e35884a97010e366
+      ref: "feat/remote-audio-gain"
+      resolved-ref: ff7571a51e2c3bcfa28db60ae518b485f39f089a
       url: "https://github.com/rodsilvavieira2/client-sdk-flutter.git"
     source: git
     version: "2.11.0"

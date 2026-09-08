@@ -151,7 +151,6 @@ class LiveKitRtcService implements RtcService {
   Future<void> _volumeApplyChain = Future<void>.value();
   bool _volumeApplyInFlight = false;
   bool _volumeApplyDirty = false;
-  bool _webBoostWarningLogged = false;
 
   /// Track de preview criada fora da room. Ela nunca é publicada e só existe
   /// enquanto o sheet de configurações está aberto.
@@ -955,20 +954,10 @@ class LiveKitRtcService implements RtcService {
   }
 
   Future<void> _applyTrackVolume(RemoteAudioTrack track, double gain) async {
-    var toApply = gain;
-    if (kIsWeb && toApply > 1.0) {
-      // Sem o fork com GainNode, o `<audio>` limita a 1.0: aplica o teto com
-      // aviso explícito em vez de um valor incorreto silencioso.
-      if (!_webBoostWarningLogged) {
-        _webBoostWarningLogged = true;
-        debugPrint(
-          '[rtc] boost acima de 100% indisponível no web sem o fork '
-          'livekit_client com GainNode; limitado a 100% nesta sessão.',
-        );
-      }
-      toApply = 1.0;
-    }
-    await rtc.Helper.setVolume(toApply, track.mediaStreamTrack);
+    // O fork aplica via GainNode dedicado (web, com boost > 1.0) ou
+    // Helper.setVolume (nativo, best-effort); armazena pré-start e registra
+    // falha com reaplicação no próximo evento pelo chamador.
+    await track.setVolume(gain);
   }
 
   @override

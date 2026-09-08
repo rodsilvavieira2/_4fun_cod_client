@@ -29,3 +29,9 @@ final rtcServiceProvider = Provider<RtcService>((ref) {
   ref.onDispose(service.dispose);
   return service;
 });
+
+/// Participantes da sala de voz atual (inclui o local). Usado por superfícies
+/// fora do canal de voz — ex.: botão de volume na lista de membros.
+final rtcParticipantsProvider = StreamProvider<List<RtcParticipant>>((ref) {
+  return ref.watch(rtcServiceProvider).participants;
+});

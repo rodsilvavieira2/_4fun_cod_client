@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/rtc/rtc_providers.dart';
+import '../../core/ui/participant_volume_popover.dart';
 import '../../core/ui/ui.dart';
 import '../../shared/models/servers.dart';
 import 'servers_providers.dart';
@@ -60,17 +62,17 @@ class MembersPanel extends ConsumerWidget {
   }
 }
 
-class _MemberRow extends StatefulWidget {
+class _MemberRow extends ConsumerStatefulWidget {
   const _MemberRow({required this.member, required this.online});
 
   final ServerMember member;
   final bool online;
 
   @override
-  State<_MemberRow> createState() => _MemberRowState();
+  ConsumerState<_MemberRow> createState() => _MemberRowState();
 }
 
-class _MemberRowState extends State<_MemberRow> {
+class _MemberRowState extends ConsumerState<_MemberRow> {
   bool _hovered = false;
 
   @override
@@ -148,6 +150,10 @@ class _MemberRowState extends State<_MemberRow> {
             ),
             const SizedBox(width: 4),
             ServerRoleBadge(role: widget.member.role, showLabel: false),
+            _VoiceVolumeAction(
+              userId: widget.member.userId,
+              displayName: displayName,
+            ),
           ],
         ),
       ),
@@ -163,6 +169,31 @@ class _MemberRowState extends State<_MemberRow> {
         fontWeight: FontWeight.w600,
         color: AppTokens.textPrimary,
       ),
+    );
+  }
+}
+
+/// Botão de volume individual na linha do membro — visível só para quem está
+/// na sala de voz atual e não é o usuário local (mesma regra do tile da sala).
+class _VoiceVolumeAction extends ConsumerWidget {
+  const _VoiceVolumeAction({required this.userId, required this.displayName});
+
+  final String userId;
+  final String displayName;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final participants =
+        ref.watch(rtcParticipantsProvider).valueOrNull ?? const [];
+    if (participants.isEmpty) return const SizedBox.shrink();
+    final rtc = ref.watch(rtcServiceProvider);
+    final identity = 'user_$userId';
+    if (rtc.localParticipantId == identity) return const SizedBox.shrink();
+    final participant = participants.where((p) => p.id == identity).firstOrNull;
+    if (participant == null) return const SizedBox.shrink();
+    return ParticipantVolumeButton(
+      identity: identity,
+      displayName: displayName,
     );
   }
 }

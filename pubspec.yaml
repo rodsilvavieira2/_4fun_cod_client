@@ -61,13 +61,14 @@ dev_dependencies:
 # startAllAudioElement reportava sucesso/falha por um AudioContext órfão
 # (_audioContext.state == 'running') em vez do play() real — no mobile o
 # contexto fica 'suspended' e o Room.startAudio() nunca reconhecia a
-# retomada, travando o banner de áudio. Branch fix/web-audio-playback-gate
-# em rodsilvavieira2/client-sdk-flutter. Revisitar em todo upgrade do SDK.
+# retomada, travando o banner de áudio. Branch feat/remote-audio-gain
+# em rodsilvavieira2/client-sdk-flutter (inclui RemoteAudioTrack.setVolume
+# com GainNode dedicado por faixa no web). Revisitar em todo upgrade do SDK.
 dependency_overrides:
   livekit_client:
     git:
       url: https://github.com/rodsilvavieira2/client-sdk-flutter.git
-      ref: fix/web-audio-playback-gate
+      ref: feat/remote-audio-gain
   flutter_webrtc:
     path: packages/flutter_webrtc
   # Vendored tray_manager 0.5.3 (path override, como flutter_webrtc): o
