@@ -423,6 +423,19 @@ abstract class RtcService {
   /// conexão. O controller usa isso para implementar o ensurdecer.
   Future<void> setRemoteAudioEnabled(bool enabled);
 
+  /// Define o volume geral de saída do áudio remoto, como ganho `0.0..2.0`
+  /// (`1.0` = 100%). Valores fora da faixa são normalizados. Sem sala ativa,
+  /// fica pendente para as tracks da próxima conexão. O ganho efetivo por
+  /// participante é `saída × individual`, com teto `4.0`. Ganho `0.0` é
+  /// silêncio (nunca vira stop/unsubscribe/deafen).
+  Future<void> setOutputVolume(double gain);
+
+  /// Define o volume individual de um participante remoto, como ganho
+  /// `0.0..2.0`. Aplica-se a TODAS as faixas de áudio dele (voz + áudio de
+  /// screen share). Local/desconhecido → no-op seguro. Sem sala ativa, fica
+  /// pendente e é aplicado quando as tracks chegarem.
+  Future<void> setParticipantVolume(String identity, double gain);
+
   /// Seleciona a câmera usada pelo preview e pela publicação local.
   ///
   /// Com preview temporário, aplica a troca nele. Com a câmera publicada,

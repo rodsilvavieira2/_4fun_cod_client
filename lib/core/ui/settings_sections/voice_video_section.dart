@@ -8,6 +8,7 @@ import '../../rtc/media_devices_provider.dart';
 import '../../rtc/rtc_service.dart';
 import '../section_header.dart';
 import '../../../features/voice/voice_controls_provider.dart';
+import '../../../features/voice/voice_volume_controller.dart';
 
 /// Configuração de dispositivos de voz e vídeo. As trocas são aplicadas na
 /// hora e ficam salvas no dispositivo; não existe botão "Salvar".
@@ -59,6 +60,8 @@ class VoiceVideoSection extends ConsumerWidget {
           loading: state.isLoading,
           onChanged: (id) => unawaited(controller.selectCamera(id)),
         ),
+        const SizedBox(height: 24),
+        const _OutputVolumeField(),
         const SizedBox(height: 24),
         const Divider(),
         const SizedBox(height: 16),
@@ -173,6 +176,51 @@ class _CameraField extends StatelessWidget {
   }
 }
 
+/// Slider mestre do volume de saída (0%–200%, padrão 100%).
+///
+/// Aplica em tempo real com coalescing no serviço; a persistência usa debounce
+/// no controller. Ganho acima de 100% no web exige o fork com GainNode —
+/// até lá, o serviço limita com aviso explícito (ver LiveKitRtcService).
+class _OutputVolumeField extends ConsumerWidget {
+  const _OutputVolumeField();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final percent = ref.watch(
+      voiceVolumeProvider.select((s) => s.outputPercent),
+    );
+    final controller = ref.read(voiceVolumeProvider.notifier);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Volume de saída',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ),
+            Text('$percent%'),
+            TextButton(
+              onPressed: percent == 100 ? null : () => controller.resetOutput(),
+              child: const Text('100%'),
+            ),
+          ],
+        ),
+        Slider(
+          value: percent.toDouble(),
+          min: 0,
+          max: 200,
+          divisions: 40,
+          label: '$percent%',
+          onChanged: (value) => controller.setOutputPercent(value.round()),
+        ),
+      ],
+    );
+  }
+}
+
 class _DeviceFieldShell extends StatelessWidget {
   const _DeviceFieldShell({
     required this.label,
@@ -235,14 +283,16 @@ class _PushToTalkSettings extends ConsumerWidget {
               value: state.isPushToTalkEnabled,
               onChanged: state.isApplying
                   ? null
-                  : (enabled) => unawaited(
-                      controller.setPushToTalkEnabled(enabled),
-                    ),
+                  : (enabled) =>
+                        unawaited(controller.setPushToTalkEnabled(enabled)),
             ),
           ],
         ),
         const SizedBox(height: 10),
-        Text('Atalho do Push to Talk', style: Theme.of(context).textTheme.bodyMedium),
+        Text(
+          'Atalho do Push to Talk',
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
         const SizedBox(height: 4),
         Text(
           state.isRecordingPushToTalk
@@ -269,7 +319,9 @@ class _PushToTalkSettings extends ConsumerWidget {
                 alignment: Alignment.centerLeft,
                 decoration: BoxDecoration(
                   color: Theme.of(context).inputDecorationTheme.fillColor,
-                  border: Border.all(color: Theme.of(context).colorScheme.outline),
+                  border: Border.all(
+                    color: Theme.of(context).colorScheme.outline,
+                  ),
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(

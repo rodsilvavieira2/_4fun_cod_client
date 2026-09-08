@@ -5,6 +5,7 @@ import '../../core/rtc/rtc_providers.dart';
 import '../../core/rtc/rtc_service.dart';
 import '../../core/rtc/rtc_video_view.dart';
 import '../../core/ui/ds_tokens.dart';
+import '../../core/ui/participant_volume_popover.dart';
 import 'voice_providers.dart';
 
 /// Papel de um tile de vídeo no painel — define a qualidade de recepção
@@ -119,6 +120,14 @@ class _VoiceVideoTileState extends ConsumerState<VoiceVideoTile> {
           : SystemMouseCursors.click,
       child: GestureDetector(
         onTap: widget.onTap,
+        // Clique secundário abre o volume individual (remoto apenas).
+        onSecondaryTap: isLocal
+            ? null
+            : () => showParticipantVolumeDialog(
+                context: context,
+                identity: participant.id,
+                displayName: participant.name,
+              ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(8),
           child: Stack(
@@ -243,6 +252,13 @@ class _TileOverlay extends StatelessWidget {
               size: 14,
               color: Colors.white,
             ),
+            // Volume individual: só remoto. Sempre visível (toque + teclado;
+            // hover-reveal quebraria a11y e touch) — compacto no overlay.
+            if (!isLocal)
+              ParticipantVolumeButton(
+                identity: participant.id,
+                displayName: participant.name,
+              ),
           ],
         ),
       ),

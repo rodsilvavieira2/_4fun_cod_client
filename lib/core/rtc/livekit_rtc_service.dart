@@ -141,6 +141,18 @@ class LiveKitRtcService implements RtcService {
   bool _microphoneEnabled = true;
   bool _remoteAudioEnabled = true;
 
+  /// Volume de voz (fatia volumes): ganhos `0.0..2.0`, padrão `1.0`.
+  /// Pendentes sem sala — aplicados em subscribe/reconexão/device/undeafen.
+  double _outputGain = 1.0;
+  final Map<String, double> _participantGains = {};
+
+  /// Serialização/coalescing das aplicações de volume durante o arraste do
+  /// slider: só o valor mais recente é efetivamente aplicado por rodada.
+  Future<void> _volumeApplyChain = Future<void>.value();
+  bool _volumeApplyInFlight = false;
+  bool _volumeApplyDirty = false;
+  bool _webBoostWarningLogged = false;
+
   /// Track de preview criada fora da room. Ela nunca é publicada e só existe
   /// enquanto o sheet de configurações está aberto.
   LocalVideoTrack? _cameraPreviewTrack;
@@ -255,6 +267,7 @@ class LiveKitRtcService implements RtcService {
     // publicar track/mutar.
     _seedParticipants(room);
     _startLatencyMonitor(room);
+    _scheduleVolumeApply();
   }
 
   @override
@@ -827,6 +840,8 @@ class LiveKitRtcService implements RtcService {
       await _nativeMediaServices.audioDevices.selectOutput(device);
     }
     _selectedAudioOutputId = deviceId;
+    // Troca de dispositivo pode recriar os elementos de áudio (web): reaplica.
+    _scheduleVolumeApply();
   }
 
   @override
@@ -852,10 +867,108 @@ class LiveKitRtcService implements RtcService {
           }
         }
       }
+      if (enabled) _scheduleVolumeApply();
     } catch (_) {
       _remoteAudioEnabled = previous;
       rethrow;
     }
+  }
+
+  /// Normaliza ganho público para `0.0..2.0`.
+  static double normalizeVolumeGain(double gain) =>
+      gain.isNaN ? 1.0 : gain.clamp(0.0, 2.0);
+
+  /// Ganho efetivo: `saída × participante`, teto `4.0`.
+  static double effectiveVolumeGain(
+    double outputGain,
+    double participantGain,
+  ) => (normalizeVolumeGain(outputGain) * normalizeVolumeGain(participantGain))
+      .clamp(0.0, 4.0);
+
+  @override
+  Future<void> setOutputVolume(double gain) async {
+    _outputGain = normalizeVolumeGain(gain);
+    _scheduleVolumeApply();
+  }
+
+  @override
+  Future<void> setParticipantVolume(String identity, double gain) async {
+    if (identity.isEmpty) return;
+    final room = _room;
+    // Local nunca recebe volume individual; desconhecido sem sala → pendente.
+    if (room?.localParticipant?.identity == identity) return;
+    final normalized = normalizeVolumeGain(gain);
+    if (normalized == 1.0) {
+      _participantGains.remove(identity);
+    } else {
+      _participantGains[identity] = normalized;
+    }
+    _scheduleVolumeApply();
+  }
+
+  void _scheduleVolumeApply() {
+    if (_disposed) return;
+    if (_volumeApplyInFlight) {
+      _volumeApplyDirty = true;
+      return;
+    }
+    _volumeApplyInFlight = true;
+    _volumeApplyChain = _volumeApplyChain.then((_) async {
+      do {
+        _volumeApplyDirty = false;
+        await _applyAllVolumes();
+      } while (_volumeApplyDirty && !_disposed);
+      _volumeApplyInFlight = false;
+    });
+  }
+
+  Future<void> _applyAllVolumes() async {
+    final room = _room;
+    if (room == null || _disposed) return;
+    for (final participant in room.remoteParticipants.values) {
+      await _applyParticipantVolumes(
+        participant.identity,
+        participant.audioTrackPublications
+            .map((publication) => publication.track)
+            .whereType<RemoteAudioTrack>(),
+      );
+    }
+  }
+
+  Future<void> _applyParticipantVolumes(
+    String identity,
+    Iterable<RemoteAudioTrack> tracks, {
+    double? participantGainOverride,
+  }) async {
+    final participantGain =
+        participantGainOverride ?? _participantGains[identity] ?? 1.0;
+    final effective = effectiveVolumeGain(_outputGain, participantGain);
+    for (final track in tracks) {
+      try {
+        await _applyTrackVolume(track, effective);
+      } catch (e) {
+        // Best-effort por faixa: registra e reaplica no próximo evento
+        // (subscribe/reconexão/device/undeafen).
+        debugPrint('[rtc] volume falhou para $identity: $e');
+      }
+    }
+  }
+
+  Future<void> _applyTrackVolume(RemoteAudioTrack track, double gain) async {
+    var toApply = gain;
+    if (kIsWeb && toApply > 1.0) {
+      // Sem o fork com GainNode, o `<audio>` limita a 1.0: aplica o teto com
+      // aviso explícito em vez de um valor incorreto silencioso.
+      if (!_webBoostWarningLogged) {
+        _webBoostWarningLogged = true;
+        debugPrint(
+          '[rtc] boost acima de 100% indisponível no web sem o fork '
+          'livekit_client com GainNode; limitado a 100% nesta sessão.',
+        );
+      }
+      toApply = 1.0;
+    }
+    await rtc.Helper.setVolume(toApply, track.mediaStreamTrack);
   }
 
   @override
@@ -1051,6 +1164,7 @@ class LiveKitRtcService implements RtcService {
       }),
       room.events.on<RoomReconnectedEvent>((_) {
         debugPrint('[rtc] reconexão concluída');
+        _scheduleVolumeApply();
       }),
       // Publicação/despublicação de tracks (remoto e local) e mute/unmute:
       // re-deriva o estado de mic do participante afetado e emite
@@ -1064,6 +1178,21 @@ class LiveKitRtcService implements RtcService {
         // também não podem começar a tocar.
         if (!_remoteAudioEnabled && e.track is RemoteAudioTrack) {
           unawaited((e.track as RemoteAudioTrack).stop());
+        } else if (e.track is RemoteAudioTrack) {
+          // Nova faixa remota (voz ou áudio de screen share): aplica o ganho
+          // efetivo pendente (saída × participante).
+          final track = e.track as RemoteAudioTrack;
+          final gain = effectiveVolumeGain(
+            _outputGain,
+            _participantGains[e.participant.identity] ?? 1.0,
+          );
+          unawaited(
+            _applyTrackVolume(track, gain).catchError((Object err) {
+              debugPrint(
+                '[rtc] volume falhou para ${e.participant.identity}: $err',
+              );
+            }),
+          );
         }
         _syncParticipant(e.participant);
         _emitSnapshot();
@@ -1337,6 +1466,7 @@ class LiveKitRtcService implements RtcService {
       _participantsById.clear();
       _seedParticipants(room);
       _startLatencyMonitor(room);
+      _scheduleVolumeApply();
       // Sem startAudio explícito aqui (decisão): o Room novo nasce com
       // `_audioEnabled = true` (room.dart:107) e, se o autoplay do browser
       // ainda bloquear o áudio remoto, a ponte track→room do SDK reemite

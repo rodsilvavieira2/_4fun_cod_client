@@ -263,6 +263,12 @@ class FakeRtcService implements RtcService {
     remoteAudioEnabled = enabled;
   }
 
+  @override
+  Future<void> setOutputVolume(double gain) async {}
+
+  @override
+  Future<void> setParticipantVolume(String identity, double gain) async {}
+
   void pushParticipants(List<RtcParticipant> list) =>
       participantsController.add(list);
 
