@@ -77,6 +77,10 @@ class _MemberRowState extends State<_MemberRow> {
   Widget build(BuildContext context) {
     final user = widget.member.user;
     final online = widget.online;
+    // Nickname (username) primeiro — cai para o nome se vazio.
+    final displayName = user.username.trim().isNotEmpty
+        ? user.username
+        : user.name;
 
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
@@ -113,9 +117,9 @@ class _MemberRowState extends State<_MemberRow> {
                           width: 30,
                           height: 30,
                           fit: BoxFit.cover,
-                          errorBuilder: (_, _, _) => _initial(user.name),
+                          errorBuilder: (_, _, _) => _initial(displayName),
                         )
-                      : _initial(user.name),
+                      : _initial(displayName),
                 ),
                 Positioned(
                   right: -2,
@@ -132,7 +136,7 @@ class _MemberRowState extends State<_MemberRow> {
             const SizedBox(width: 10),
             Expanded(
               child: Text(
-                user.name,
+                displayName,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontFamily: 'Geist',
