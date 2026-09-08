@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  APP_NAME: "4Fun Cod"
+  APP_NAME: "4FunCode"
   APP_SLUG: "4fun-cod"
   APP_EXE_NAME: "_4fun_cod_client.exe"
 

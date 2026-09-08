@@ -1,5 +1,6 @@
 // Export central da biblioteca interna de componentes de UI do 4fun_cod
 export 'app_icon_button.dart';
+export 'app_logo.dart';
 export 'buttons/app_button.dart';
 export 'buttons/app_segmented_control.dart';
 export 'ds_tokens.dart';

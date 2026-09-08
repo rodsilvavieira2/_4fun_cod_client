@@ -105,6 +105,7 @@ flutter:
   # store do sistema; ver core/config/lab_ca_overrides.dart).
   assets:
     - assets/certs/ca.crt
+    - assets/branding/app_logo.png
     # Ícones usados pelo system tray no Linux (PNG) e Windows (ICO).
     - web/favicon.png
     - windows/runner/resources/app_icon.ico

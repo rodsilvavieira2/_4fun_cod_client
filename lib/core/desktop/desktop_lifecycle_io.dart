@@ -135,12 +135,12 @@ class _TrayManagerPort with TrayListener implements DesktopTrayPort {
           : _linuxTrayIconPath(),
     );
     if (_isWindows) {
-      await trayManager.setToolTip('4fun Cod');
+      await trayManager.setToolTip('4FunCode');
     }
     await trayManager.setContextMenu(
       Menu(
         items: [
-          MenuItem(key: _showWindowMenuKey, label: 'Abrir 4fun Cod'),
+          MenuItem(key: _showWindowMenuKey, label: 'Abrir 4FunCode'),
           MenuItem.separator(),
           MenuItem(key: _quitMenuKey, label: 'Sair do aplicativo'),
         ],

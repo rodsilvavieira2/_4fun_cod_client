@@ -1,6 +1,6 @@
 [Desktop Entry]
-Name=4Fun Cod
-Comment=4Fun Cod — voice & community client
+Name=4FunCode
+Comment=4FunCode — voice & community client
 Exec=_4fun_cod_client
 Icon=4fun-cod
 Terminal=false

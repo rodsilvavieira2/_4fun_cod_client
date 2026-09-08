@@ -1,4 +1,4 @@
-# 4fun Cod client
+# 4FunCode client
 
 Cliente Flutter para web, Linux e Windows.
 

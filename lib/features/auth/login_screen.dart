@@ -44,7 +44,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       _errorMessage = null;
     });
     try {
-      await ref.read(authControllerProvider.notifier).login(
+      await ref
+          .read(authControllerProvider.notifier)
+          .login(
             email: _emailController.text.trim(),
             password: _passwordController.text,
           );
@@ -55,7 +57,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     } on ApiException catch (e) {
       if (mounted) setState(() => _errorMessage = e.message);
     } catch (_) {
-      if (mounted) setState(() => _errorMessage = 'Erro inesperado. Tente novamente.');
+      if (mounted) {
+        setState(() => _errorMessage = 'Erro inesperado. Tente novamente.');
+      }
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
@@ -82,25 +86,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Center(
-                        child: Container(
-                          width: 44,
-                          height: 44,
-                          decoration: BoxDecoration(
-                            color: AppTokens.textPrimary,
-                            borderRadius: BorderRadius.circular(AppRadius.md),
-                          ),
-                          alignment: Alignment.center,
-                          child: const Icon(
-                            Icons.terminal,
-                            color: AppTokens.textInverse,
-                            size: 26,
-                          ),
-                        ),
-                      ),
+                      const Center(child: AppLogo(size: 44)),
                       const SizedBox(height: 20),
                       const Text(
-                        '4fun_cod',
+                        '4FunCode',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontFamily: 'Geist',
@@ -126,7 +115,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         label: 'E-mail',
                         hintText: 'seu@email.com',
                         keyboardType: TextInputType.emailAddress,
-                        autofillHints: webAutofillHints(const [AutofillHints.email]),
+                        autofillHints: webAutofillHints(const [
+                          AutofillHints.email,
+                        ]),
                         validator: _validateEmail,
                       ),
                       const SizedBox(height: 16),
@@ -135,9 +126,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         label: 'Senha',
                         hintText: '••••••••',
                         obscureText: true,
-                        autofillHints: webAutofillHints(const [AutofillHints.password]),
-                        validator: (value) =>
-                            (value == null || value.isEmpty) ? 'Informe sua senha.' : null,
+                        autofillHints: webAutofillHints(const [
+                          AutofillHints.password,
+                        ]),
+                        validator: (value) => (value == null || value.isEmpty)
+                            ? 'Informe sua senha.'
+                            : null,
                         onFieldSubmitted: (_) => _submit(),
                       ),
                       if (_errorMessage != null) ...[
@@ -166,7 +160,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         variant: AppButtonVariant.ghost,
                         size: AppButtonSize.md,
                         expanded: true,
-                        onPressed: _submitting ? null : () => context.go('/register'),
+                        onPressed: _submitting
+                            ? null
+                            : () => context.go('/register'),
                       ),
                     ],
                   ),

@@ -1,4 +1,4 @@
-# Releases desktop — 4Fun Cod (Linux + Windows)
+# Releases desktop — 4FunCode (Linux + Windows)
 
 Releases automáticos via GitHub Actions quando uma tag `vX.Y.Z` é enviada
 ao repo **do client** (`_4fun_cod_client`):
@@ -59,9 +59,9 @@ o app pode falhar com `VCRUNTIME140.dll was not found`:
 
 | Var | Valor | Origem |
 |---|---|---|
-| `APP_NAME` | `4Fun Cod` | nome exibido |
+| `APP_NAME` | `4FunCode` | nome exibido |
 | `APP_SLUG` | `4fun-cod` | nome dos arquivos |
-| `APP_EXE_NAME` | `_4fun_cod_client.exe` | `BINARY_NAME` em `linux/CMakeLists.txt` / `ProductName` em `windows/runner/Runner.rc` |
+| `APP_EXE_NAME` | `_4fun_cod_client.exe` | `BINARY_NAME` em `linux/CMakeLists.txt` / `InternalName`+`OriginalFilename` em `windows/runner/Runner.rc` (`ProductName`/`FileDescription` exibem `4FunCode`) |
 | `FLUTTER_VERSION` | `3.44.4` | SDK real de dev — atualizar aqui só em commit próprio de upgrade Flutter |
 
 ## Instalador Windows

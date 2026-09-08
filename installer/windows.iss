@@ -1,9 +1,9 @@
-; 4Fun Cod — Windows installer (Inno Setup 6)
+; 4FunCode — Windows installer (Inno Setup 6)
 ; Valores AppName/AppSlug/AppExeName/AppVersion são injetados pelo CI
 ; (release-desktop.yml). Defaults abaixo servem para build manual via Inno IDE.
 
 #ifndef AppName
-  #define AppName "4Fun Cod"
+  #define AppName "4FunCode"
 #endif
 
 #ifndef AppSlug

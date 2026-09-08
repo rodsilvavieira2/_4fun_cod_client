@@ -100,10 +100,10 @@ class _HomeNavigation extends StatelessWidget {
             ),
             child: const Row(
               children: [
-                _BrandMark(size: 28),
+                AppLogo(size: 28),
                 SizedBox(width: 10),
                 Text(
-                  '4fun_cod',
+                  '4FunCode',
                   style: TextStyle(
                     fontFamily: 'Geist',
                     fontSize: 14,
@@ -353,7 +353,7 @@ class _EmptyHome extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const _BrandMark(size: 64),
+              const AppLogo(size: 64),
               const SizedBox(height: 22),
               Text(
                 'Crie seu primeiro servidor',
@@ -536,30 +536,6 @@ class _ServerAvatar extends StatelessWidget {
                 color: AppTokens.textSecondary,
               ),
             ),
-    );
-  }
-}
-
-class _BrandMark extends StatelessWidget {
-  const _BrandMark({required this.size});
-
-  final double size;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: AppTokens.textPrimary,
-        borderRadius: BorderRadius.circular(size * 0.3),
-      ),
-      alignment: Alignment.center,
-      child: Icon(
-        Icons.forum_rounded,
-        size: size * 0.55,
-        color: AppTokens.textInverse,
-      ),
     );
   }
 }

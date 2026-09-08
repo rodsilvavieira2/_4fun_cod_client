@@ -44,7 +44,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       _errorMessage = null;
     });
     try {
-      await ref.read(authControllerProvider.notifier).register(
+      await ref
+          .read(authControllerProvider.notifier)
+          .register(
             name: _nameController.text.trim(),
             username: _usernameController.text.trim().toLowerCase(),
             email: _emailController.text.trim(),
@@ -53,7 +55,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     } on ApiException catch (e) {
       if (mounted) setState(() => _errorMessage = e.message);
     } catch (_) {
-      if (mounted) setState(() => _errorMessage = 'Erro inesperado. Tente novamente.');
+      if (mounted) {
+        setState(() => _errorMessage = 'Erro inesperado. Tente novamente.');
+      }
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
@@ -80,22 +84,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Center(
-                        child: Container(
-                          width: 44,
-                          height: 44,
-                          decoration: BoxDecoration(
-                            color: AppTokens.textPrimary,
-                            borderRadius: BorderRadius.circular(AppRadius.md),
-                          ),
-                          alignment: Alignment.center,
-                          child: const Icon(
-                            Icons.terminal,
-                            color: AppTokens.textInverse,
-                            size: 26,
-                          ),
-                        ),
-                      ),
+                      const Center(child: AppLogo(size: 44)),
                       const SizedBox(height: 20),
                       const Text(
                         'Criar conta',
@@ -110,7 +99,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                       ),
                       const SizedBox(height: 6),
                       const Text(
-                        'Junte-se ao 4fun_cod',
+                        'Junte-se ao 4FunCode',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontFamily: 'Geist',
@@ -124,7 +113,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                         label: 'NOME COMPLETO',
                         hintText: 'Seu nome',
                         validator: (value) =>
-                            (value == null || value.trim().isEmpty) ? 'Informe seu nome.' : null,
+                            (value == null || value.trim().isEmpty)
+                            ? 'Informe seu nome.'
+                            : null,
                       ),
                       const SizedBox(height: 14),
                       AppTextField(
@@ -145,11 +136,15 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                         label: 'E-MAIL',
                         hintText: 'seu@email.com',
                         keyboardType: TextInputType.emailAddress,
-                        autofillHints: webAutofillHints(const [AutofillHints.email]),
+                        autofillHints: webAutofillHints(const [
+                          AutofillHints.email,
+                        ]),
                         validator: (value) {
                           final email = value?.trim() ?? '';
                           if (email.isEmpty) return 'Informe seu e-mail.';
-                          if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) {
+                          if (!RegExp(
+                            r'^[^@\s]+@[^@\s]+\.[^@\s]+$',
+                          ).hasMatch(email)) {
                             return 'E-mail inválido.';
                           }
                           return null;
@@ -161,9 +156,13 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                         label: 'SENHA',
                         hintText: 'Mínimo 8 caracteres',
                         obscureText: true,
-                        autofillHints: webAutofillHints(const [AutofillHints.newPassword]),
+                        autofillHints: webAutofillHints(const [
+                          AutofillHints.newPassword,
+                        ]),
                         validator: (value) =>
-                            (value == null || value.length < 8) ? 'Mínimo 8 caracteres.' : null,
+                            (value == null || value.length < 8)
+                            ? 'Mínimo 8 caracteres.'
+                            : null,
                       ),
                       const SizedBox(height: 14),
                       AppTextField(
@@ -202,7 +201,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                         variant: AppButtonVariant.ghost,
                         size: AppButtonSize.md,
                         expanded: true,
-                        onPressed: _submitting ? null : () => context.go('/login'),
+                        onPressed: _submitting
+                            ? null
+                            : () => context.go('/login'),
                       ),
                     ],
                   ),
