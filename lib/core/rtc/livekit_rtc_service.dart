@@ -1595,8 +1595,14 @@ ScreenShareCaptureOptions screenShareCaptureOptionsFor(String? sourceId) =>
     );
 
 /// Transforma cada camada a partir do baseline do sender, preservando RID,
-/// SSRC, active e as prioridades. A proporção de bitrate/resolução entre as
-/// camadas simulcast também é preservada.
+/// active e as prioridades. A proporção de bitrate/resolução entre as
+/// camadas simulcast também é preservada. O SSRC é OMITIDO de propósito:
+/// `webrtc_interface` documenta que ele "can't be changed between
+/// getParameters/setParameters" e o libwebrtc rejeita (`set_parameters`
+/// retorna false) quando o SSRC enviado diverge do stream ativo — o nosso
+/// vinha do cache Dart capturado na publicação (podendo estar stale, além
+/// de truncar em `GetValue<int>` no C++ quando > INT32_MAX). Omitido, o
+/// parâmetro conserva o SSRC corrente e só bitrate/fps/escala mudam.
 List<rtc.RTCRtpEncoding> screenShareQualityEncodings({
   required List<rtc.RTCRtpEncoding> baseline,
   required RtcScreenShareQuality quality,
@@ -1623,7 +1629,8 @@ List<rtc.RTCRtpEncoding> screenShareQualityEncodings({
           profile.scaleResolutionDownBy * scale / referenceScale,
       minBitrate: encoding.minBitrate,
       numTemporalLayers: encoding.numTemporalLayers,
-      ssrc: encoding.ssrc,
+      // SSRC omitido de propósito (ver doc acima): ecoar o SSRC do cache
+      // faz o libwebrtc recusar o setParameters inteiro.
       scalabilityMode: encoding.scalabilityMode,
       priority: encoding.priority,
       networkPriority: encoding.networkPriority,

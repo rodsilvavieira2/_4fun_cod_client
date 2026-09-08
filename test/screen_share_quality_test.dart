@@ -105,16 +105,16 @@ void main() {
       }
     });
 
-    test('preserva RID, SSRC e active das camadas originais', () {
+    test('preserva RID e active, e omite o SSRC (libwebrtc recusa echo)', () {
       final encodings = screenShareQualityEncodings(
         baseline: baseline,
         quality: RtcScreenShareQuality.q720p15,
       );
       expect(encodings[0].rid, 'low');
-      expect(encodings[0].ssrc, 11);
+      expect(encodings[0].ssrc, isNull);
       expect(encodings[0].active, isTrue);
       expect(encodings[1].rid, 'high');
-      expect(encodings[1].ssrc, 22);
+      expect(encodings[1].ssrc, isNull);
       expect(encodings[1].active, isFalse);
     });
   });
