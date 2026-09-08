@@ -10,6 +10,7 @@ import 'package:flutter_webrtc/flutter_webrtc.dart' as rtc;
 import 'package:livekit_client/livekit_client.dart'
     hide SpeakingChangedEvent, ReconnectingEvent;
 
+import '../logging/app_logger.dart';
 import '../native/native_media_backend.dart';
 import 'rtc_service.dart';
 
@@ -54,12 +55,15 @@ class LiveKitRtcService implements RtcService {
   LiveKitRtcService({
     RoomOptions? roomOptions,
     NativeMediaServices? nativeMediaServices,
+    AppLogger? logger,
   }) : _roomOptions = roomOptions ?? defaultRoomOptions,
        _nativeMediaServices =
            nativeMediaServices ??
            const DefaultNativeMediaServicesFactory().create(
              currentRuntimePlatform,
-           );
+           ) {
+    _logger = logger;
+  }
 
   /// Configuração de áudio da Fase 4 (default do serviço — a UI nunca
   /// configura isso): echo cancellation + noise suppression + AGC na
@@ -106,6 +110,13 @@ class LiveKitRtcService implements RtcService {
   /// pendente, que no primeiro uso é ativa.
   final RoomOptions _roomOptions;
   final NativeMediaServices _nativeMediaServices;
+
+  /// Logger opcional (injetado pelo provider) para o probe de stats do
+  /// screen share. Null em testes/widget — cai para `debugPrint`.
+  ///
+  /// `late final` porque um formal inicializador (`this._logger`) geraria
+  /// um parâmetro nomeado privado, inutilizável fora desta library.
+  late final AppLogger? _logger;
 
   Room? _room;
   RtcTokenGenerator? _tokenGenerator;
@@ -947,6 +958,53 @@ class LiveKitRtcService implements RtcService {
         'Sender recusou os parâmetros do screen share. '
         'baseline=$base computed=$computed',
       );
+    }
+    _logScreenShareStats(sender, quality, phase: 'pos-troca');
+    // Segunda amostra após estabilizar o encoder (prova wire do fps
+    // efetivo — temporário até a telemetria permanente da Wave 3).
+    unawaited(
+      Future<void>.delayed(const Duration(seconds: 4)).then((_) async {
+        if (_disposed || _room == null) return;
+        await _logScreenShareStats(sender, quality, phase: 'estabilizado');
+      }),
+    );
+  }
+
+  /// Probe temporário (Wave 1): registra no log os stats `outbound-rtp` do
+  /// screen share após a troca de qualidade — resolução, fps e bytes por
+  /// camada. Sem isso, só o RTT é coletado e não há como confirmar o fps
+  /// efetivo no fio. Será substituído pela telemetria permanente (Wave 3).
+  Future<void> _logScreenShareStats(
+    rtc.RTCRtpSender sender,
+    RtcScreenShareQuality quality, {
+    required String phase,
+  }) async {
+    try {
+      final stats = await sender.getStats();
+      final outbound = stats.where((s) => s.type == 'outbound-rtp').toList();
+      if (outbound.isEmpty) {
+        _statsLog('screen stats [$phase] pedido=$quality: sem outbound-rtp '
+            '(${stats.length} relatórios)');
+        return;
+      }
+      for (final s in outbound) {
+        final v = s.values;
+        _statsLog('screen stats [$phase] pedido=$quality '
+            'rid=${v['rid']} ${v['frameWidth']}x${v['frameHeight']} '
+            'fps=${v['framesPerSecond']} bytes=${v['bytesSent']} '
+            'limit=${v['qualityLimitationReason']}');
+      }
+    } catch (e) {
+      debugPrint('[rtc] screen stats [$phase] indisponíveis: $e');
+    }
+  }
+
+  void _statsLog(String message) {
+    final logger = _logger;
+    if (logger != null) {
+      logger.i(message, tag: 'voice');
+    } else {
+      debugPrint('[rtc] $message');
     }
   }
 

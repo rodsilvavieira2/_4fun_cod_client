@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../logging/app_logger.dart';
 import '../native/native_media_backend.dart';
 import 'livekit_rtc_service.dart';
 import 'rtc_service.dart';
@@ -23,6 +24,7 @@ final nativeMediaServicesProvider = Provider<NativeMediaServices>((ref) {
 final rtcServiceProvider = Provider<RtcService>((ref) {
   final service = LiveKitRtcService(
     nativeMediaServices: ref.read(nativeMediaServicesProvider),
+    logger: ref.read(appLoggerProvider),
   );
   ref.onDispose(service.dispose);
   return service;
