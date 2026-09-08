@@ -384,6 +384,15 @@ abstract class RtcService {
   /// desconhecido, é o local, ou a câmera dele está OFF/ausente.
   Future<void> setQuality(String participantId, RtcVideoQuality quality);
 
+  /// Define a qualidade de recepção da TELA remota de [participantId]
+  /// (low/medium/high). Sem efeito quando o participante é desconhecido,
+  /// é o local, ou não está compartilhando tela. Implementação padrão
+  /// no-op (a câmera usa [setQuality]); o LiveKit sobrescreve.
+  Future<void> setScreenQuality(
+    String participantId,
+    RtcVideoQuality quality,
+  ) async {}
+
   /// Lista as câmeras disponíveis no dispositivo (enumerateDevices
   /// `type: 'videoinput'`). Labels podem vir vazias antes da permissão.
   Future<List<RtcVideoDevice>> listCameraDevices();

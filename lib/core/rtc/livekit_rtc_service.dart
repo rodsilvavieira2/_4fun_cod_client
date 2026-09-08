@@ -866,6 +866,30 @@ class LiveKitRtcService implements RtcService {
   }
 
   @override
+  Future<void> setScreenQuality(
+    String participantId,
+    RtcVideoQuality quality,
+  ) async {
+    final room = _room;
+    if (room == null || _disposed) return;
+    // Recepção remota de TELA: local/desconhecido/sem share → no-op.
+    // Mapa de dedupe separado da câmera no controller (publicações
+    // independentes — o share em destaque não rebaixa a câmera em miniatura).
+    final remoteParticipant = room.remoteParticipants[participantId];
+    if (remoteParticipant == null) return;
+    final publication = remoteParticipant.getTrackPublicationBySource(
+      TrackSource.screenShareVideo,
+    );
+    if (publication == null) return; // share OFF/ausente → no-op
+    final videoQuality = switch (quality) {
+      RtcVideoQuality.low => VideoQuality.LOW,
+      RtcVideoQuality.medium => VideoQuality.MEDIUM,
+      RtcVideoQuality.high => VideoQuality.HIGH,
+    };
+    await publication.setVideoQuality(videoQuality);
+  }
+
+  @override
   RtcVideoTrackRef? videoTrackOf(String participantId) {
     final room = _room;
     if (room == null || _disposed) return null;

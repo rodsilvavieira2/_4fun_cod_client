@@ -25,12 +25,11 @@ enum VoiceVideoSource { camera, screen, avatar }
 ///   da feature (avatar + nome) — nunca o placeholder interno do
 ///   [RtcVideoView] ([SizedBox.shrink]).
 /// - Qualidade: ao assumir ([initState]) ou mudar de papel
-///   ([didUpdateWidget]), agenda [VoiceController.applyTileQuality] com a
-///   qualidade do papel — o controller dedupe e ignora o participante local.
+///   ([didUpdateWidget]), agenda a qualidade do papel — câmera via
+///   [VoiceController.applyTileQuality], tela via
+///   [VoiceController.applyTileScreenQuality] (dedupes separados).
 ///   Tile desmontado (invisível) não chama nada: OFF por omissão (não existe
 ///   [RtcVideoQuality.off] no contrato — o adaptive stream corta a recepção).
-///   Para o sharer SEM câmera o `setQuality` do serviço é no-op silencioso
-///   (qualidade só existe para a publicação de câmera — fato do contrato).
 class VoiceVideoTile extends ConsumerStatefulWidget {
   const VoiceVideoTile({
     super.key,
@@ -79,11 +78,11 @@ class _VoiceVideoTileState extends ConsumerState<VoiceVideoTile> {
 
   /// Aplica a qualidade conforme o papel. Pós-frame (sem efeito colateral
   /// durante o build); seguro mesmo se o tile desmontar antes — o controller
-  /// dedupe chamadas repetidas e ignora o participante local.
+  /// dedupe chamadas repetidas e ignora o participante local. Câmera e tela
+  /// usam dedupes separados: a tela em destaque não rebaixa a câmera irmã
+  /// em miniatura e vice-versa.
   void _scheduleQuality() {
-    // O contrato de qualidade remota controla a publicação de câmera. Uma
-    // tela em destaque não deve rebaixar a câmera irmã que está em miniatura.
-    if (widget.source != VoiceVideoSource.camera) return;
+    if (widget.source == VoiceVideoSource.avatar) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final quality = switch (widget.role) {
@@ -91,9 +90,14 @@ class _VoiceVideoTileState extends ConsumerState<VoiceVideoTile> {
         VoiceVideoTileRole.grid => RtcVideoQuality.medium,
         VoiceVideoTileRole.miniature => RtcVideoQuality.low,
       };
-      ref
-          .read(voiceControllerProvider(widget.arg).notifier)
-          .applyTileQuality(widget.participant.id, quality);
+      final controller = ref.read(
+        voiceControllerProvider(widget.arg).notifier,
+      );
+      if (widget.source == VoiceVideoSource.screen) {
+        controller.applyTileScreenQuality(widget.participant.id, quality);
+      } else {
+        controller.applyTileQuality(widget.participant.id, quality);
+      }
     });
   }
 
@@ -119,7 +123,14 @@ class _VoiceVideoTileState extends ConsumerState<VoiceVideoTile> {
           fit: StackFit.expand,
           children: [
             if (hasVideo)
-              RtcVideoView(trackRef: trackRef)
+              RtcVideoView(
+                trackRef: trackRef,
+                // Tela em destaque pede até 2x a densidade (960px → 1080p);
+                // demais casos seguem em auto para economizar banda.
+                highDensity:
+                    widget.source == VoiceVideoSource.screen &&
+                    widget.role == VoiceVideoTileRole.spotlight,
+              )
             else
               _AvatarPlaceholder(participant: participant),
             if (isMiniature)

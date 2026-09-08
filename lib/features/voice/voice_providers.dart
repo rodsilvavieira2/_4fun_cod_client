@@ -231,6 +231,11 @@ class VoiceController
   /// de [RtcService.setQuality] para o mesmo par (id, qualidade).
   final Map<String, RtcVideoQuality> _lastQuality = {};
 
+  /// Dedupe da qualidade de TELA (mapa separado: câmera e tela do mesmo
+  /// participante são publicações independentes — o share em destaque não
+  /// rebaixa a câmera em miniatura e vice-versa).
+  final Map<String, RtcVideoQuality> _lastScreenQuality = {};
+
   /// Ids que compartilhavam tela no snapshot ANTERIOR — rastreio do
   /// spotlight automático (PRD §25), por SNAPSHOT (robusto a ordem de
   /// eventos: evento e snapshot chegam separados). Não vai pro estado.
@@ -647,6 +652,27 @@ class VoiceController
     _lastQuality[participantId] = quality;
     try {
       await ref.read(rtcServiceProvider).setQuality(participantId, quality);
+    } catch (_) {
+      // Best-effort: sem efeito na sessão.
+    }
+  }
+
+  /// Aplica a qualidade de recepção da TELA remota (spotlight→high,
+  /// grid→medium, miniatura→low). Espelho de [applyTileQuality] com dedupe
+  /// e no-op próprios — a câmera do mesmo participante não é afetada.
+  Future<void> applyTileScreenQuality(
+    String participantId,
+    RtcVideoQuality quality,
+  ) async {
+    if (participantId == ref.read(rtcServiceProvider).localParticipantId) {
+      return;
+    }
+    if (_lastScreenQuality[participantId] == quality) return;
+    _lastScreenQuality[participantId] = quality;
+    try {
+      await ref
+          .read(rtcServiceProvider)
+          .setScreenQuality(participantId, quality);
     } catch (_) {
       // Best-effort: sem efeito na sessão.
     }

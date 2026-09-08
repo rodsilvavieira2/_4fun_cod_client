@@ -48,6 +48,8 @@ class FakeRtcService implements RtcService {
   final List<String> switchCameraCalls = [];
   final List<({String participantId, RtcVideoQuality quality})>
   setQualityCalls = [];
+  final List<({String participantId, RtcVideoQuality quality})>
+  setScreenQualityCalls = [];
   int listCameraDevicesCalls = 0;
   List<RtcVideoDevice> cameraDevices = const [];
   List<RtcAudioDevice> audioInputs = const [];
@@ -151,6 +153,17 @@ class FakeRtcService implements RtcService {
   @override
   Future<void> setQuality(String participantId, RtcVideoQuality quality) async {
     setQualityCalls.add((participantId: participantId, quality: quality));
+  }
+
+  @override
+  Future<void> setScreenQuality(
+    String participantId,
+    RtcVideoQuality quality,
+  ) async {
+    setScreenQualityCalls.add((
+      participantId: participantId,
+      quality: quality,
+    ));
   }
 
   @override

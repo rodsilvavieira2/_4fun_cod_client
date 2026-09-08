@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 // RENDERIZAÇÃO (o service segue sendo o único ponto de contato de lógica).
 // A UI em features/ usa apenas este widget + RtcVideoTrackRef.
 import 'package:livekit_client/livekit_client.dart'
-    show VideoRenderMode, VideoTrackRenderer;
+    show AdaptiveStreamPixelDensity, VideoRenderMode, VideoTrackRenderer;
 
 import 'livekit_rtc_service.dart' show LiveKitVideoTrackRef;
 import 'rtc_service.dart' show RtcVideoTrackRef;
@@ -21,11 +21,16 @@ import 'rtc_service.dart' show RtcVideoTrackRef;
 ///   montar o view, então o vazio aqui é proposital;
 /// - [trackRef] de tipo desconhecido (defensivo) → mesmo placeholder.
 class RtcVideoView extends StatelessWidget {
-  const RtcVideoView({super.key, required this.trackRef});
+  const RtcVideoView({super.key, required this.trackRef, this.highDensity = false});
 
   /// Referência renderizável vinda de [RtcService.videoTrackOf]; null
   /// quando a câmera está OFF/ausente.
   final RtcVideoTrackRef? trackRef;
+
+  /// Densidade fixa 2x no adaptive stream (tile de 960px passa a pedir até
+  /// 1920px). Usar SOMENTE para screen share em spotlight — miniaturas e
+  /// câmera seguem em `auto` para não consumir banda excessiva.
+  final bool highDensity;
 
   @override
   Widget build(BuildContext context) {
@@ -42,6 +47,9 @@ class RtcVideoView extends StatelessWidget {
     return VideoTrackRenderer(
       trackRef.track,
       renderMode: VideoRenderMode.auto,
+      adaptiveStreamPixelDensity: highDensity
+          ? AdaptiveStreamPixelDensity.fixed(2.0)
+          : AdaptiveStreamPixelDensity.auto,
     );
   }
 }
