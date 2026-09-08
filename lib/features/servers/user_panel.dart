@@ -25,6 +25,7 @@ class UserPanel extends ConsumerWidget {
     this.voiceChannelName,
     this.voiceState,
     this.onLeaveVoice,
+    this.floating = false,
   });
 
   final VoidCallback? onOpenSettings;
@@ -33,11 +34,15 @@ class UserPanel extends ConsumerWidget {
   final VoiceState? voiceState;
   final VoidCallback? onLeaveVoice;
 
+  /// Card flutuante sobreposto à sidebar/rail (com sombra e raio maior),
+  /// em vez do rodapé acoplado com fundo corrido.
+  final bool floating;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final authState = ref.watch(authControllerProvider).valueOrNull;
     final user = authState is Authenticated ? authState.user : null;
-    final name = user?.name ?? '…';
+    final name = user?.username ?? '…';
     final avatarUrl = user?.avatarUrl;
     final devices = ref.watch(audioDevicesProvider);
     final controls = ref.watch(voiceControlsProvider);
@@ -51,15 +56,28 @@ class UserPanel extends ConsumerWidget {
         !(activeVoiceState?.isReconnecting ?? false);
 
     return Container(
-      color: AppTokens.surface1,
-      padding: const EdgeInsets.fromLTRB(6, 0, 6, 6),
+      color: floating ? Colors.transparent : AppTokens.surface1,
+      padding: floating
+          ? EdgeInsets.zero
+          : const EdgeInsets.fromLTRB(6, 0, 6, 6),
       child: Container(
         key: const Key('user-panel-card'),
         padding: const EdgeInsets.all(8),
         decoration: BoxDecoration(
           color: AppTokens.surface2,
-          borderRadius: BorderRadius.circular(AppRadius.md),
+          borderRadius: BorderRadius.circular(
+            floating ? AppRadius.lg : AppRadius.md,
+          ),
           border: Border.all(color: AppTokens.borderSubtle, width: 1),
+          boxShadow: floating
+              ? const [
+                  BoxShadow(
+                    color: Colors.black54,
+                    blurRadius: 24,
+                    offset: Offset(0, 8),
+                  ),
+                ]
+              : null,
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -174,6 +192,7 @@ class UserPanel extends ConsumerWidget {
                         onSelected: (id) => _selectInput(context, ref, id),
                       ),
                     ),
+                    const SizedBox(width: 6),
                     _SplitMediaControl(
                       icon: controls.isDeafened
                           ? Icons.headset_off_outlined
@@ -195,10 +214,12 @@ class UserPanel extends ConsumerWidget {
                         onSelected: (id) => _selectOutput(context, ref, id),
                       ),
                     ),
+                    const SizedBox(width: 6),
                     AppIconButton(
                       icon: Icons.settings_outlined,
                       tooltip: 'Configurações',
-                      minSize: 26,
+                      minSize: 28,
+                      iconSize: 18,
                       onPressed: onOpenSettings,
                     ),
                   ],
@@ -469,6 +490,7 @@ class _VoiceConnectionPanel extends StatelessWidget {
               AppIconButton(
                 icon: Icons.call_end,
                 tooltip: 'Sair do canal de voz',
+                color: AppTokens.accentDanger,
                 onPressed: onLeave,
                 minSize: 28,
                 iconSize: 17,
@@ -562,13 +584,13 @@ class _SplitMediaControl extends StatelessWidget {
         AppIconButton(
           icon: icon,
           tooltip: tooltip,
-          minSize: 26,
-          iconSize: 16,
+          minSize: 28,
+          iconSize: 18,
           isActive: isActive,
           activeColor: activeColor,
           onPressed: onMainPressed,
         ),
-        SizedBox(width: 14, height: 26, child: menu),
+        SizedBox(width: 14, height: 28, child: menu),
       ],
     );
   }
@@ -590,7 +612,7 @@ class _VoiceActionButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 28,
+      height: 34,
       child: IconButton(
         tooltip: tooltip,
         onPressed: onPressed,
@@ -598,7 +620,7 @@ class _VoiceActionButton extends StatelessWidget {
         style: IconButton.styleFrom(
           foregroundColor: isActive
               ? AppTokens.accentDanger
-              : AppTokens.textPrimary,
+              : AppTokens.accentGreen,
           disabledForegroundColor: AppTokens.textMuted,
           backgroundColor: AppTokens.surfaceBase,
           minimumSize: Size.zero,

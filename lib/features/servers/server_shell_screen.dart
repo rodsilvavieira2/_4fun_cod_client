@@ -313,17 +313,42 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        ServerRail(selectedServerId: widget.serverId),
-        const VerticalDivider(width: 1),
         SizedBox(
-          width: AppLayout.navigationWidth,
-          child: _channelListPanel(
-            context,
-            detail: detail,
-            canManageServer: canManageServer,
-            channelList: channelList,
-            activeVoiceChannel: activeVoiceChannel,
-            activeVoiceState: activeVoiceState,
+          // Bloco de navegação (rail + divisor + lista) como base do
+          // overlay: o controller flutua sobre rail e canais (wireframe).
+          width:
+              AppLayout.serverRailWidth + 1 + AppLayout.navigationWidth,
+          child: Stack(
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  ServerRail(selectedServerId: widget.serverId),
+                  const VerticalDivider(width: 1),
+                  SizedBox(
+                    width: AppLayout.navigationWidth,
+                    child: _channelListPanel(
+                      context,
+                      detail: detail,
+                      canManageServer: canManageServer,
+                      channelList: channelList,
+                      activeVoiceChannel: activeVoiceChannel,
+                      activeVoiceState: activeVoiceState,
+                      floatingOverlayReserve: _floatingReserve(
+                        activeVoiceChannel,
+                        activeVoiceState,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              Positioned(
+                left: 12,
+                right: 12,
+                bottom: 12,
+                child: _userPanel(activeVoiceChannel, activeVoiceState),
+              ),
+            ],
           ),
         ),
         const VerticalDivider(width: 1),
@@ -342,8 +367,43 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
     );
   }
 
+  /// Reserva de rolagem sob o card flutuante: cobre a altura do card
+  /// (seção de voz + linha do usuário + margens) com folga, para o último
+  /// canal nunca ficar escondido atrás do overlay.
+  double _floatingReserve(
+    ServerChannel? activeVoiceChannel,
+    VoiceState? activeVoiceState,
+  ) {
+    final showVoiceActions =
+        activeVoiceChannel != null &&
+        activeVoiceState != null &&
+        activeVoiceState.status != VoiceSessionStatus.idle;
+    return showVoiceActions ? 176 : 96;
+  }
+
+  /// Controller da base da sidebar — flutuante no desktop (overlay),
+  /// acoplado no mobile (rodapé da coluna).
+  UserPanel _userPanel(
+    ServerChannel? activeVoiceChannel,
+    VoiceState? activeVoiceState, {
+    bool floating = true,
+  }) {
+    return UserPanel(
+      floating: floating,
+      onOpenSettings: () => _openUserSettings(context),
+      voiceArg: activeVoiceChannel == null
+          ? null
+          : (serverId: widget.serverId, channelId: activeVoiceChannel.id),
+      voiceChannelName: activeVoiceChannel?.name,
+      voiceState: activeVoiceState,
+      onLeaveVoice: _leaveActiveVoice,
+    );
+  }
+
   /// Painel de canais: largura fixa no desktop, full-width no mobile.
-  /// Rodapé = [UserPanel] (avatar + status + mic/fones/⚙️).
+  /// Rodapé = [UserPanel] (avatar + status + mic/fones/⚙️) — no desktop o
+  /// painel flutua em overlay ([floatingOverlayReserve] != null) e a lista
+  /// ganha reserva de rolagem; no mobile ele segue acoplado ao rodapé.
   Widget _channelListPanel(
     BuildContext context, {
     required AsyncValue<ServerDetail> detail,
@@ -351,6 +411,7 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
     required List<ServerChannel> channelList,
     required ServerChannel? activeVoiceChannel,
     required VoiceState? activeVoiceState,
+    double? floatingOverlayReserve,
   }) {
     return Container(
       color: AppThemeColors.card,
@@ -384,6 +445,7 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
                 activeVoiceChannelId: activeVoiceChannel?.id,
                 activeVoiceParticipants:
                     activeVoiceState?.participants ?? const [],
+                listBottomPadding: floatingOverlayReserve ?? 8,
                 onChannelSelected: (id) => _onChannelSelected(id, channelList),
                 onOpenInvites: () =>
                     showInviteDialog(context, serverId: widget.serverId),
@@ -396,15 +458,12 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
               ),
             ),
           ),
-          UserPanel(
-            onOpenSettings: () => _openUserSettings(context),
-            voiceArg: activeVoiceChannel == null
-                ? null
-                : (serverId: widget.serverId, channelId: activeVoiceChannel.id),
-            voiceChannelName: activeVoiceChannel?.name,
-            voiceState: activeVoiceState,
-            onLeaveVoice: _leaveActiveVoice,
-          ),
+          if (floatingOverlayReserve == null)
+            _userPanel(
+              activeVoiceChannel,
+              activeVoiceState,
+              floating: false,
+            ),
         ],
       ),
     );

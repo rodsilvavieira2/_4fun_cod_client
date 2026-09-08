@@ -24,6 +24,7 @@ class ChannelList extends ConsumerWidget {
     this.onOpenMembers,
     this.onOpenSettings,
     this.onLeaveServer,
+    this.listBottomPadding = 8,
   });
 
   final String serverId;
@@ -40,6 +41,10 @@ class ChannelList extends ConsumerWidget {
   final VoidCallback? onOpenMembers;
   final VoidCallback? onOpenSettings;
   final VoidCallback? onLeaveServer;
+
+  /// Espaço extra no fim da rolagem — usado quando um controller flutuante
+  /// sobrepõe a base da lista, para o último canal não ficar escondido.
+  final double listBottomPadding;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -189,7 +194,7 @@ class ChannelList extends ConsumerWidget {
                     ),
                   )
                 : ListView(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    padding: EdgeInsets.fromLTRB(0, 8, 0, listBottomPadding),
                     children: [
                       if (textChannels.isNotEmpty) ...[
                         const SectionHeader(
@@ -260,9 +265,9 @@ class ChannelList extends ConsumerWidget {
     final userIds = {...mirroredIds, ...rtcByUserId.keys}.toList()
       ..sort((left, right) {
         final leftName =
-            membersById[left]?.user.name ?? rtcByUserId[left]?.name ?? left;
+            _displayName(membersById[left], rtcByUserId[left], left);
         final rightName =
-            membersById[right]?.user.name ?? rtcByUserId[right]?.name ?? right;
+            _displayName(membersById[right], rtcByUserId[right], right);
         return leftName.toLowerCase().compareTo(rightName.toLowerCase());
       });
     return [
@@ -348,6 +353,18 @@ class _ServerMenuEntry extends StatelessWidget {
   }
 }
 
+String _displayName(
+  ServerMember? member,
+  RtcParticipant? participant,
+  String fallbackId,
+) {
+  final username = member?.user.username.trim();
+  if (username != null && username.isNotEmpty) return username;
+  final rtcName = participant?.name.trim();
+  if (rtcName != null && rtcName.isNotEmpty) return rtcName;
+  return member?.user.name ?? fallbackId;
+}
+
 /// Participante compacto abaixo de um canal de voz, no mesmo agrupamento
 /// visual usado pelo Discord. Estado detalhado de fala/mídia segue no palco
 /// da sala ativa, que recebe o stream direto do LiveKit.
@@ -362,7 +379,7 @@ class _VoiceOccupant {
   final ServerMember? member;
   final RtcParticipant? participant;
 
-  String get name => member?.user.name ?? participant?.name ?? userId;
+  String get name => _displayName(member, participant, userId);
   String? get avatarUrl => member?.user.avatarUrl;
 }
 
@@ -378,11 +395,11 @@ class _VoiceOccupantRow extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(left: 32, right: 12, bottom: 2),
       child: SizedBox(
-        height: 26,
+        height: 36,
         child: Row(
           children: [
             CircleAvatar(
-              radius: 9,
+              radius: 12,
               backgroundColor: isSpeaking
                   ? AppTokens.accentGreen
                   : AppTokens.surface3,
@@ -396,20 +413,20 @@ class _VoiceOccupantRow extends StatelessWidget {
                           : occupant.name[0].toUpperCase(),
                       style: const TextStyle(
                         fontFamily: 'Geist',
-                        fontSize: 9,
+                        fontSize: 11,
                         fontWeight: FontWeight.w600,
                       ),
                     )
                   : null,
             ),
-            const SizedBox(width: 7),
+            const SizedBox(width: 8),
             Expanded(
               child: Text(
                 occupant.name,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   fontFamily: 'Geist',
-                  fontSize: 12.5,
+                  fontSize: 13,
                   color: AppTokens.textSecondary,
                 ),
               ),
@@ -418,7 +435,7 @@ class _VoiceOccupantRow extends StatelessWidget {
               const SizedBox(width: 4),
               Icon(
                 participant.isMicrophoneEnabled ? Icons.mic : Icons.mic_off,
-                size: 13,
+                size: 14,
                 color: participant.isMicrophoneEnabled
                     ? AppTokens.textMuted
                     : AppTokens.textSecondary,

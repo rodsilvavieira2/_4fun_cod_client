@@ -49,8 +49,8 @@ void main() {
       SharedPreferences.setMockInitialValues({});
       const user = User(
         id: 'user-1',
-        name: 'Rodrigo',
-        username: 'rodrigo',
+        name: 'Rodrigo Silva',
+        username: 'rodrigo_nick',
         email: 'rodrigo@example.com',
       );
       await tester.pumpWidget(
@@ -69,7 +69,8 @@ void main() {
       // O container não pode lançar a assert do Flutter ("color is just a
       // shorthand for decoration") — a presença dos widgets confirma o
       // build sem ErrorWidget.
-      expect(find.text('Rodrigo'), findsOneWidget);
+      expect(find.text('rodrigo_nick'), findsOneWidget);
+      expect(find.text('Rodrigo Silva'), findsNothing);
       expect(find.text('Online'), findsOneWidget);
       // Fora de uma chamada os controles continuam funcionais e refletem a
       // preferência global padrão (microfone ativo, não ensurdecido).
@@ -188,5 +189,36 @@ void main() {
     expect(cameraY, lessThan(micY));
     expect(shareY, lessThan(headsetY));
     expect(micX, lessThan(headsetX));
+  });
+
+  testWidgets('UserPanel flutuante aplica sombra e raio maior no card', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    BoxDecoration cardOf() {
+      return tester
+          .widget<Container>(
+            find.byKey(const Key('user-panel-card')),
+          )
+          .decoration! as BoxDecoration;
+    }
+
+    Future<void> pumpPanel({required bool floating}) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [rtcServiceProvider.overrideWithValue(_FakeRtcService())],
+          child: MaterialApp(
+            home: Scaffold(body: UserPanel(floating: floating)),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    await pumpPanel(floating: false);
+    expect(cardOf().boxShadow, isNull);
+
+    await pumpPanel(floating: true);
+    expect(cardOf().boxShadow, isNotNull);
   });
 }

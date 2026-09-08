@@ -292,8 +292,9 @@ class _MiniatureOverlay extends StatelessWidget {
   }
 }
 
-/// Placeholder de tile SEM vídeo: avatar circular com a inicial + nome
-/// (adaptação visual do `_ParticipantTile` da lista da Fase 4).
+/// Placeholder de tile SEM vídeo: apenas o avatar circular com a inicial —
+/// o estado "sem vídeo" já é sinalizado pelo badge superior e pelo overlay
+/// com o nome (adaptação visual do `_ParticipantTile` da lista da Fase 4).
 class _AvatarPlaceholder extends StatelessWidget {
   const _AvatarPlaceholder({required this.participant});
 
@@ -313,30 +314,15 @@ class _AvatarPlaceholder extends StatelessWidget {
         children: [
           const Positioned(left: 12, top: 12, child: _NoVideoBadge()),
           Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CircleAvatar(
-                  radius: 32,
-                  backgroundColor: AppTokens.surface3,
-                  child: Text(
-                    name.isEmpty ? '?' : name[0].toUpperCase(),
-                    style: theme.textTheme.headlineMedium?.copyWith(
-                      color: AppTokens.textPrimary,
-                    ),
-                  ),
+            child: CircleAvatar(
+              radius: 32,
+              backgroundColor: AppTokens.surface3,
+              child: Text(
+                name.isEmpty ? '?' : name[0].toUpperCase(),
+                style: theme.textTheme.headlineMedium?.copyWith(
+                  color: AppTokens.textPrimary,
                 ),
-                const SizedBox(height: 8),
-                const Text(
-                  'Câmera desligada',
-                  style: TextStyle(
-                    fontFamily: 'Geist',
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    color: AppTokens.textMuted,
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
         ],

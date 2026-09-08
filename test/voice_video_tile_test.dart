@@ -58,7 +58,7 @@ void main() {
       await tester.pump();
 
       expect(find.text('Sem vídeo'), findsOneWidget);
-      expect(find.text('Câmera desligada'), findsOneWidget);
+      expect(find.text('Câmera desligada'), findsNothing);
       expect(find.text('R'), findsOneWidget);
 
       final placeholder = tester.widget<Container>(
