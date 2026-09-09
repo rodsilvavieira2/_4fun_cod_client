@@ -26,6 +26,9 @@ class AppConfig {
     this.otelOrg = 'default',
     this.otelBasicAuth = '',
     this.otelEnabled = false,
+    // Opção A da release: OTLP via `POST <api>/api/v1/telemetria...` —
+    // sem Basic do O2 no binário (P2); auth = token de telemetria do usuário.
+    this.otelViaApi = false,
   });
 
   factory AppConfig.fromEnvironment() {
@@ -56,6 +59,10 @@ class AppConfig {
       'OTEL_ENABLED',
       defaultValue: false,
     );
+    const otelViaApi = bool.fromEnvironment(
+      'OTEL_VIA_API',
+      defaultValue: false,
+    );
     return AppConfig(
       apiBaseUrl: apiBaseUrl,
       livekitUrl: livekitUrl,
@@ -63,6 +70,7 @@ class AppConfig {
       otelOrg: otelOrg,
       otelBasicAuth: otelBasicAuth,
       otelEnabled: otelEnabled,
+      otelViaApi: otelViaApi,
     );
   }
 
@@ -95,6 +103,9 @@ class AppConfig {
 
   /// Telemetria ligada via `--dart-define=OTEL_ENABLED=true`.
   final bool otelEnabled;
+
+  /// OTLP via proxy autenticado da API (`OTEL_VIA_API=true`, releases).
+  final bool otelViaApi;
 }
 
 /// Provider de infraestrutura: expõe o [AppConfig] para toda a árvore.

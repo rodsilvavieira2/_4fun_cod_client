@@ -54,6 +54,14 @@ class ServerRail extends ConsumerWidget {
         data: (list) => ListView(
           padding: const EdgeInsets.symmetric(vertical: 12),
           children: [
+            _HomeRailItem(
+              selected: selectedServerId == null && !dmActive,
+              compact: compact,
+            ),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Divider(height: 1, color: AppTokens.borderHairline),
+            ),
             for (final server in list)
               _ServerRailItem(
                 server: server,
@@ -66,6 +74,108 @@ class ServerRail extends ConsumerWidget {
             ),
             _AddServerRailItem(compact: compact),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Atalho fixo para a home (`/`): logo circular do 4FunCode no mesmo
+/// padrão dos botões de servidor (44px, circular → arredondado no
+/// hover/seleção, pill branca à esquerda).
+class _HomeRailItem extends StatefulWidget {
+  const _HomeRailItem({required this.selected, this.compact = false});
+
+  final bool selected;
+  final bool compact;
+
+  @override
+  State<_HomeRailItem> createState() => _HomeRailItemState();
+}
+
+class _HomeRailItemState extends State<_HomeRailItem> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final selected = widget.selected;
+    final compact = widget.compact;
+    final itemSize = compact ? 36.0 : 44.0;
+    final radius = compact ? 10.0 : 14.0;
+    final active = selected || _hovered;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: MouseRegion(
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() => _hovered = false),
+        child: Tooltip(
+          message: 'Início',
+          child: InkWell(
+            borderRadius: BorderRadius.circular(radius + 4),
+            mouseCursor: SystemMouseCursors.click,
+            onTap: () => context.go('/'),
+            child: SizedBox(
+              height: itemSize,
+              child: Stack(
+                alignment: Alignment.center,
+                clipBehavior: Clip.none,
+                children: [
+                  // Pill branca Vercel à esquerda
+                  Positioned(
+                    left: 0,
+                    top: 0,
+                    bottom: 0,
+                    child: Center(
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 150),
+                        curve: Curves.easeOutCubic,
+                        width: selected ? 3.5 : (_hovered ? 3.5 : 0),
+                        height: selected ? 28 : (_hovered ? 14 : 0),
+                        decoration: const BoxDecoration(
+                          color: AppTokens.textPrimary,
+                          borderRadius: BorderRadius.horizontal(
+                            right: Radius.circular(3),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    curve: Curves.easeOutCubic,
+                    width: itemSize,
+                    height: itemSize,
+                    decoration: BoxDecoration(
+                      color: selected
+                          ? AppTokens.textPrimary
+                          : (_hovered
+                                ? AppTokens.surface3
+                                : AppTokens.surface1),
+                      borderRadius: BorderRadius.circular(
+                        active ? radius : AppRadius.full,
+                      ),
+                      border: Border.all(
+                        color: selected
+                            ? Colors.transparent
+                            : (_hovered
+                                  ? AppTokens.borderSubtle
+                                  : AppTokens.borderHairline),
+                        width: 1,
+                      ),
+                    ),
+                    alignment: Alignment.center,
+                    child: AppLogo(
+                      size: itemSize,
+                      // Circular em repouso; acompanha o morph do container
+                      // no hover/seleção, como os ícones de servidor.
+                      radiusFactor: active ? radius / itemSize : 0.5,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );

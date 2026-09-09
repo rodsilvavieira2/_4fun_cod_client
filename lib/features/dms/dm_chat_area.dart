@@ -125,28 +125,17 @@ class _DmComposer extends StatefulWidget {
 
 class _DmComposerState extends State<_DmComposer> {
   final TextEditingController _controller = TextEditingController();
-  final FocusNode _focusNode = FocusNode();
-  bool _focused = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _focusNode.addListener(() {
-      setState(() => _focused = _focusNode.hasFocus);
-    });
-  }
 
   @override
   void dispose() {
     _controller.dispose();
-    _focusNode.dispose();
     super.dispose();
   }
 
-  void _handleSend() {
-    final content = _controller.text.trim();
+  void _handleSend(String content) {
     if (content.isEmpty) return;
     _controller.clear();
+    setState(() {});
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(const SnackBar(content: Text('Mensagens diretas em breve')));
@@ -154,83 +143,13 @@ class _DmComposerState extends State<_DmComposer> {
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      top: false,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
-          constraints: const BoxConstraints(minHeight: 46),
-          decoration: BoxDecoration(
-            color: AppTokens.surface2,
-            borderRadius: BorderRadius.circular(AppRadius.md),
-            border: Border.all(
-              color: _focused ? AppTokens.borderFocus : AppTokens.borderStrong,
-              width: _focused ? 1.2 : 1.0,
-            ),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x44000000),
-                blurRadius: 10,
-                offset: Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(14, 4, 6, 4),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _controller,
-                    focusNode: _focusNode,
-                    minLines: 1,
-                    maxLines: 5,
-                    style: const TextStyle(
-                      fontFamily: 'Geist',
-                      fontSize: 13.5,
-                      color: AppTokens.textPrimary,
-                    ),
-                    decoration: InputDecoration(
-                      hintText: widget.hintName != null
-                          ? 'Mensagem para @${widget.hintName}…'
-                          : 'Digite sua mensagem…',
-                      hintStyle: const TextStyle(
-                        fontFamily: 'Geist',
-                        fontSize: 13.5,
-                        color: AppTokens.textMuted,
-                      ),
-                      border: InputBorder.none,
-                      enabledBorder: InputBorder.none,
-                      focusedBorder: InputBorder.none,
-                      isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 0,
-                        vertical: 10,
-                      ),
-                    ),
-                    onSubmitted: (_) => _handleSend(),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: AppIconButton(
-                    icon: Icons.arrow_upward,
-                    tooltip: 'Enviar mensagem',
-                    minSize: 30,
-                    iconSize: 16,
-                    isActive: _controller.text.trim().isNotEmpty,
-                    activeColor: AppTokens.textInverse,
-                    onPressed: _handleSend,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
+    return AppChatInput(
+      controller: _controller,
+      hintText: widget.hintName != null
+          ? 'Mensagem para @${widget.hintName}…'
+          : 'Digite sua mensagem…',
+      sendActiveColor: AppTokens.textInverse,
+      onSend: _handleSend,
     );
   }
 }

@@ -27,6 +27,10 @@ class App extends ConsumerWidget {
     ref.listen(authControllerProvider, (_, next) {
       final state = next.valueOrNull;
       telemetry.setUser(state is Authenticated ? state.user.id : null);
+      // Modo via-API precisa de sessão p/ o token de telemetria: a 1ª
+      // tentativa (start sem login) sai em no-op e o login dispara a real.
+      // `init` é idempotente + anti-concorrente.
+      if (state is Authenticated && !telemetry.ready) telemetry.init();
     });
     return PushToTalkListener(
       child: MaterialApp.router(

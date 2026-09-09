@@ -121,8 +121,49 @@ class AuthRepository {
     return tokens.accessToken;
   }
 
+  /// Token de telemetria (opção A da release): opaco, por usuário, emitido
+  /// pelo backend em `POST /telemetry/token` via sessão autenticada.
+  ///
+  /// Cacheado no secure storage e estável por meses de propósito — o
+  /// exporter OTLP congela headers no init (sem re-init). `null` = sem
+  /// sessão ou backend sem `TELEMETRY_TOKEN_SECRET` (telemetria tenta de
+  /// novo no próximo start/login; nunca quebra o app).
+  Future<String?> ensureTelemetryToken() async {
+    final cached = await _tokenStorage.readTelemetryToken();
+    if (cached != null && cached.isNotEmpty) return cached;
+    for (var attempt = 0; attempt < 2; attempt++) {
+      try {
+        final access = await accessToken;
+        if (access == null) return null;
+        final response = await _bareDio.post(
+          '/telemetry/token',
+          options: Options(headers: {'Authorization': 'Bearer $access'}),
+        );
+        final token = (response.data as Map<String, dynamic>)['token'];
+        if (token is String && token.isNotEmpty) {
+          await _tokenStorage.saveTelemetryToken(token);
+          return token;
+        }
+        return null;
+      } on DioException catch (e) {
+        if (e.response?.statusCode == 401 && attempt == 0) {
+          try {
+            await refresh();
+            continue;
+          } catch (_) {
+            return null;
+          }
+        }
+        return null;
+      } catch (_) {
+        return null;
+      }
+    }
+    return null;
+  }
+
   /// Logout completo: revoga o refresh no backend (best-effort) e limpa o
-  /// armazenamento de tokens.
+  /// armazenamento de tokens (inclui o token de telemetria).
   Future<void> signOut() async {
     try {
       final refreshToken = await _tokenStorage.readRefreshToken();

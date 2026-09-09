@@ -2,6 +2,7 @@ import 'package:dartastic_opentelemetry/dartastic_opentelemetry.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../auth/auth_repository.dart';
 import '../config/app_config.dart';
 import '../logging/app_logger.dart';
 
@@ -13,14 +14,16 @@ import '../logging/app_logger.dart';
 /// nenhuma falha do SDK pode quebrar o app (todos os toques OTel têm
 /// try/catch e o log local continua intacto).
 class TelemetryService {
-  TelemetryService(this._log, this._config);
+  TelemetryService(this._log, this._config, this._ref);
 
   static const _scope = 'fourfun-cod-client';
 
   final AppLogger _log;
   final AppConfig _config;
+  final Ref _ref;
 
   bool _ready = false;
+  bool _initializing = false;
 
   /// `id` do usuário autenticado (só o id — nunca nome/email/username,
   /// pela redação estrita do grill). Injetado como atributo `user_id` em
@@ -60,9 +63,25 @@ class TelemetryService {
     return {'Authorization': 'Basic $basic'};
   }
 
-  /// Chamado uma vez no `App.build` (fire-and-forget). Idempotente.
+  /// Chamado uma vez no `App.build` (fire-and-forget). Idempotente e
+  /// re-tentável: `App` chama de novo a cada login (modo via-API precisa
+  /// de sessão p/ buscar o token de telemetria).
   Future<void> init() async {
-    if (!enabled || _ready) return;
+    if (!enabled || _ready || _initializing) return;
+    _initializing = true;
+    try {
+      if (_config.otelViaApi) {
+        await _initViaApi();
+      } else {
+        await _initDirect();
+      }
+    } finally {
+      _initializing = false;
+    }
+  }
+
+  /// Modo lab/dev: OTLP direto ao OpenObserve (comportamento original).
+  Future<void> _initDirect() async {
     try {
       // Batch = envio em lote em background; exporter com retry limitado
       // (3x + backoff) — se o OpenObserve cair, o lote é descartado sem
@@ -91,6 +110,54 @@ class TelemetryService {
       _log.i('telemetria ligada → $endpoint', tag: 'otel');
     } catch (e) {
       _log.w('otel init falhou (só log local): $e', tag: 'otel');
+    }
+  }
+
+  /// Modo release (opção A): OTLP via proxy autenticado da API.
+  ///
+  /// Auth = token de telemetria do usuário (`POST /telemetry/token` via
+  /// sessão; estável por meses porque o exporter congela headers no init
+  /// e o SDK não permite re-init). Sem sessão ou sem token ainda (backend
+  /// sem `TELEMETRY_TOKEN_SECRET`) = tenta de novo no próximo start/login.
+  Future<void> _initViaApi() async {
+    String? token;
+    try {
+      token = await _ref.read(authRepositoryProvider).ensureTelemetryToken();
+    } catch (e) {
+      _log.w(
+        'token de telemetria indisponível (só log local): $e',
+        tag: 'otel',
+      );
+      return;
+    }
+    if (token == null || token.isEmpty) {
+      _log.i('telemetria via API aguardando sessão', tag: 'otel');
+      return;
+    }
+    final base = telemetryProxyBase(_config.apiRestBaseUrl);
+    final headers = {'Authorization': 'Bearer $token'};
+    try {
+      await OTel.initialize(
+        serviceName: _scope,
+        serviceVersion: '1.0.0',
+        endpoint: base,
+        spanProcessor: BatchSpanProcessor(
+          OtlpHttpSpanExporter(
+            OtlpHttpExporterConfig(endpoint: base, headers: headers),
+          ),
+        ),
+        logRecordExporter: OtlpHttpLogRecordExporter(
+          OtlpHttpLogRecordExporterConfig(endpoint: base, headers: headers),
+        ),
+        metricExporter: OtlpHttpMetricExporter(
+          OtlpHttpMetricExporterConfig(endpoint: base, headers: headers),
+        ),
+        enableMetrics: true,
+      );
+      _ready = true;
+      _log.i('telemetria ligada via API → $base', tag: 'otel');
+    } catch (e) {
+      _log.w('otel init via API falhou (só log local): $e', tag: 'otel');
     }
   }
 
@@ -283,9 +350,20 @@ class _TelemetryRouteObserver extends NavigatorObserver {
   }
 }
 
+/// Base OTLP do proxy autenticado: `<apiRest>/telemetry` — o exporter
+/// anexa `v1/traces` / `v1/logs` (casa com `POST /telemetry/v1/*`).
+/// Pura/testável.
+String telemetryProxyBase(String apiRestBaseUrl) {
+  final base = apiRestBaseUrl.endsWith('/')
+      ? apiRestBaseUrl.substring(0, apiRestBaseUrl.length - 1)
+      : apiRestBaseUrl;
+  return '$base/telemetry';
+}
+
 final telemetryServiceProvider = Provider<TelemetryService>((ref) {
   return TelemetryService(
     ref.watch(appLoggerProvider),
     ref.watch(appConfigProvider),
+    ref,
   );
 });

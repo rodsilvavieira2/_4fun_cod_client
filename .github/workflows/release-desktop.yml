@@ -78,6 +78,7 @@ jobs:
           API_URL: ${{ vars.API_URL }}
           LIVEKIT_URL: ${{ vars.LIVEKIT_URL }}
           OTEL_ENABLED: ${{ vars.OTEL_ENABLED }}
+          OTEL_VIA_API: ${{ vars.OTEL_VIA_API }}
           OTEL_ENDPOINT: ${{ vars.OTEL_ENDPOINT }}
           OTEL_ORG: ${{ vars.OTEL_ORG }}
         run: |
@@ -85,6 +86,7 @@ jobs:
           [ -n "$API_URL" ] && DEFINES+=(--dart-define=API_URL="$API_URL")
           [ -n "$LIVEKIT_URL" ] && DEFINES+=(--dart-define=LIVEKIT_URL="$LIVEKIT_URL")
           [ -n "$OTEL_ENABLED" ] && DEFINES+=(--dart-define=OTEL_ENABLED="$OTEL_ENABLED")
+          [ -n "$OTEL_VIA_API" ] && DEFINES+=(--dart-define=OTEL_VIA_API="$OTEL_VIA_API")
           [ -n "$OTEL_ENDPOINT" ] && DEFINES+=(--dart-define=OTEL_ENDPOINT="$OTEL_ENDPOINT")
           [ -n "$OTEL_ORG" ] && DEFINES+=(--dart-define=OTEL_ORG="$OTEL_ORG")
           # P2 (review t_34728661): OTEL_BASIC_AUTH NUNCA baked via
@@ -235,6 +237,7 @@ jobs:
           API_URL: ${{ vars.API_URL }}
           LIVEKIT_URL: ${{ vars.LIVEKIT_URL }}
           OTEL_ENABLED: ${{ vars.OTEL_ENABLED }}
+          OTEL_VIA_API: ${{ vars.OTEL_VIA_API }}
           OTEL_ENDPOINT: ${{ vars.OTEL_ENDPOINT }}
           OTEL_ORG: ${{ vars.OTEL_ORG }}
         run: |
@@ -242,6 +245,7 @@ jobs:
           if ($env:API_URL) { $defines += "--dart-define=API_URL=$env:API_URL" }
           if ($env:LIVEKIT_URL) { $defines += "--dart-define=LIVEKIT_URL=$env:LIVEKIT_URL" }
           if ($env:OTEL_ENABLED) { $defines += "--dart-define=OTEL_ENABLED=$env:OTEL_ENABLED" }
+          if ($env:OTEL_VIA_API) { $defines += "--dart-define=OTEL_VIA_API=$env:OTEL_VIA_API" }
           if ($env:OTEL_ENDPOINT) { $defines += "--dart-define=OTEL_ENDPOINT=$env:OTEL_ENDPOINT" }
           if ($env:OTEL_ORG) { $defines += "--dart-define=OTEL_ORG=$env:OTEL_ORG" }
           # P2 (review t_34728661): OTEL_BASIC_AUTH NUNCA baked via

@@ -5,6 +5,7 @@ export 'buttons/app_button.dart';
 export 'buttons/app_segmented_control.dart';
 export 'ds_tokens.dart';
 export 'feedback/app_badge.dart';
+export 'inputs/app_chat_input.dart';
 export 'inputs/app_text_field.dart';
 export 'invite_dialog.dart';
 export 'menus/app_menu.dart';

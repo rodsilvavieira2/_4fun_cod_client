@@ -39,8 +39,22 @@ sudo apt install libgtk-3-0 libsecret-1-0 libgstreamer1.0-0 \
 ## Telemetria (OTEL) na release
 
 `API_URL`/`OTEL_*` (exceto auth) vão baked via `--dart-define` a partir
-das variables do repo. **`OTEL_BASIC_AUTH` nunca vai no binário**
-(P2 review t_34728661) — a release lê da env de runtime:
+das variables do repo. Com `OTEL_ENABLED=true` + `OTEL_VIA_API=true`, o app
+envia OTLP pelo **proxy autenticado da API** (`POST <api>/api/v1/telemetry/v1/*`)
+— zero config para o usuário final:
+
+- Auth do lote = **token de telemetria por usuário** (opaco, estável,
+  emitido em `POST /telemetry/token` via sessão logada e guardado no secure
+  storage; sai no logout). **`OTEL_BASIC_AUTH` nunca vai no binário**
+  (P2 review t_34728661) — o Basic do OpenObserve fica só server-side.
+- Servidor precisa de `TELEMETRY_TOKEN_SECRET` (sem ele o proxy responde
+  503 fail-closed; `TELEMETRY_TOKEN_TTL` default `365d`).
+- Sem sessão (deslogado) ou proxy desligado, o app só faz log local e tenta
+  de novo no próximo start/login — telemetria nunca quebra o app.
+
+Modo direto (lab/dev, `OTEL_VIA_API` ausente): OTLP vai direto ao
+`OTEL_ENDPOINT`, com `OTEL_BASIC_AUTH` via `--dart-define` (dev) ou env de
+runtime na release antiga:
 
 ```bash
 OTEL_BASIC_AUTH='<base64(email:senha)>' ./4fun-cod-linux-x64-*.AppImage

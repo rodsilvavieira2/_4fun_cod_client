@@ -477,27 +477,15 @@ class _ChatComposer extends ConsumerStatefulWidget {
 
 class _ChatComposerState extends ConsumerState<_ChatComposer> {
   final TextEditingController _controller = TextEditingController();
-  final FocusNode _focusNode = FocusNode();
   bool _sending = false;
-  bool _focused = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _focusNode.addListener(() {
-      setState(() => _focused = _focusNode.hasFocus);
-    });
-  }
 
   @override
   void dispose() {
     _controller.dispose();
-    _focusNode.dispose();
     super.dispose();
   }
 
-  Future<void> _handleSend() async {
-    final content = _controller.text.trim();
+  Future<void> _handleSend(String content) async {
     if (content.isEmpty || _sending) return;
     setState(() => _sending = true);
     try {
@@ -523,83 +511,11 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      top: false,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
-          constraints: const BoxConstraints(minHeight: 46),
-          decoration: BoxDecoration(
-            color: AppTokens.surface2,
-            borderRadius: BorderRadius.circular(AppRadius.md),
-            border: Border.all(
-              color: _focused ? AppTokens.borderFocus : AppTokens.borderStrong,
-              width: _focused ? 1.2 : 1.0,
-            ),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x44000000),
-                blurRadius: 10,
-                offset: Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(14, 4, 6, 4),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _controller,
-                    focusNode: _focusNode,
-                    enabled: !_sending,
-                    minLines: 1,
-                    maxLines: 5,
-                    style: const TextStyle(
-                      fontFamily: 'Geist',
-                      fontSize: 13.5,
-                      color: AppTokens.textPrimary,
-                    ),
-                    decoration: const InputDecoration(
-                      hintText: 'Digite sua mensagem… (Enter para enviar)',
-                      hintStyle: TextStyle(
-                        fontFamily: 'Geist',
-                        fontSize: 13.5,
-                        color: AppTokens.textMuted,
-                      ),
-                      border: InputBorder.none,
-                      enabledBorder: InputBorder.none,
-                      focusedBorder: InputBorder.none,
-                      isDense: true,
-                      contentPadding: EdgeInsets.symmetric(
-                        horizontal: 0,
-                        vertical: 10,
-                      ),
-                    ),
-                    onChanged: (_) => setState(() {}),
-                    onSubmitted: (_) => _handleSend(),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: AppIconButton(
-                    icon: Icons.arrow_upward,
-                    tooltip: 'Enviar mensagem',
-                    minSize: 30,
-                    iconSize: 16,
-                    isActive: _controller.text.trim().isNotEmpty,
-                    activeColor: AppTokens.accentVercel,
-                    onPressed: _sending ? null : _handleSend,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
+    return AppChatInput(
+      controller: _controller,
+      enabled: !_sending,
+      hintText: 'Digite sua mensagem… (Enter para enviar)',
+      onSend: _handleSend,
     );
   }
 }
