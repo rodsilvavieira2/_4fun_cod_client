@@ -6,9 +6,8 @@ import 'push_to_talk.dart';
 
 /// Ponte para os listeners globais dos runners desktop.
 ///
-/// No web o listener raiz do Flutter é a implementação; em Linux/Windows o
-/// runner emite somente press/release do binding já filtrado, sem expor o
-/// fluxo completo de teclas ao Dart.
+/// Em Linux/Windows, o runner emite somente press/release do binding já
+/// filtrado, sem expor o fluxo completo de teclas ao Dart.
 class PushToTalkInputService {
   PushToTalkInputService({PushToTalkBackend? backend})
     : _backend =
@@ -21,8 +20,7 @@ class PushToTalkInputService {
 
   Stream<PushToTalkInputEvent> get events => _backend.events;
 
-  /// `ok` significa que o runner registrou um listener global. Web não
-  /// possui registro nativo, mas o fallback em foco continua disponível.
+  /// `ok` significa que o runner registrou um listener global.
   Future<PushToTalkConfigResult> configure(PushToTalkBinding? binding) =>
       _backend.configure(binding);
 }

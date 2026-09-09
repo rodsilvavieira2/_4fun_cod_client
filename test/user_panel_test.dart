@@ -13,6 +13,7 @@ import 'package:fourfun_cod_client/core/rtc/rtc_service.dart';
 import 'package:fourfun_cod_client/features/servers/user_panel.dart';
 import 'package:fourfun_cod_client/features/voice/voice_controls_provider.dart';
 import 'package:fourfun_cod_client/features/voice/voice_providers.dart';
+import 'package:fourfun_cod_client/features/voice/voice_volume_controller.dart';
 import 'package:fourfun_cod_client/shared/models/user.dart';
 
 /// Fake do AuthController: nunca toca em backend/storage/dio.
@@ -28,7 +29,23 @@ class _FakeAuthController extends AuthController {
 class _FakeRtcService implements RtcService {
   int enableMicrophoneCalls = 0;
   int disableMicrophoneCalls = 0;
+  double inputGain = 1.0;
+  double outputGain = 1.0;
   final List<bool> remoteAudioSelections = [];
+  List<RtcAudioDevice> inputs = const [
+    RtcAudioDevice(
+      id: 'mic-1',
+      label: 'Microfone USB',
+      kind: RtcMediaDeviceKind.audioInput,
+    ),
+  ];
+  List<RtcAudioDevice> outputs = const [
+    RtcAudioDevice(
+      id: 'out-1',
+      label: 'Fone USB',
+      kind: RtcMediaDeviceKind.audioOutput,
+    ),
+  ];
 
   @override
   Future<void> enableMicrophone() async => enableMicrophoneCalls++;
@@ -40,6 +57,30 @@ class _FakeRtcService implements RtcService {
   Future<void> setRemoteAudioEnabled(bool enabled) async {
     remoteAudioSelections.add(enabled);
   }
+
+  @override
+  Future<List<RtcAudioDevice>> listAudioInputDevices() async => inputs;
+
+  @override
+  Future<List<RtcAudioDevice>> listAudioOutputDevices() async => outputs;
+
+  @override
+  Future<List<RtcVideoDevice>> listCameraDevices() async => const [];
+
+  @override
+  Stream<void> get mediaDevicesChanged => const Stream.empty();
+
+  @override
+  Future<void> selectAudioInput(String? deviceId) async {}
+
+  @override
+  Future<void> selectAudioOutput(String? deviceId) async {}
+
+  @override
+  Future<void> setInputVolume(double gain) async => inputGain = gain;
+
+  @override
+  Future<void> setOutputVolume(double gain) async => outputGain = gain;
 
   @override
   dynamic noSuchMethod(Invocation invocation) => null;
@@ -143,6 +184,49 @@ void main() {
     expect(container.read(voiceControlsProvider).isDeafened, isTrue);
     expect(rtc.disableMicrophoneCalls, 2);
     expect(rtc.remoteAudioSelections, [true, false]);
+  });
+
+  testWidgets('menu do microfone exibe e aplica volume de entrada', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final rtc = _FakeRtcService();
+    final container = ProviderContainer(
+      overrides: [
+        authControllerProvider.overrideWith(
+          () => _FakeAuthController(const AuthUnknown()),
+        ),
+        rtcServiceProvider.overrideWithValue(rtc),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          theme: theme4funCod,
+          home: const Scaffold(body: UserPanel()),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Dispositivo de entrada'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Volume de entrada'), findsOneWidget);
+
+    await tester.tap(find.text('Dispositivo de entrada').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Microfone USB'), findsOneWidget);
+
+    tester.widget<Slider>(find.byType(Slider)).onChanged?.call(50);
+    await tester.pumpAndSettle();
+
+    expect(container.read(voiceVolumeProvider).inputPercent, 50);
+    expect(rtc.inputGain, 0.5);
   });
 
   testWidgets('UserPanel organiza ações de voz acima dos controles pessoais', (

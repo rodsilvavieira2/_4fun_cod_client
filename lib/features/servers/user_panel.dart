@@ -14,6 +14,7 @@ import '../../core/ui/settings_modal_sidebar.dart';
 import '../../core/ui/ui.dart';
 import '../voice/voice_controls_provider.dart';
 import '../voice/voice_providers.dart';
+import '../voice/voice_volume_controller.dart';
 
 /// Rodapé da sidebar no padrão Discord: sessão de voz no topo, ações de mídia
 /// agrupadas e identidade/controles pessoais na base.
@@ -188,8 +189,10 @@ class UserPanel extends ConsumerWidget {
                         devices: devices.inputs,
                         selectedId: devices.preferredInputId,
                         unavailable: devices.preferredInputUnavailable,
+                        loading: devices.isLoading,
                         title: 'Dispositivo de entrada',
                         deviceIcon: Icons.mic_outlined,
+                        isInput: true,
                         onSelected: (id) => _selectInput(context, ref, id),
                       ),
                     ),
@@ -211,8 +214,10 @@ class UserPanel extends ConsumerWidget {
                         devices: devices.outputs,
                         selectedId: devices.preferredOutputId,
                         unavailable: devices.preferredOutputUnavailable,
+                        loading: devices.isLoading,
                         title: 'Dispositivo de saída',
                         deviceIcon: Icons.headset_outlined,
+                        isInput: false,
                         onSelected: (id) => _selectOutput(context, ref, id),
                       ),
                     ),
@@ -330,66 +335,21 @@ class UserPanel extends ConsumerWidget {
     required List<RtcAudioDevice> devices,
     required String? selectedId,
     required bool unavailable,
+    required bool loading,
     required String title,
     required IconData deviceIcon,
+    required bool isInput,
     required Future<void> Function(String? id) onSelected,
   }) {
-    const defaultValue = '__system_default__';
-    const settingsValue = '__voice_settings__';
-    return AppMenuButton<String>(
-      tooltip: title,
-      padding: EdgeInsets.zero,
-      icon: const Icon(
-        Icons.arrow_drop_down,
-        size: 14,
-        color: AppTokens.textSecondary,
-      ),
-      onSelected: (value) {
-        if (value == settingsValue) {
-          showSettingsModal(
-            context,
-            initialSection: SettingsSection.voiceVideo,
-          );
-          return;
-        }
-        unawaited(onSelected(value == defaultValue ? null : value));
-      },
-      itemBuilder: (context) => [
-        AppMenuHeader<String>(title: title),
-        AppMenuCheckedItem<String>.labeled(
-          value: defaultValue,
-          checked: selectedId == null,
-          icon: deviceIcon,
-          label: 'Padrão do sistema',
-        ),
-        if (unavailable)
-          const AppMenuItem<String>(
-            enabled: false,
-            child: Text(
-              'Preferido indisponível; usando o padrão.',
-              style: TextStyle(
-                fontFamily: 'Geist',
-                fontSize: 12,
-                color: AppTokens.accentAmber,
-              ),
-            ),
-          ),
-        for (var index = 0; index < devices.length; index++)
-          AppMenuCheckedItem<String>.labeled(
-            value: devices[index].id,
-            checked: devices[index].id == selectedId,
-            icon: deviceIcon,
-            label: devices[index].label.isEmpty
-                ? '$title ${index + 1}'
-                : devices[index].label,
-          ),
-        const AppMenuDivider(),
-        AppMenuItem<String>.labeled(
-          value: settingsValue,
-          icon: Icons.settings_outlined,
-          label: 'Configurações de voz',
-        ),
-      ],
+    return _AudioQuickMenu(
+      devices: devices,
+      selectedId: selectedId,
+      unavailable: unavailable,
+      loading: loading,
+      title: title,
+      deviceIcon: deviceIcon,
+      isInput: isInput,
+      onSelected: onSelected,
     );
   }
 
@@ -544,6 +504,488 @@ class _ConnectionLatency extends StatelessWidget {
   }
 }
 
+class _AudioQuickMenu extends ConsumerStatefulWidget {
+  const _AudioQuickMenu({
+    required this.devices,
+    required this.selectedId,
+    required this.unavailable,
+    required this.loading,
+    required this.title,
+    required this.deviceIcon,
+    required this.isInput,
+    required this.onSelected,
+  });
+
+  final List<RtcAudioDevice> devices;
+  final String? selectedId;
+  final bool unavailable;
+  final bool loading;
+  final String title;
+  final IconData deviceIcon;
+  final bool isInput;
+  final Future<void> Function(String? id) onSelected;
+
+  @override
+  ConsumerState<_AudioQuickMenu> createState() => _AudioQuickMenuState();
+}
+
+class _AudioQuickMenuState extends ConsumerState<_AudioQuickMenu> {
+  final MenuController _menuController = MenuController();
+  final FocusNode _focusNode = FocusNode(debugLabel: 'audio-quick-menu');
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final volumeState = ref.watch(voiceVolumeProvider);
+    final percent = widget.isInput
+        ? volumeState.inputPercent
+        : volumeState.outputPercent;
+    return MenuAnchor(
+      controller: _menuController,
+      childFocusNode: _focusNode,
+      useRootOverlay: true,
+      consumeOutsideTap: true,
+      clipBehavior: Clip.none,
+      alignmentOffset: const Offset(-218, -4),
+      style: _quickMenuStyle(width: 260),
+      menuChildren: [
+        _AudioQuickPanel(
+          devices: widget.devices,
+          selectedId: widget.selectedId,
+          unavailable: widget.unavailable,
+          loading: widget.loading,
+          title: widget.title,
+          deviceIcon: widget.deviceIcon,
+          isInput: widget.isInput,
+          percent: percent,
+          onSelected: widget.onSelected,
+          menuController: _menuController,
+        ),
+      ],
+      builder: (context, controller, child) => Focus(
+        focusNode: _focusNode,
+        child: IconButton(
+          tooltip: widget.title,
+          padding: EdgeInsets.zero,
+          icon: Icon(
+            controller.isOpen ? Icons.arrow_drop_up : Icons.arrow_drop_down,
+            size: 16,
+            color: AppTokens.textSecondary,
+          ),
+          onPressed: () {
+            if (controller.isOpen) {
+              controller.close();
+            } else {
+              controller.open();
+            }
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _AudioQuickPanel extends ConsumerWidget {
+  const _AudioQuickPanel({
+    required this.devices,
+    required this.selectedId,
+    required this.unavailable,
+    required this.loading,
+    required this.title,
+    required this.deviceIcon,
+    required this.isInput,
+    required this.percent,
+    required this.onSelected,
+    required this.menuController,
+  });
+
+  final List<RtcAudioDevice> devices;
+  final String? selectedId;
+  final bool unavailable;
+  final bool loading;
+  final String title;
+  final IconData deviceIcon;
+  final bool isInput;
+  final int percent;
+  final Future<void> Function(String? id) onSelected;
+  final MenuController menuController;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final volumeController = ref.read(voiceVolumeProvider.notifier);
+    final subtitle = _selectedDeviceLabel(
+      devices: devices,
+      selectedId: selectedId,
+      title: title,
+      unavailable: unavailable,
+    );
+    return SizedBox(
+      width: 260,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SubmenuButton(
+              menuStyle: _quickMenuStyle(width: 260),
+              menuChildren: [
+                _DeviceMenuItem(
+                  checked: selectedId == null,
+                  enabled: !loading,
+                  icon: deviceIcon,
+                  label: 'Padrão do sistema',
+                  onPressed: () => _selectDevice(null),
+                ),
+                if (unavailable)
+                  const SizedBox(
+                    width: 236,
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      child: Text(
+                        'Preferido indisponível; usando o padrão.',
+                        style: TextStyle(
+                          fontFamily: 'Geist',
+                          fontSize: 12,
+                          color: AppTokens.accentAmber,
+                        ),
+                      ),
+                    ),
+                  ),
+                for (var index = 0; index < devices.length; index++)
+                  _DeviceMenuItem(
+                    checked: devices[index].id == selectedId,
+                    enabled: !loading,
+                    icon: deviceIcon,
+                    label: _audioDeviceLabel(devices[index], title, index),
+                    onPressed: () => _selectDevice(devices[index].id),
+                  ),
+              ],
+              style: _submenuButtonStyle(),
+              child: _MenuSummaryRow(
+                title: title,
+                subtitle: subtitle,
+                icon: deviceIcon,
+                trailing: Icons.chevron_right,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Divider(height: 1, color: AppTokens.borderHairline),
+            const SizedBox(height: 10),
+            _QuickVolumeSlider(
+              label: isInput ? 'Volume de entrada' : 'Volume de saída',
+              percent: percent,
+              max: isInput ? 100 : 200,
+              onChanged: (value) {
+                if (isInput) {
+                  volumeController.setInputPercent(value);
+                } else {
+                  volumeController.setOutputPercent(value);
+                }
+              },
+              onReset: percent == 100
+                  ? null
+                  : () {
+                      if (isInput) {
+                        volumeController.resetInput();
+                      } else {
+                        volumeController.resetOutput();
+                      }
+                    },
+            ),
+            const SizedBox(height: 8),
+            const Divider(height: 1, color: AppTokens.borderHairline),
+            const SizedBox(height: 6),
+            _QuickCommandRow(
+              icon: Icons.settings_outlined,
+              label: 'Configurações de voz',
+              onTap: () {
+                menuController.close();
+                showSettingsModal(
+                  context,
+                  initialSection: SettingsSection.voiceVideo,
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _selectDevice(String? id) {
+    menuController.close();
+    unawaited(onSelected(id));
+  }
+}
+
+class _MenuSummaryRow extends StatelessWidget {
+  const _MenuSummaryRow({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.trailing,
+  });
+
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final IconData trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 48,
+      child: Row(
+        children: [
+          Icon(icon, size: 17, color: AppTokens.textSecondary),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontFamily: 'Geist',
+                    fontSize: 12.5,
+                    color: AppTokens.textPrimary,
+                  ),
+                ),
+                Text(
+                  subtitle,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontFamily: 'Geist',
+                    fontSize: 11,
+                    color: AppTokens.textMuted,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Icon(trailing, size: 18, color: AppTokens.textSecondary),
+        ],
+      ),
+    );
+  }
+}
+
+class _DeviceMenuItem extends StatelessWidget {
+  const _DeviceMenuItem({
+    required this.checked,
+    required this.enabled,
+    required this.icon,
+    required this.label,
+    required this.onPressed,
+  });
+
+  final bool checked;
+  final bool enabled;
+  final IconData icon;
+  final String label;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return MenuItemButton(
+      onPressed: enabled ? onPressed : null,
+      style: _menuItemStyle(),
+      leadingIcon: Icon(
+        checked ? Icons.check : icon,
+        size: 16,
+        color: checked ? AppTokens.accentVercel : AppTokens.textSecondary,
+      ),
+      child: Text(
+        label,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(
+          fontFamily: 'Geist',
+          fontSize: 12.5,
+          color: AppTokens.textPrimary,
+        ),
+      ),
+    );
+  }
+}
+
+class _QuickVolumeSlider extends StatelessWidget {
+  const _QuickVolumeSlider({
+    required this.label,
+    required this.percent,
+    required this.max,
+    required this.onChanged,
+    required this.onReset,
+  });
+
+  final String label;
+  final int percent;
+  final int max;
+  final ValueChanged<int> onChanged;
+  final VoidCallback? onReset;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                label,
+                style: const TextStyle(
+                  fontFamily: 'Geist',
+                  fontSize: 12.5,
+                  color: AppTokens.textPrimary,
+                ),
+              ),
+            ),
+            TextButton(
+              onPressed: onReset,
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                minimumSize: const Size(36, 24),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: Text('$percent%', style: const TextStyle(fontSize: 12)),
+            ),
+          ],
+        ),
+        SliderTheme(
+          data: SliderTheme.of(context).copyWith(
+            trackHeight: 4,
+            activeTrackColor: AppTokens.accentVercel,
+            inactiveTrackColor: AppTokens.borderStrong,
+            thumbColor: AppTokens.textPrimary,
+            overlayColor: AppTokens.accentVercel.withValues(alpha: 0.16),
+            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
+            overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+          ),
+          child: Slider(
+            value: percent.toDouble(),
+            min: 0,
+            max: max.toDouble(),
+            divisions: max ~/ 5,
+            label: '$percent%',
+            onChanged: (value) => onChanged((value / 5).round() * 5),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _QuickCommandRow extends StatelessWidget {
+  const _QuickCommandRow({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(AppRadius.sm),
+      onTap: onTap,
+      child: SizedBox(
+        height: 34,
+        child: Row(
+          children: [
+            Icon(icon, size: 17, color: AppTokens.textSecondary),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                label,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontFamily: 'Geist',
+                  fontSize: 12.5,
+                  color: AppTokens.textPrimary,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+MenuStyle _quickMenuStyle({required double width}) {
+  return MenuStyle(
+    minimumSize: WidgetStatePropertyAll(Size(width, 0)),
+    maximumSize: WidgetStatePropertyAll(Size(width, double.infinity)),
+    backgroundColor: const WidgetStatePropertyAll(AppTokens.surface2),
+    surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
+    shadowColor: const WidgetStatePropertyAll(Colors.black87),
+    elevation: const WidgetStatePropertyAll(16),
+    padding: const WidgetStatePropertyAll(EdgeInsets.zero),
+    shape: WidgetStatePropertyAll(
+      RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        side: const BorderSide(color: AppTokens.borderSubtle, width: 1),
+      ),
+    ),
+  );
+}
+
+ButtonStyle _submenuButtonStyle() {
+  return ButtonStyle(
+    alignment: Alignment.centerLeft,
+    padding: const WidgetStatePropertyAll(EdgeInsets.zero),
+    minimumSize: const WidgetStatePropertyAll(Size(0, 48)),
+    foregroundColor: const WidgetStatePropertyAll(AppTokens.textPrimary),
+    overlayColor: const WidgetStatePropertyAll(AppTokens.hoverOverlay),
+    shape: WidgetStatePropertyAll(
+      RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.sm)),
+    ),
+  );
+}
+
+ButtonStyle _menuItemStyle() {
+  return ButtonStyle(
+    minimumSize: const WidgetStatePropertyAll(Size(236, 32)),
+    maximumSize: const WidgetStatePropertyAll(Size(236, 32)),
+    padding: const WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 12)),
+    foregroundColor: const WidgetStatePropertyAll(AppTokens.textPrimary),
+    overlayColor: const WidgetStatePropertyAll(AppTokens.hoverOverlay),
+  );
+}
+
+String _selectedDeviceLabel({
+  required List<RtcAudioDevice> devices,
+  required String? selectedId,
+  required String title,
+  required bool unavailable,
+}) {
+  if (selectedId == null) return 'Padrão do sistema';
+  if (unavailable) return 'Preferido indisponível';
+  for (var index = 0; index < devices.length; index++) {
+    if (devices[index].id == selectedId) {
+      return _audioDeviceLabel(devices[index], title, index);
+    }
+  }
+  return 'Padrão do sistema';
+}
+
+String _audioDeviceLabel(RtcAudioDevice device, String category, int index) =>
+    device.label.isEmpty ? '$category ${index + 1}' : device.label;
+
 class _SplitMediaControl extends StatelessWidget {
   const _SplitMediaControl({
     required this.icon,
@@ -575,7 +1017,7 @@ class _SplitMediaControl extends StatelessWidget {
           activeColor: activeColor,
           onPressed: onMainPressed,
         ),
-        SizedBox(width: 14, height: 28, child: menu),
+        SizedBox(width: 24, height: 28, child: menu),
       ],
     );
   }

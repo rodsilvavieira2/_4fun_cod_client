@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/rtc/rtc_service.dart';
+import '../../core/rtc/rtc_providers.dart';
+import '../../core/ui/participant_volume_popover.dart';
 import '../../core/ui/ui.dart';
 import '../../shared/models/servers.dart';
 import '../servers/servers_providers.dart';
@@ -59,6 +61,7 @@ class ChannelList extends ConsumerWidget {
         const <ServerMember>[];
     final membersById = {for (final member in members) member.userId: member};
     final voiceOccupants = ref.watch(voicePresenceProvider(serverId));
+    final localParticipantId = ref.watch(rtcServiceProvider).localParticipantId;
     final textChannels = <ServerChannel>[];
     final voiceChannels = <ServerChannel>[];
     for (final channel in channels.valueOrNull ?? const <ServerChannel>[]) {
@@ -228,7 +231,10 @@ class ChannelList extends ConsumerWidget {
                                     const <String>{},
                                 membersById: membersById,
                               ))
-                                _VoiceOccupantRow(occupant: occupant),
+                                _VoiceOccupantRow(
+                                  occupant: occupant,
+                                  localParticipantId: localParticipantId,
+                                ),
                             ],
                           ),
                       ],
@@ -366,15 +372,21 @@ class _VoiceOccupant {
 }
 
 class _VoiceOccupantRow extends StatelessWidget {
-  const _VoiceOccupantRow({required this.occupant});
+  const _VoiceOccupantRow({
+    required this.occupant,
+    required this.localParticipantId,
+  });
 
   final _VoiceOccupant occupant;
+  final String? localParticipantId;
 
   @override
   Widget build(BuildContext context) {
     final participant = occupant.participant;
     final isSpeaking = participant?.isSpeaking == true;
-    return Padding(
+    final canOpenVolume =
+        participant != null && participant.id != localParticipantId;
+    final row = Padding(
       padding: const EdgeInsets.only(left: 32, right: 12, bottom: 2),
       child: SizedBox(
         height: 36,
@@ -426,6 +438,12 @@ class _VoiceOccupantRow extends StatelessWidget {
           ],
         ),
       ),
+    );
+    if (!canOpenVolume) return row;
+    return ParticipantVolumeMenuRegion(
+      identity: participant.id,
+      displayName: occupant.name,
+      child: row,
     );
   }
 }

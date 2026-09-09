@@ -89,7 +89,7 @@ Definido em `installer/windows.iss` (Inno Setup 6). `AppId=com.fourfun.codclient
 [ ] código esperado está na branch principal do CLIENT
 [ ] FLUTTER_VERSION do workflow == SDK de dev
 [ ] pubspec.lock commitado
-[ ] build Linux local funciona (apenas linux/web são suportados)
+[ ] build Linux local funciona (apenas linux/windows são suportados)
 [ ] ícone Windows ok (windows/runner/resources/app_icon.ico)
 [ ] APP_EXE_NAME confere com build/windows/x64/runner/Release/
 [ ] versão/tag correta (tags são imutáveis — nunca reutilizar vX.Y.Z)

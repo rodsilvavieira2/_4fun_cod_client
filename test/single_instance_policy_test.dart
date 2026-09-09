@@ -19,8 +19,8 @@ void main() {
       }
     });
 
-    test('skips on web, debug and out-of-scope platforms', () {
-      // Web nunca impõe (sempre primeira instância).
+    test('skips on unsupported web, debug and out-of-scope platforms', () {
+      // Web está fora de suporte; esta política defensiva nunca impõe trava.
       expect(
         shouldEnforceSingleInstance(
           isWeb: true,
@@ -40,7 +40,7 @@ void main() {
         ),
         isFalse,
       );
-      // macOS/mobile fora do escopo do projeto (web/linux/windows).
+      // macOS/mobile fora do escopo do projeto (linux/windows).
       expect(
         shouldEnforceSingleInstance(
           isWeb: false,

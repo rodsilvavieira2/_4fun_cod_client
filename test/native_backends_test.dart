@@ -45,20 +45,9 @@ void main() {
       expect(services.screenShare.capabilities.usesSystemPicker, isFalse);
       expect(services.screenShare.capabilities.supportsWindowSources, isTrue);
     });
-
-    test('declara o navegador como seletor da fonte no web', () {
-      final services = factory.create(AppRuntimePlatform.web);
-
-      expect(services.screenShare, isA<WebScreenShareBackend>());
-      expect(services.screenShare.capabilities.usesSystemPicker, isTrue);
-      expect(
-        services.screenShare.canUseKind(RtcScreenShareSourceKind.window),
-        isFalse,
-      );
-    });
   });
 
-  test('factory de PTT seleciona o adapter nativo por plataforma', () {
+  test('factory de PTT seleciona o adapter desktop por plataforma', () {
     const factory = DefaultPushToTalkBackendFactory();
 
     expect(
@@ -69,7 +58,6 @@ void main() {
       factory.create(AppRuntimePlatform.windows),
       isA<WindowsPushToTalkBackend>(),
     );
-    expect(factory.create(AppRuntimePlatform.web), isA<WebPushToTalkBackend>());
   });
 
   test(

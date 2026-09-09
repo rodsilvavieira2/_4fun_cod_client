@@ -500,29 +500,6 @@ void main() {
       expect(mouse.error, PushToTalkConfigError.registrationFailed);
     });
 
-    test('Web aceita qualquer binding v2 em foco', () async {
-      const backend = WebPushToTalkBackend();
-
-      expect(
-        (await backend.configure(
-          const PushToTalkBinding.keyboard(label: 'Ctrl', control: true),
-        )).isOk,
-        isTrue,
-      );
-      expect(
-        (await backend.configure(
-          const PushToTalkBinding.mouse(
-            mouseButton: 16,
-            label: 'Botão avançar',
-            shift: true,
-          ),
-        )).isOk,
-        isTrue,
-      );
-      final empty = await backend.configure(null);
-      expect(empty.isOk, isFalse);
-    });
-
     test('resultado tipado expõe erro e mensagem', () {
       const ok = PushToTalkConfigResult.ok();
       expect(ok.isOk, isTrue);
@@ -539,7 +516,7 @@ void main() {
     });
   });
 
-  test('DefaultPushToTalkBackendFactory cobre linux/windows/web', () async {
+  test('DefaultPushToTalkBackendFactory cobre linux/windows', () async {
     const factory = DefaultPushToTalkBackendFactory();
     expect(
       factory.create(AppRuntimePlatform.linux),
@@ -549,6 +526,5 @@ void main() {
       factory.create(AppRuntimePlatform.windows),
       isA<WindowsPushToTalkBackend>(),
     );
-    expect(factory.create(AppRuntimePlatform.web), isA<WebPushToTalkBackend>());
   });
 }

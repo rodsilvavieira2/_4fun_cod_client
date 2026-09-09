@@ -267,6 +267,9 @@ class FakeRtcService implements RtcService {
   Future<void> setOutputVolume(double gain) async {}
 
   @override
+  Future<void> setInputVolume(double gain) async {}
+
+  @override
   Future<void> setParticipantVolume(String identity, double gain) async {}
 
   void pushParticipants(List<RtcParticipant> list) =>

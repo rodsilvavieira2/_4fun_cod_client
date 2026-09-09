@@ -4,6 +4,10 @@ description: "A new Flutter project."
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 
+platforms:
+  linux:
+  windows:
+
 # The following defines the version and build number for your application.
 # A version number is three numbers separated by dots, like 1.2.43
 # followed by an optional build number separated by a +.
@@ -57,13 +61,9 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
 
-# Fork do livekit_client 2.11.0 com fix do gate de áudio web (autoplay):
-# startAllAudioElement reportava sucesso/falha por um AudioContext órfão
-# (_audioContext.state == 'running') em vez do play() real — no mobile o
-# contexto fica 'suspended' e o Room.startAudio() nunca reconhecia a
-# retomada, travando o banner de áudio. Branch feat/remote-audio-gain
-# em rodsilvavieira2/client-sdk-flutter (inclui RemoteAudioTrack.setVolume
-# com GainNode dedicado por faixa no web). Revisitar em todo upgrade do SDK.
+# Fork do livekit_client 2.11.0 com ajustes de áudio usados pelo desktop.
+# Web não é target suportado do app; não tratar fixes web desse fork como
+# contrato de compatibilidade do produto. Revisitar em todo upgrade do SDK.
 dependency_overrides:
   livekit_client:
     git:

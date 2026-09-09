@@ -61,6 +61,8 @@ class VoiceVideoSection extends ConsumerWidget {
           onChanged: (id) => unawaited(controller.selectCamera(id)),
         ),
         const SizedBox(height: 24),
+        const _InputVolumeField(),
+        const SizedBox(height: 16),
         const _OutputVolumeField(),
         const SizedBox(height: 24),
         const Divider(),
@@ -176,11 +178,30 @@ class _CameraField extends StatelessWidget {
   }
 }
 
+/// Slider do ganho do microfone publicado (0%–100%, padrão 100%).
+class _InputVolumeField extends ConsumerWidget {
+  const _InputVolumeField();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final percent = ref.watch(
+      voiceVolumeProvider.select((s) => s.inputPercent),
+    );
+    final controller = ref.read(voiceVolumeProvider.notifier);
+    return _VolumeField(
+      label: 'Volume de entrada',
+      percent: percent,
+      max: 100,
+      onChanged: controller.setInputPercent,
+      onReset: percent == 100 ? null : controller.resetInput,
+    );
+  }
+}
+
 /// Slider mestre do volume de saída (0%–200%, padrão 100%).
 ///
 /// Aplica em tempo real com coalescing no serviço; a persistência usa debounce
-/// no controller. Ganho acima de 100% no web exige o fork com GainNode —
-/// até lá, o serviço limita com aviso explícito (ver LiveKitRtcService).
+/// no controller. Ganhos acima de 100% dependem do backend RTC desktop.
 class _OutputVolumeField extends ConsumerWidget {
   const _OutputVolumeField();
 
@@ -190,31 +211,52 @@ class _OutputVolumeField extends ConsumerWidget {
       voiceVolumeProvider.select((s) => s.outputPercent),
     );
     final controller = ref.read(voiceVolumeProvider.notifier);
+    return _VolumeField(
+      label: 'Volume de saída',
+      percent: percent,
+      max: 200,
+      onChanged: controller.setOutputPercent,
+      onReset: percent == 100 ? null : controller.resetOutput,
+    );
+  }
+}
+
+class _VolumeField extends StatelessWidget {
+  const _VolumeField({
+    required this.label,
+    required this.percent,
+    required this.max,
+    required this.onChanged,
+    required this.onReset,
+  });
+
+  final String label;
+  final int percent;
+  final int max;
+  final ValueChanged<int> onChanged;
+  final VoidCallback? onReset;
+
+  @override
+  Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
             Expanded(
-              child: Text(
-                'Volume de saída',
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
+              child: Text(label, style: Theme.of(context).textTheme.bodyMedium),
             ),
             Text('$percent%'),
-            TextButton(
-              onPressed: percent == 100 ? null : () => controller.resetOutput(),
-              child: const Text('100%'),
-            ),
+            TextButton(onPressed: onReset, child: const Text('100%')),
           ],
         ),
         Slider(
           value: percent.toDouble(),
           min: 0,
-          max: 200,
-          divisions: 40,
+          max: max.toDouble(),
+          divisions: max ~/ 5,
           label: '$percent%',
-          onChanged: (value) => controller.setOutputPercent(value.round()),
+          onChanged: (value) => onChanged((value / 5).round() * 5),
         ),
       ],
     );

@@ -23,7 +23,6 @@ class DefaultPushToTalkBackendFactory implements PushToTalkBackendFactory {
   PushToTalkBackend create(AppRuntimePlatform platform) => switch (platform) {
     AppRuntimePlatform.linux => const LinuxPushToTalkBackend(),
     AppRuntimePlatform.windows => const WindowsPushToTalkBackend(),
-    AppRuntimePlatform.web => const WebPushToTalkBackend(),
   };
 }
 
@@ -100,25 +99,6 @@ class LinuxPushToTalkBackend extends _MethodChannelPushToTalkBackend {
 
 class WindowsPushToTalkBackend extends _MethodChannelPushToTalkBackend {
   const WindowsPushToTalkBackend();
-}
-
-class WebPushToTalkBackend implements PushToTalkBackend {
-  const WebPushToTalkBackend();
-
-  @override
-  Stream<PushToTalkInputEvent> get events => const Stream.empty();
-
-  /// Web não tem registro nativo: o fallback em foco entende todos os
-  /// bindings v2 (teclado com qualquer ordem, só-modificadores e mouse com
-  /// modificadores), então todo binding não-nulo é "registrável".
-  @override
-  Future<PushToTalkConfigResult> configure(PushToTalkBinding? binding) async =>
-      binding != null
-      ? const PushToTalkConfigResult.ok()
-      : const PushToTalkConfigResult.failed(
-          PushToTalkConfigError.registrationFailed,
-          'Push to Talk precisa de um atalho configurado.',
-        );
 }
 
 final pushToTalkBackendProvider = Provider<PushToTalkBackend>((ref) {

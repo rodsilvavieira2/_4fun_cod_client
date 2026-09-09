@@ -430,6 +430,11 @@ abstract class RtcService {
   /// silêncio (nunca vira stop/unsubscribe/deafen).
   Future<void> setOutputVolume(double gain);
 
+  /// Define o ganho do microfone publicado, como ganho `0.0..1.0`
+  /// (`1.0` = 100%). Sem sala ativa, fica pendente para a próxima publicação.
+  /// Troca de microfone, reconnect e unmute devem reaplicar este ganho.
+  Future<void> setInputVolume(double gain);
+
   /// Define o volume individual de um participante remoto, como ganho
   /// `0.0..2.0`. Aplica-se a TODAS as faixas de áudio dele (voz + áudio de
   /// screen share). Local/desconhecido → no-op seguro. Sem sala ativa, fica

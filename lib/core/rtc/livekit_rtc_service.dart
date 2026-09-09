@@ -12,6 +12,7 @@ import 'package:livekit_client/livekit_client.dart'
 
 import '../logging/app_logger.dart';
 import '../native/native_media_backend.dart';
+import 'local_audio_gain_processor.dart';
 import 'rtc_service.dart';
 
 /// Implementação de [RtcService] sobre o LiveKit.
@@ -141,10 +142,12 @@ class LiveKitRtcService implements RtcService {
   bool _microphoneEnabled = true;
   bool _remoteAudioEnabled = true;
 
-  /// Volume de voz (fatia volumes): ganhos `0.0..2.0`, padrão `1.0`.
-  /// Pendentes sem sala — aplicados em subscribe/reconexão/device/undeafen.
+  /// Volume de voz (fatia volumes): entrada `0.0..1.0`, demais `0.0..2.0`.
+  /// Pendentes sem sala — aplicados em publicação/subscribe/reconexão/device.
+  double _inputGain = 1.0;
   double _outputGain = 1.0;
   final Map<String, double> _participantGains = {};
+  LocalAudioGainProcessor? _localAudioGainProcessor;
 
   /// Serialização/coalescing das aplicações de volume durante o arraste do
   /// slider: só o valor mais recente é efetivamente aplicado por rodada.
@@ -255,6 +258,7 @@ class LiveKitRtcService implements RtcService {
     }
     try {
       await localParticipant.setMicrophoneEnabled(_microphoneEnabled);
+      await _applyInputVolumeToMicrophone();
     } catch (_) {
       // Falha ao publicar o mic: NUNCA deixa o Room órfão — limpa e propaga.
       await _cleanupRoom();
@@ -298,6 +302,7 @@ class LiveKitRtcService implements RtcService {
     }
     await localParticipant.setMicrophoneEnabled(true);
     _microphoneEnabled = true;
+    await _applyInputVolumeToMicrophone();
     // O estado é atualizado pelos eventos TrackMuted/Unmuted +
     // LocalTrackPublished/Unpublished.
   }
@@ -814,6 +819,7 @@ class LiveKitRtcService implements RtcService {
     final room = _room;
     if (room != null) {
       await room.setAudioInputDevice(device);
+      await _applyInputVolumeToMicrophone();
     } else if (!kIsWeb) {
       await _nativeMediaServices.audioDevices.selectInput(device);
     }
@@ -877,6 +883,10 @@ class LiveKitRtcService implements RtcService {
   static double normalizeVolumeGain(double gain) =>
       gain.isNaN ? 1.0 : gain.clamp(0.0, 2.0);
 
+  /// Normaliza ganho do microfone publicado para `0.0..1.0`.
+  static double normalizeInputGain(double gain) =>
+      gain.isNaN ? 1.0 : gain.clamp(0.0, 1.0);
+
   /// Ganho efetivo: `saída × participante`, teto `4.0`.
   static double effectiveVolumeGain(
     double outputGain,
@@ -888,6 +898,12 @@ class LiveKitRtcService implements RtcService {
   Future<void> setOutputVolume(double gain) async {
     _outputGain = normalizeVolumeGain(gain);
     _scheduleVolumeApply();
+  }
+
+  @override
+  Future<void> setInputVolume(double gain) async {
+    _inputGain = normalizeInputGain(gain);
+    await _applyInputVolumeToMicrophone();
   }
 
   @override
@@ -958,6 +974,24 @@ class LiveKitRtcService implements RtcService {
     // Helper.setVolume (nativo, best-effort); armazena pré-start e registra
     // falha com reaplicação no próximo evento pelo chamador.
     await track.setVolume(gain);
+  }
+
+  Future<void> _applyInputVolumeToMicrophone() async {
+    final track = _room?.localParticipant
+        ?.getTrackPublicationBySource(TrackSource.microphone)
+        ?.track;
+    if (track is! LocalAudioTrack || _disposed) return;
+
+    final currentProcessor = _localAudioGainProcessor;
+    final LocalAudioGainProcessor processor;
+    if (currentProcessor != null && track.processor == currentProcessor) {
+      processor = currentProcessor;
+    } else {
+      processor = createLocalAudioGainProcessor(_inputGain);
+      _localAudioGainProcessor = processor;
+      await track.setProcessor(processor);
+    }
+    await processor.setGain(_inputGain);
   }
 
   @override
@@ -1153,6 +1187,7 @@ class LiveKitRtcService implements RtcService {
       }),
       room.events.on<RoomReconnectedEvent>((_) {
         debugPrint('[rtc] reconexão concluída');
+        unawaited(_applyInputVolumeToMicrophone());
         _scheduleVolumeApply();
       }),
       // Publicação/despublicação de tracks (remoto e local) e mute/unmute:
@@ -1191,6 +1226,10 @@ class LiveKitRtcService implements RtcService {
         _emitSnapshot();
       }),
       room.events.on<LocalTrackPublishedEvent>((e) {
+        if (e.publication.track is LocalAudioTrack &&
+            e.publication.source == TrackSource.microphone) {
+          unawaited(_applyInputVolumeToMicrophone());
+        }
         _syncParticipant(e.participant);
         _emitSnapshot();
       }),
@@ -1203,6 +1242,10 @@ class LiveKitRtcService implements RtcService {
         _emitSnapshot();
       }),
       room.events.on<TrackUnmutedEvent>((e) {
+        if (e.participant is LocalParticipant &&
+            e.publication.source == TrackSource.microphone) {
+          unawaited(_applyInputVolumeToMicrophone());
+        }
         _syncParticipant(e.participant);
         _emitSnapshot();
       }),

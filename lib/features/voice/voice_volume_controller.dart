@@ -6,34 +6,53 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/rtc/rtc_providers.dart';
 
-/// Estado do volume de voz: saída geral + mapa por participante remoto.
+/// Estado do volume de voz: entrada local, saída geral e mapa por participante.
 ///
-/// Percentuais de `0` a `200` (`100` = ganho unitário). O mapa guarda apenas
-/// entradas diferentes de `100` (identities estáveis do LiveKit
-/// `user_<userId>`, globais — valem para qualquer sala).
+/// Saída/participante usam `0..200`; entrada usa `0..100`. O mapa guarda
+/// apenas entradas diferentes de `100` (identities estáveis do LiveKit
+/// `user_<userId>`, globais — valem para qualquer sala). Mute individual é
+/// local e separado do slider.
 class VoiceVolumeState {
   const VoiceVolumeState({
+    this.inputPercent = VoiceVolumeDefaults.inputPercent,
     this.outputPercent = VoiceVolumeDefaults.outputPercent,
     this.participantPercent = const {},
+    this.mutedParticipantIds = const {},
   });
 
+  final int inputPercent;
   final int outputPercent;
 
   /// identity → percent. Nunca contém `100` (normalizado na escrita).
   final Map<String, int> participantPercent;
 
+  /// Identities silenciadas só para este usuário.
+  final Set<String> mutedParticipantIds;
+
   int percentOf(String identity) => participantPercent[identity] ?? 100;
 
+  bool isParticipantMuted(String identity) =>
+      mutedParticipantIds.contains(identity);
+
+  double participantGainOf(String identity) => isParticipantMuted(identity)
+      ? 0.0
+      : VoiceVolumeMath.gainOf(percentOf(identity));
+
   /// Ganho efetivo de um participante: saída × individual, em `0.0..4.0`.
-  double effectiveGainOf(String identity) =>
-      VoiceVolumeMath.effectiveGain(outputPercent, percentOf(identity));
+  double effectiveGainOf(String identity) => isParticipantMuted(identity)
+      ? 0.0
+      : VoiceVolumeMath.effectiveGain(outputPercent, percentOf(identity));
 
   VoiceVolumeState copyWith({
+    int? inputPercent,
     int? outputPercent,
     Map<String, int>? participantPercent,
+    Set<String>? mutedParticipantIds,
   }) => VoiceVolumeState(
+    inputPercent: inputPercent ?? this.inputPercent,
     outputPercent: outputPercent ?? this.outputPercent,
     participantPercent: participantPercent ?? this.participantPercent,
+    mutedParticipantIds: mutedParticipantIds ?? this.mutedParticipantIds,
   );
 }
 
@@ -41,12 +60,19 @@ class VoiceVolumeState {
 abstract final class VoiceVolumeMath {
   static const int minPercent = 0;
   static const int maxPercent = 200;
+  static const int maxInputPercent = 100;
   static const int defaultPercent = 100;
 
   static int clampPercent(int percent) => percent.clamp(minPercent, maxPercent);
 
+  static int clampInputPercent(int percent) =>
+      percent.clamp(minPercent, maxInputPercent);
+
   /// Percent → ganho (`100` → `1.0`, `200` → `2.0`).
   static double gainOf(int percent) => clampPercent(percent) / 100.0;
+
+  /// Percent de entrada → ganho (`100` → `1.0`, teto `1.0`).
+  static double inputGainOf(int percent) => clampInputPercent(percent) / 100.0;
 
   /// Ganho efetivo: `saída × individual`, teto `4.0` (`200% × 200%`).
   static double effectiveGain(int outputPercent, int participantPercent) =>
@@ -58,6 +84,7 @@ abstract final class VoiceVolumeMath {
 }
 
 abstract final class VoiceVolumeDefaults {
+  static const int inputPercent = 100;
   static const int outputPercent = 100;
 }
 
@@ -67,8 +94,10 @@ abstract final class VoiceVolumeDefaults {
 /// - Encaminha para o [RtcService] a cada mudança (o serviço serializa e
 ///   aplica só o valor mais recente por participante).
 class VoiceVolumeController extends Notifier<VoiceVolumeState> {
+  static const inputKey = 'voice.volume.input';
   static const outputKey = 'voice.volume.output';
   static const participantsKey = 'voice.volume.participants';
+  static const mutedParticipantsKey = 'voice.volume.muted_participants';
   static const persistDebounce = Duration(milliseconds: 250);
 
   SharedPreferences? _prefs;
@@ -78,6 +107,7 @@ class VoiceVolumeController extends Notifier<VoiceVolumeState> {
   /// Verdade quando a UI já mutou o estado antes do restore terminar: o
   /// restore adota o storage mas NÃO sobrescreve o estado em memória.
   bool _mutated = false;
+  Set<String> _appliedParticipantIds = {};
 
   @override
   VoiceVolumeState build() {
@@ -100,6 +130,9 @@ class VoiceVolumeController extends Notifier<VoiceVolumeState> {
         await _persistNow();
         return;
       }
+      final input = VoiceVolumeMath.clampInputPercent(
+        prefs.getInt(inputKey) ?? 100,
+      );
       final output = VoiceVolumeMath.clampPercent(
         prefs.getInt(outputKey) ?? 100,
       );
@@ -125,9 +158,14 @@ class VoiceVolumeController extends Notifier<VoiceVolumeState> {
           // JSON corrompido: começa do default, sobrescrito no próximo save.
         }
       }
+      final muted = _decodeMutedParticipants(
+        prefs.getString(mutedParticipantsKey),
+      );
       state = VoiceVolumeState(
+        inputPercent: input,
         outputPercent: output,
         participantPercent: Map.unmodifiable(map),
+        mutedParticipantIds: Set.unmodifiable(muted),
       );
       _applyToService();
     } catch (_) {
@@ -138,6 +176,15 @@ class VoiceVolumeController extends Notifier<VoiceVolumeState> {
 
   /// Override de teste: injeta prefs sem tocar no plugin real.
   void debugInjectPreferences(SharedPreferences prefs) => _prefs = prefs;
+
+  void setInputPercent(int percent) {
+    final clamped = VoiceVolumeMath.clampInputPercent(percent);
+    if (clamped == state.inputPercent) return;
+    _mutated = true;
+    state = state.copyWith(inputPercent: clamped);
+    _schedulePersist();
+    _applyToService();
+  }
 
   void setOutputPercent(int percent) {
     final clamped = VoiceVolumeMath.clampPercent(percent);
@@ -153,7 +200,11 @@ class VoiceVolumeController extends Notifier<VoiceVolumeState> {
     final clamped = VoiceVolumeMath.clampPercent(percent);
     final next = Map<String, int>.of(state.participantPercent);
     if (clamped == 100) {
-      if (!next.containsKey(identity)) return;
+      if (!next.containsKey(identity) &&
+          !state.mutedParticipantIds.contains(identity) &&
+          !_appliedParticipantIds.contains(identity)) {
+        return;
+      }
       next.remove(identity);
     } else {
       if (next[identity] == clamped) return;
@@ -164,6 +215,22 @@ class VoiceVolumeController extends Notifier<VoiceVolumeState> {
     _schedulePersist();
     _applyToService();
   }
+
+  void setParticipantMuted(String identity, bool muted) {
+    if (identity.isEmpty) return;
+    final next = Set<String>.of(state.mutedParticipantIds);
+    final changed = muted ? next.add(identity) : next.remove(identity);
+    if (!changed) return;
+    _mutated = true;
+    state = state.copyWith(mutedParticipantIds: Set.unmodifiable(next));
+    _schedulePersist();
+    _applyToService();
+  }
+
+  void toggleParticipantMuted(String identity) =>
+      setParticipantMuted(identity, !state.isParticipantMuted(identity));
+
+  void resetInput() => setInputPercent(100);
 
   void resetOutput() => setOutputPercent(100);
 
@@ -178,10 +245,15 @@ class VoiceVolumeController extends Notifier<VoiceVolumeState> {
   Future<void> _persistNow() async {
     try {
       final prefs = _prefs ??= await SharedPreferences.getInstance();
+      await prefs.setInt(inputKey, state.inputPercent);
       await prefs.setInt(outputKey, state.outputPercent);
       await prefs.setString(
         participantsKey,
         jsonEncode(state.participantPercent),
+      );
+      await prefs.setString(
+        mutedParticipantsKey,
+        jsonEncode(state.mutedParticipantIds.toList()..sort()),
       );
     } catch (_) {
       // Persistência é best-effort: o estado em memória segue valendo.
@@ -191,15 +263,41 @@ class VoiceVolumeController extends Notifier<VoiceVolumeState> {
   void _applyToService() {
     final service = ref.read(rtcServiceProvider);
     unawaited(
+      service.setInputVolume(VoiceVolumeMath.inputGainOf(state.inputPercent)),
+    );
+    unawaited(
       service.setOutputVolume(VoiceVolumeMath.gainOf(state.outputPercent)),
     );
-    for (final entry in state.participantPercent.entries) {
+    final participantIds = <String>{
+      ..._appliedParticipantIds,
+      ...state.participantPercent.keys,
+      ...state.mutedParticipantIds,
+    };
+    for (final identity in participantIds) {
       unawaited(
         service.setParticipantVolume(
-          entry.key,
-          VoiceVolumeMath.gainOf(entry.value),
+          identity,
+          state.participantGainOf(identity),
         ),
       );
+    }
+    _appliedParticipantIds = {
+      ...state.participantPercent.keys,
+      ...state.mutedParticipantIds,
+    };
+  }
+
+  Set<String> _decodeMutedParticipants(String? raw) {
+    if (raw == null || raw.isEmpty) return const {};
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return const {};
+      return {
+        for (final value in decoded)
+          if (value is String && value.isNotEmpty) value,
+      };
+    } catch (_) {
+      return const {};
     }
   }
 }

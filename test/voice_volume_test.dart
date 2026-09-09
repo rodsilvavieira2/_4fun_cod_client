@@ -8,9 +8,17 @@ import 'package:fourfun_cod_client/core/rtc/rtc_service.dart';
 import 'package:fourfun_cod_client/features/voice/voice_volume_controller.dart';
 
 class _FakeRtcService implements RtcService {
+  double lastInputGain = 1.0;
   double lastOutputGain = 1.0;
   final Map<String, double> participantGains = {};
+  int inputCalls = 0;
   int outputCalls = 0;
+
+  @override
+  Future<void> setInputVolume(double gain) async {
+    inputCalls++;
+    lastInputGain = gain;
+  }
 
   @override
   Future<void> setOutputVolume(double gain) async {
@@ -37,6 +45,15 @@ void main() {
       expect(VoiceVolumeMath.clampPercent(100), 100);
       expect(VoiceVolumeMath.clampPercent(200), 200);
       expect(VoiceVolumeMath.clampPercent(999), 200);
+    });
+
+    test('clamp de entrada 0..100', () {
+      expect(VoiceVolumeMath.clampInputPercent(-5), 0);
+      expect(VoiceVolumeMath.clampInputPercent(0), 0);
+      expect(VoiceVolumeMath.clampInputPercent(100), 100);
+      expect(VoiceVolumeMath.clampInputPercent(200), 100);
+      expect(VoiceVolumeMath.inputGainOf(50), 0.5);
+      expect(VoiceVolumeMath.inputGainOf(200), 1.0);
     });
 
     test('ganho mestre, individual e combinado 200% x 200%', () {
@@ -84,8 +101,16 @@ void main() {
       final container = makeContainer();
       addTearDown(container.dispose);
       await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(container.read(voiceVolumeProvider).inputPercent, 100);
       expect(container.read(voiceVolumeProvider).outputPercent, 100);
       expect(container.read(voiceVolumeProvider).percentOf('user_x'), 100);
+
+      container.read(voiceVolumeProvider.notifier).setInputPercent(1000);
+      expect(container.read(voiceVolumeProvider).inputPercent, 100);
+      container.read(voiceVolumeProvider.notifier).setInputPercent(-10);
+      expect(container.read(voiceVolumeProvider).inputPercent, 0);
+      container.read(voiceVolumeProvider.notifier).resetInput();
+      expect(container.read(voiceVolumeProvider).inputPercent, 100);
 
       container.read(voiceVolumeProvider.notifier).setOutputPercent(1000);
       expect(container.read(voiceVolumeProvider).outputPercent, 200);
@@ -105,6 +130,7 @@ void main() {
       });
       controller.setParticipantPercent('user_a', 100);
       expect(container.read(voiceVolumeProvider).participantPercent, isEmpty);
+      expect(rtc.participantGains['user_a'], 1.0);
       controller.setParticipantPercent('', 50);
       expect(container.read(voiceVolumeProvider).participantPercent, isEmpty);
     });
@@ -128,10 +154,66 @@ void main() {
       final controller = container.read(voiceVolumeProvider.notifier);
 
       controller.setOutputPercent(200);
+      controller.setInputPercent(40);
       controller.setParticipantPercent('user_c', 50);
       await Future<void>.delayed(const Duration(milliseconds: 50));
       expect(rtc.lastOutputGain, 2.0);
+      expect(rtc.lastInputGain, 0.4);
       expect(rtc.participantGains['user_c'], 0.5);
+    });
+
+    test(
+      'mute individual é separado do slider e restaura o percentual',
+      () async {
+        final container = makeContainer();
+        addTearDown(container.dispose);
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        final controller = container.read(voiceVolumeProvider.notifier);
+
+        controller.setParticipantPercent('user_d', 150);
+        controller.setParticipantMuted('user_d', true);
+        expect(container.read(voiceVolumeProvider).percentOf('user_d'), 150);
+        expect(
+          container.read(voiceVolumeProvider).isParticipantMuted('user_d'),
+          isTrue,
+        );
+        expect(rtc.participantGains['user_d'], 0.0);
+
+        controller.setParticipantMuted('user_d', false);
+        expect(
+          container.read(voiceVolumeProvider).isParticipantMuted('user_d'),
+          isFalse,
+        );
+        expect(rtc.participantGains['user_d'], 1.5);
+      },
+    );
+
+    test('restaura input, participante e mute persistidos', () async {
+      SharedPreferences.setMockInitialValues({
+        VoiceVolumeController.inputKey: 45,
+        VoiceVolumeController.outputKey: 150,
+        VoiceVolumeController.participantsKey: '{"user_e":125}',
+        VoiceVolumeController.mutedParticipantsKey: '["user_f"]',
+      });
+      rtc = _FakeRtcService();
+      final container = ProviderContainer(
+        overrides: [rtcServiceProvider.overrideWithValue(rtc)],
+      );
+      addTearDown(container.dispose);
+      final subscription = container.listen(voiceVolumeProvider, (_, _) {});
+      addTearDown(subscription.close);
+
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      final state = container.read(voiceVolumeProvider);
+      expect(state.inputPercent, 45);
+      expect(state.outputPercent, 150);
+      expect(state.percentOf('user_e'), 125);
+      expect(state.isParticipantMuted('user_f'), isTrue);
+      expect(rtc.lastInputGain, 0.45);
+      expect(rtc.lastOutputGain, 1.5);
+      expect(rtc.participantGains['user_e'], 1.25);
+      expect(rtc.participantGains['user_f'], 0.0);
     });
 
     test('coalescing: rajada de slider aplica o último valor', () async {

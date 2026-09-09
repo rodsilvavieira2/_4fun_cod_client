@@ -8,11 +8,11 @@ import 'package:livekit_client/livekit_client.dart';
 import '../rtc/audio_device_normalizer.dart';
 import '../rtc/rtc_service.dart';
 
-/// Plataformas suportadas pelo cliente desktop/web.
+/// Plataformas suportadas pelo cliente desktop.
 ///
 /// A decisão fica concentrada na factory. Controllers e serviços não devem
 /// consultar [Platform] diretamente.
-enum AppRuntimePlatform { linux, windows, web }
+enum AppRuntimePlatform { linux, windows }
 
 enum NativeFailureCode {
   unavailable,
@@ -35,7 +35,11 @@ class NativeFailure implements Exception {
 }
 
 AppRuntimePlatform get currentRuntimePlatform {
-  if (kIsWeb) return AppRuntimePlatform.web;
+  if (kIsWeb) {
+    throw UnsupportedError(
+      'Web não é suportado pelo 4FunCode. Use Linux ou Windows desktop.',
+    );
+  }
   if (Platform.isLinux) return AppRuntimePlatform.linux;
   if (Platform.isWindows) return AppRuntimePlatform.windows;
   throw UnsupportedError('Plataforma não suportada para mídia nativa.');
@@ -140,11 +144,6 @@ class DefaultNativeMediaServicesFactory implements NativeMediaServicesFactory {
         camera: WindowsCameraBackend(),
         audioDevices: WindowsAudioDevicesBackend(),
       ),
-      AppRuntimePlatform.web => const NativeMediaServices(
-        screenShare: WebScreenShareBackend(),
-        camera: WebCameraBackend(),
-        audioDevices: WebAudioDevicesBackend(),
-      ),
     };
   }
 }
@@ -199,27 +198,6 @@ class WindowsScreenShareBackend implements NativeScreenShareBackend {
   }
 }
 
-class WebScreenShareBackend extends _SystemPickerScreenShareBackend {
-  const WebScreenShareBackend();
-
-  @override
-  ScreenShareCapabilities get capabilities => const ScreenShareCapabilities(
-    usesSystemPicker: true,
-    supportsWindowSources: false,
-    supportsSystemAudio: true,
-  );
-
-  @override
-  bool canUseKind(RtcScreenShareSourceKind kind) =>
-      kind == RtcScreenShareSourceKind.display;
-
-  @override
-  String? disabledReasonFor(RtcScreenShareSourceKind kind) =>
-      kind == RtcScreenShareSourceKind.window
-      ? 'O navegador escolhe a fonte de compartilhamento.'
-      : null;
-}
-
 RtcScreenShareSource _screenShareSourceFromWebRtc(
   rtc.DesktopCapturerSource source,
 ) {
@@ -252,10 +230,6 @@ class LinuxCameraBackend extends _LiveKitCameraBackend {
 
 class WindowsCameraBackend extends _LiveKitCameraBackend {
   const WindowsCameraBackend();
-}
-
-class WebCameraBackend extends _LiveKitCameraBackend {
-  const WebCameraBackend();
 }
 
 abstract class _HardwareAudioDevicesBackend
@@ -306,8 +280,4 @@ class LinuxAudioDevicesBackend extends _HardwareAudioDevicesBackend {
 
 class WindowsAudioDevicesBackend extends _HardwareAudioDevicesBackend {
   const WindowsAudioDevicesBackend();
-}
-
-class WebAudioDevicesBackend extends _HardwareAudioDevicesBackend {
-  const WebAudioDevicesBackend();
 }

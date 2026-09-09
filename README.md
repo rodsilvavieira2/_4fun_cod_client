@@ -1,6 +1,10 @@
 # 4FunCode client
 
-Cliente Flutter para web, Linux e Windows.
+Cliente Flutter desktop para Linux e Windows.
+
+Web não é target suportado. O diretório `web/` pode permanecer no projeto por
+histórico e por assets compartilhados (por exemplo, favicon usado no tray), mas
+não deve ser usado para build, QA ou release.
 
 ## Desktop
 
