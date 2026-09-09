@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/rtc/rtc_service.dart';
 import '../../features/voice/voice_volume_controller.dart';
 import 'ds_tokens.dart';
 
@@ -10,25 +11,42 @@ class ParticipantVolumeButton extends ConsumerWidget {
     super.key,
     required this.identity,
     required this.displayName,
+    this.source = RtcAudioSource.microphone,
     this.iconColor = AppTokens.textSecondary,
     this.iconSize = 14,
+    this.padding,
+    this.constraints,
   });
 
   /// Identity estável do LiveKit (`user_<userId>`).
   final String identity;
   final String displayName;
+
+  /// Fonte controlada: voz ou áudio da transmissão (tile de tela).
+  final RtcAudioSource source;
   final Color iconColor;
   final double iconSize;
+
+  /// Padding/constraints do IconButton (default = padrão do Material).
+  /// Overlays sobre vídeo passam versão compacta (zero + tight).
+  final EdgeInsetsGeometry? padding;
+  final BoxConstraints? constraints;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return ParticipantVolumeMenuAnchor(
       identity: identity,
       displayName: displayName,
+      source: source,
       builder: (context, controller, percent, muted, child) {
         final label = muted ? 'silenciado' : '$percent%';
+        final tooltip = source == RtcAudioSource.screenShareAudio
+            ? 'Volume da transmissão de $displayName ($label)'
+            : 'Volume de $displayName ($label)';
         return IconButton(
-          tooltip: 'Volume de $displayName ($label)',
+          tooltip: tooltip,
+          padding: padding ?? const EdgeInsets.all(8),
+          constraints: constraints,
           icon: Icon(
             muted || percent == 0
                 ? Icons.volume_off
@@ -123,11 +141,15 @@ class ParticipantVolumeMenuAnchor extends ConsumerStatefulWidget {
     required this.builder,
     this.child,
     this.enabled = true,
+    this.source = RtcAudioSource.microphone,
   });
 
   final String identity;
   final String displayName;
   final bool enabled;
+
+  /// Fonte lida/controlada pelo painel (voz ou transmissão).
+  final RtcAudioSource source;
   final Widget? child;
   final Widget Function(
     BuildContext context,
@@ -167,8 +189,11 @@ class _ParticipantVolumeMenuAnchorState
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(voiceVolumeProvider);
-    final percent = state.percentOf(widget.identity);
-    final muted = state.isParticipantMuted(widget.identity);
+    final percent = state.percentOf(widget.identity, source: widget.source);
+    final muted = state.isParticipantMuted(
+      widget.identity,
+      source: widget.source,
+    );
     return MenuAnchor(
       controller: _menuController,
       childFocusNode: _anchorFocusNode,
@@ -180,6 +205,7 @@ class _ParticipantVolumeMenuAnchorState
         _ParticipantVolumePanel(
           identity: widget.identity,
           displayName: widget.displayName,
+          source: widget.source,
         ),
       ],
       builder: (context, controller, child) => Focus(
@@ -195,17 +221,20 @@ class _ParticipantVolumePanel extends ConsumerWidget {
   const _ParticipantVolumePanel({
     required this.identity,
     required this.displayName,
+    required this.source,
   });
 
   final String identity;
   final String displayName;
+  final RtcAudioSource source;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(voiceVolumeProvider);
-    final percent = state.percentOf(identity);
-    final muted = state.isParticipantMuted(identity);
+    final percent = state.percentOf(identity, source: source);
+    final muted = state.isParticipantMuted(identity, source: source);
     final controller = ref.read(voiceVolumeProvider.notifier);
+    final isScreen = source == RtcAudioSource.screenShareAudio;
     return SizedBox(
       width: 228,
       child: Padding(
@@ -226,22 +255,29 @@ class _ParticipantVolumePanel extends ConsumerWidget {
             ),
             const SizedBox(height: 10),
             _VolumeRow(
-              label: 'Volume do usuário',
+              label: isScreen ? 'Volume da transmissão' : 'Volume do usuário',
               percent: percent,
               max: 200,
-              onChanged: (value) =>
-                  controller.setParticipantPercent(identity, value),
+              onChanged: (value) => controller.setParticipantPercent(
+                identity,
+                value,
+                source: source,
+              ),
               onReset: percent == 100
                   ? null
-                  : () => controller.resetParticipant(identity),
+                  : () => controller.resetParticipant(identity, source: source),
             ),
             const SizedBox(height: 8),
             const Divider(height: 1, color: AppTokens.borderHairline),
             const SizedBox(height: 6),
             _MuteRow(
+              label: isScreen ? 'Silenciar transmissão' : 'Silenciar para mim',
               muted: muted,
-              onChanged: (value) =>
-                  controller.setParticipantMuted(identity, value),
+              onChanged: (value) => controller.setParticipantMuted(
+                identity,
+                value,
+                source: source,
+              ),
             ),
           ],
         ),
@@ -318,8 +354,13 @@ class _VolumeRow extends StatelessWidget {
 }
 
 class _MuteRow extends StatelessWidget {
-  const _MuteRow({required this.muted, required this.onChanged});
+  const _MuteRow({
+    required this.label,
+    required this.muted,
+    required this.onChanged,
+  });
 
+  final String label;
   final bool muted;
   final ValueChanged<bool> onChanged;
 
@@ -332,10 +373,10 @@ class _MuteRow extends StatelessWidget {
         height: 32,
         child: Row(
           children: [
-            const Expanded(
+            Expanded(
               child: Text(
-                'Silenciar para mim',
-                style: TextStyle(
+                label,
+                style: const TextStyle(
                   fontFamily: 'Geist',
                   fontSize: 12.5,
                   color: AppTokens.textPrimary,

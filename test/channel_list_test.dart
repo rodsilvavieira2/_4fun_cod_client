@@ -50,6 +50,15 @@ class _FakeRtcService implements RtcService {
   }
 
   @override
+  Future<void> setParticipantSourceVolume(
+    String identity,
+    RtcAudioSource source,
+    double gain,
+  ) async {
+    participantGains['$identity#${source.name}'] = gain;
+  }
+
+  @override
   dynamic noSuchMethod(Invocation invocation) => null;
 }
 

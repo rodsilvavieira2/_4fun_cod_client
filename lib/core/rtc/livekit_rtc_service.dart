@@ -147,6 +147,17 @@ class LiveKitRtcService implements RtcService {
   double _inputGain = 1.0;
   double _outputGain = 1.0;
   final Map<String, double> _participantGains = {};
+
+  /// Ganho individual do ÁUDIO DA TRANSMISSÃO por identity (só faixas
+  /// screenShareAudio — o slider do tile de tela não toca na voz).
+  final Map<String, double> _screenShareAudioGains = {};
+
+  /// Ganho pendente da fonte: voz usa [_participantGains], transmissão usa
+  /// [_screenShareAudioGains].
+  double _sourceGain(String identity, bool isScreenShareAudio) =>
+      isScreenShareAudio
+      ? _screenShareAudioGains[identity] ?? 1.0
+      : _participantGains[identity] ?? 1.0;
   LocalAudioGainProcessor? _localAudioGainProcessor;
 
   /// Serialização/coalescing das aplicações de volume durante o arraste do
@@ -921,6 +932,28 @@ class LiveKitRtcService implements RtcService {
     _scheduleVolumeApply();
   }
 
+  @override
+  Future<void> setParticipantSourceVolume(
+    String identity,
+    RtcAudioSource source,
+    double gain,
+  ) async {
+    if (identity.isEmpty) return;
+    final room = _room;
+    // Local nunca recebe volume individual; desconhecido sem sala → pendente.
+    if (room?.localParticipant?.identity == identity) return;
+    final normalized = normalizeVolumeGain(gain);
+    final target = source == RtcAudioSource.screenShareAudio
+        ? _screenShareAudioGains
+        : _participantGains;
+    if (normalized == 1.0) {
+      target.remove(identity);
+    } else {
+      target[identity] = normalized;
+    }
+    _scheduleVolumeApply();
+  }
+
   void _scheduleVolumeApply() {
     if (_disposed) return;
     if (_volumeApplyInFlight) {
@@ -943,24 +976,29 @@ class LiveKitRtcService implements RtcService {
     for (final participant in room.remoteParticipants.values) {
       await _applyParticipantVolumes(
         participant.identity,
-        participant.audioTrackPublications
-            .map((publication) => publication.track)
-            .whereType<RemoteAudioTrack>(),
+        participant.audioTrackPublications,
       );
     }
   }
 
   Future<void> _applyParticipantVolumes(
     String identity,
-    Iterable<RemoteAudioTrack> tracks, {
-    double? participantGainOverride,
-  }) async {
-    final participantGain =
-        participantGainOverride ?? _participantGains[identity] ?? 1.0;
-    final effective = effectiveVolumeGain(_outputGain, participantGain);
-    for (final track in tracks) {
+    Iterable<RemoteTrackPublication> publications,
+  ) async {
+    for (final publication in publications) {
+      final track = publication.track;
+      if (track is! RemoteAudioTrack) continue;
+      // A fonte decide o ganho: voz usa o ganho da voz, áudio de share usa
+      // o ganho da transmissão — um nunca afeta o outro.
+      final gain = effectiveVolumeGain(
+        _outputGain,
+        _sourceGain(
+          identity,
+          publication.source == TrackSource.screenShareAudio,
+        ),
+      );
       try {
-        await _applyTrackVolume(track, effective);
+        await _applyTrackVolume(track, gain);
       } catch (e) {
         // Best-effort por faixa: registra e reaplica no próximo evento
         // (subscribe/reconexão/device/undeafen).
@@ -1204,11 +1242,14 @@ class LiveKitRtcService implements RtcService {
           unawaited((e.track as RemoteAudioTrack).stop());
         } else if (e.track is RemoteAudioTrack) {
           // Nova faixa remota (voz ou áudio de screen share): aplica o ganho
-          // efetivo pendente (saída × participante).
+          // efetivo pendente (saída × fonte) — cada fonte só toca nas suas.
           final track = e.track as RemoteAudioTrack;
           final gain = effectiveVolumeGain(
             _outputGain,
-            _participantGains[e.participant.identity] ?? 1.0,
+            _sourceGain(
+              e.participant.identity,
+              e.publication.source == TrackSource.screenShareAudio,
+            ),
           );
           unawaited(
             _applyTrackVolume(track, gain).catchError((Object err) {

@@ -117,7 +117,7 @@ class _VoiceVideoTileState extends ConsumerState<VoiceVideoTile> {
     final tile = GestureDetector(
       onTap: widget.onTap,
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(12),
         child: Stack(
           fit: StackFit.expand,
           children: [
@@ -133,19 +133,24 @@ class _VoiceVideoTileState extends ConsumerState<VoiceVideoTile> {
             else
               _AvatarPlaceholder(participant: participant),
             if (isMiniature)
-              _MiniatureOverlay(participant: participant, source: widget.source)
+              _MiniatureOverlay(
+                participant: participant,
+                source: widget.source,
+                showAvatar: hasVideo,
+              )
             else
               _TileOverlay(
                 participant: participant,
                 source: widget.source,
                 isLocal: isLocal,
+                showAvatar: hasVideo,
               ),
             // Active speaker: borda de 2px em primary (miniatura não tem).
             if (participant.isSpeaking && !isMiniature)
               IgnorePointer(
                 child: DecoratedBox(
                   decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(12),
                     border: Border.all(
                       color: theme.colorScheme.primary,
                       width: 2,
@@ -173,42 +178,46 @@ class _VoiceVideoTileState extends ConsumerState<VoiceVideoTile> {
   }
 }
 
-/// Overlay completo (grid/spotlight): nome + badge "Você" + ícone de mic,
-/// com scrim leve para legibilidade sobre o vídeo.
+/// Overlay completo (grid/spotlight): badge compacto com avatar + nome +
+/// badge "Você" + volume individual, legível sobre o vídeo sem scrim cheia.
 class _TileOverlay extends StatelessWidget {
   const _TileOverlay({
     required this.participant,
     required this.source,
     required this.isLocal,
+    required this.showAvatar,
   });
 
   final RtcParticipant participant;
   final VoiceVideoSource source;
   final bool isLocal;
 
+  /// Exibe a inicial sobre o vídeo. Com placeholder (sem vídeo), o avatar
+  /// grande já identifica — mostrar de novo duplicaria.
+  final bool showAvatar;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Positioned(
-      left: 0,
-      right: 0,
-      bottom: 0,
+      left: 8,
+      bottom: 8,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Colors.transparent, Colors.black54],
-          ),
+        constraints: const BoxConstraints(maxWidth: 240),
+        padding: const EdgeInsets.fromLTRB(3, 3, 8, 3),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.72),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppTokens.borderSubtle),
         ),
         child: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
+            if (showAvatar) _NameAvatar(name: participant.name, radius: 14),
+            if (showAvatar) const SizedBox(width: 6),
             Flexible(
               child: Text(
-                source == VoiceVideoSource.screen
-                    ? 'Tela de ${participant.name}'
-                    : participant.name,
+                participant.name,
                 overflow: TextOverflow.ellipsis,
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: Colors.white,
@@ -222,7 +231,7 @@ class _TileOverlay extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                 decoration: BoxDecoration(
                   color: theme.colorScheme.secondaryContainer,
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
                   'Você',
@@ -232,30 +241,22 @@ class _TileOverlay extends StatelessWidget {
                 ),
               ),
             ],
-            // Badge de share: ao lado do ícone de mic (antes dele).
-            if (source == VoiceVideoSource.screen) ...[
-              const SizedBox(width: 6),
-              const Icon(Icons.present_to_all, size: 14, color: Colors.white),
-            ],
-            // Badge de áudio de sistema (Fase 6.1): quem transmite som de
-            // jogos/vídeos/música junto com a tela.
-            if (participant.isSystemAudioEnabled) ...[
-              const SizedBox(width: 6),
-              const Icon(Icons.volume_up, size: 14, color: Colors.white),
-            ],
-            const SizedBox(width: 6),
-            Icon(
-              participant.isMicrophoneEnabled ? Icons.mic : Icons.mic_off,
-              size: 14,
-              color: Colors.white,
-            ),
-            // Volume individual: só remoto. Sempre visível (toque + teclado;
-            // hover-reveal quebraria a11y e touch) — compacto no overlay.
+            // Volume da fonte do tile: tela controla a transmissão, câmera
+            // controla a voz — um nunca afeta o outro.
             if (!isLocal)
               ParticipantVolumeButton(
                 identity: participant.id,
                 displayName: participant.name,
+                source: source == VoiceVideoSource.screen
+                    ? RtcAudioSource.screenShareAudio
+                    : RtcAudioSource.microphone,
                 iconColor: AppTokens.textPrimary,
+                iconSize: 15.4,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints.tightFor(
+                  width: 24,
+                  height: 24,
+                ),
               ),
           ],
         ),
@@ -264,36 +265,73 @@ class _TileOverlay extends StatelessWidget {
   }
 }
 
-/// Overlay enxuto da miniatura: apenas o nome, com scrim leve (sem badge).
+/// Avatar circular com a inicial, cor cíclica por nome (tokens do app).
+class _NameAvatar extends StatelessWidget {
+  const _NameAvatar({required this.name, required this.radius});
+
+  final String name;
+  final double radius;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AppTokens.authorColors;
+    final index = name.isEmpty
+        ? 0
+        : name.codeUnits.fold<int>(0, (sum, unit) => sum + unit) %
+              colors.length;
+    return CircleAvatar(
+      radius: radius,
+      backgroundColor: colors[index],
+      child: Text(
+        name.isEmpty ? '?' : name[0].toUpperCase(),
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: radius * 0.95,
+          fontWeight: FontWeight.w700,
+          fontFamily: 'Geist',
+        ),
+      ),
+    );
+  }
+}
+
+/// Overlay enxuto da miniatura: pill com avatar + nome (sem badge).
 class _MiniatureOverlay extends StatelessWidget {
-  const _MiniatureOverlay({required this.participant, required this.source});
+  const _MiniatureOverlay({
+    required this.participant,
+    required this.source,
+    required this.showAvatar,
+  });
 
   final RtcParticipant participant;
   final VoiceVideoSource source;
+
+  /// Mesmo motivo do [_TileOverlay.showAvatar]: sem vídeo, o placeholder
+  /// já mostra o avatar grande.
+  final bool showAvatar;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Positioned(
-      left: 0,
-      right: 0,
-      bottom: 0,
+      left: 6,
+      bottom: 6,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Colors.transparent, Colors.black45],
-          ),
+        constraints: const BoxConstraints(maxWidth: 176),
+        padding: const EdgeInsets.fromLTRB(3, 3, 7, 3),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.72),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: AppTokens.borderSubtle),
         ),
         child: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
+            if (showAvatar) _NameAvatar(name: participant.name, radius: 9),
+            if (showAvatar) const SizedBox(width: 5),
             Flexible(
               child: Text(
-                source == VoiceVideoSource.screen
-                    ? 'Tela de ${participant.name}'
-                    : participant.name,
+                participant.name,
                 overflow: TextOverflow.ellipsis,
                 style: theme.textTheme.labelSmall?.copyWith(
                   color: Colors.white,
@@ -302,8 +340,8 @@ class _MiniatureOverlay extends StatelessWidget {
             ),
             // Badge de share: ao lado do nome na miniatura.
             if (source == VoiceVideoSource.screen) ...[
-              const SizedBox(width: 6),
-              const Icon(Icons.present_to_all, size: 14, color: Colors.white),
+              const SizedBox(width: 5),
+              const Icon(Icons.present_to_all, size: 12, color: Colors.white),
             ],
           ],
         ),

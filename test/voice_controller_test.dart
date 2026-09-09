@@ -272,6 +272,13 @@ class FakeRtcService implements RtcService {
   @override
   Future<void> setParticipantVolume(String identity, double gain) async {}
 
+  @override
+  Future<void> setParticipantSourceVolume(
+    String identity,
+    RtcAudioSource source,
+    double gain,
+  ) async {}
+
   void pushParticipants(List<RtcParticipant> list) =>
       participantsController.add(list);
 
@@ -1205,6 +1212,35 @@ void main() {
       expect(state().isCameraEnabled, isFalse);
       expect(state().spotlightParticipantId, isNull);
     });
+
+    test(
+      'toggleFilmstrip/setFullscreen flipam; leave reseta os dois',
+      () async {
+        repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
+        final notifier = buildVoice();
+        await notifier.join();
+        await settle();
+
+        expect(state().filmstripVisible, isTrue);
+        expect(state().isFullscreen, isFalse);
+
+        notifier.toggleFilmstrip();
+        expect(state().filmstripVisible, isFalse);
+        notifier.toggleFilmstrip();
+        expect(state().filmstripVisible, isTrue);
+
+        notifier.setFullscreen(true);
+        expect(state().isFullscreen, isTrue);
+        // Idempotente: repetir o mesmo valor não reemite estado.
+        notifier.setFullscreen(true);
+        expect(state().isFullscreen, isTrue);
+
+        await notifier.leave();
+        await settle();
+        expect(state().filmstripVisible, isTrue);
+        expect(state().isFullscreen, isFalse);
+      },
+    );
 
     // ── Fase 6 (Prompt 2): screen share, spotlight automático e reconexão ──
 

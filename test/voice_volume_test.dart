@@ -11,6 +11,7 @@ class _FakeRtcService implements RtcService {
   double lastInputGain = 1.0;
   double lastOutputGain = 1.0;
   final Map<String, double> participantGains = {};
+  final Map<String, double> sourceGains = {};
   int inputCalls = 0;
   int outputCalls = 0;
 
@@ -29,6 +30,15 @@ class _FakeRtcService implements RtcService {
   @override
   Future<void> setParticipantVolume(String identity, double gain) async {
     participantGains[identity] = gain;
+  }
+
+  @override
+  Future<void> setParticipantSourceVolume(
+    String identity,
+    RtcAudioSource source,
+    double gain,
+  ) async {
+    sourceGains['$identity#${source.name}'] = gain;
   }
 
   @override
@@ -130,7 +140,7 @@ void main() {
       });
       controller.setParticipantPercent('user_a', 100);
       expect(container.read(voiceVolumeProvider).participantPercent, isEmpty);
-      expect(rtc.participantGains['user_a'], 1.0);
+      expect(rtc.sourceGains['user_a#microphone'], 1.0);
       controller.setParticipantPercent('', 50);
       expect(container.read(voiceVolumeProvider).participantPercent, isEmpty);
     });
@@ -159,7 +169,7 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 50));
       expect(rtc.lastOutputGain, 2.0);
       expect(rtc.lastInputGain, 0.4);
-      expect(rtc.participantGains['user_c'], 0.5);
+      expect(rtc.sourceGains['user_c#microphone'], 0.5);
     });
 
     test(
@@ -177,14 +187,14 @@ void main() {
           container.read(voiceVolumeProvider).isParticipantMuted('user_d'),
           isTrue,
         );
-        expect(rtc.participantGains['user_d'], 0.0);
+        expect(rtc.sourceGains['user_d#microphone'], 0.0);
 
         controller.setParticipantMuted('user_d', false);
         expect(
           container.read(voiceVolumeProvider).isParticipantMuted('user_d'),
           isFalse,
         );
-        expect(rtc.participantGains['user_d'], 1.5);
+        expect(rtc.sourceGains['user_d#microphone'], 1.5);
       },
     );
 
@@ -212,8 +222,53 @@ void main() {
       expect(state.isParticipantMuted('user_f'), isTrue);
       expect(rtc.lastInputGain, 0.45);
       expect(rtc.lastOutputGain, 1.5);
-      expect(rtc.participantGains['user_e'], 1.25);
-      expect(rtc.participantGains['user_f'], 0.0);
+      expect(rtc.sourceGains['user_e#microphone'], 1.25);
+      expect(rtc.sourceGains['user_f#microphone'], 0.0);
+    });
+
+    test('volume da transmissão não afeta a voz (e vice-versa)', () async {
+      final container = makeContainer();
+      addTearDown(container.dispose);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      final controller = container.read(voiceVolumeProvider.notifier);
+
+      controller.setParticipantPercent('user_g', 50);
+      controller.setParticipantPercent(
+        'user_g',
+        150,
+        source: RtcAudioSource.screenShareAudio,
+      );
+      final state = container.read(voiceVolumeProvider);
+      expect(state.percentOf('user_g'), 50);
+      expect(
+        state.percentOf('user_g', source: RtcAudioSource.screenShareAudio),
+        150,
+      );
+      expect(state.participantPercent['user_g'], 50);
+      expect(state.participantPercent['user_g#screen'], 150);
+      expect(rtc.sourceGains['user_g#microphone'], 0.5);
+      expect(rtc.sourceGains['user_g#screenShareAudio'], 1.5);
+
+      controller.setParticipantMuted(
+        'user_g',
+        true,
+        source: RtcAudioSource.screenShareAudio,
+      );
+      expect(
+        container
+            .read(voiceVolumeProvider)
+            .isParticipantMuted(
+              'user_g',
+              source: RtcAudioSource.screenShareAudio,
+            ),
+        isTrue,
+      );
+      expect(
+        container.read(voiceVolumeProvider).isParticipantMuted('user_g'),
+        isFalse,
+      );
+      expect(rtc.sourceGains['user_g#screenShareAudio'], 0.0);
+      expect(rtc.sourceGains['user_g#microphone'], 0.5);
     });
 
     test('coalescing: rajada de slider aplica o último valor', () async {

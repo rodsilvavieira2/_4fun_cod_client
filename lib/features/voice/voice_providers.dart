@@ -48,6 +48,8 @@ class VoiceState {
     this.savedSpotlightParticipantId,
     this.spotlightParticipantId,
     this.spotlightSource,
+    this.filmstripVisible = true,
+    this.isFullscreen = false,
     this.cameraDevices = const [],
     this.selectedCameraId,
     this.screenShareQuality = RtcScreenShareQuality.auto,
@@ -122,6 +124,12 @@ class VoiceState {
   /// grid; mantido separado do id para câmera e tela poderem coexistir.
   final VoiceSpotlightSource? spotlightSource;
 
+  /// Filmstrip de miniaturas visível (spotlight). Falso = palco imersivo.
+  final bool filmstripVisible;
+
+  /// Palco em fullscreen (janela cheia via window_manager, Linux/Windows).
+  final bool isFullscreen;
+
   /// Cache da lista de câmeras do dispositivo (sheet de settings).
   final List<RtcVideoDevice> cameraDevices;
 
@@ -150,6 +158,8 @@ class VoiceState {
     Object? savedSpotlightParticipantId = _unset,
     Object? spotlightParticipantId = _unset,
     Object? spotlightSource = _unset,
+    bool? filmstripVisible,
+    bool? isFullscreen,
     List<RtcVideoDevice>? cameraDevices,
     Object? selectedCameraId = _unset,
     RtcScreenShareQuality? screenShareQuality,
@@ -187,6 +197,8 @@ class VoiceState {
       spotlightSource: identical(spotlightSource, _unset)
           ? this.spotlightSource
           : spotlightSource as VoiceSpotlightSource?,
+      filmstripVisible: filmstripVisible ?? this.filmstripVisible,
+      isFullscreen: isFullscreen ?? this.isFullscreen,
       cameraDevices: cameraDevices ?? this.cameraDevices,
       selectedCameraId: identical(selectedCameraId, _unset)
           ? this.selectedCameraId
@@ -345,6 +357,8 @@ class VoiceController
       savedSpotlightParticipantId: null,
       spotlightParticipantId: null,
       spotlightSource: null,
+      filmstripVisible: true,
+      isFullscreen: false,
       selectedCameraId: null,
       errorMessage: null,
     );
@@ -564,6 +578,20 @@ class VoiceController
         spotlightSource: targetSource,
       );
     }
+  }
+
+  /// Mostra/oculta a filmstrip de miniaturas (spotlight). Puro flip de UI —
+  /// nunca mexe em qualidade (o tile em miniatura segue `low`).
+  void toggleFilmstrip() {
+    state = state.copyWith(filmstripVisible: !state.filmstripVisible);
+  }
+
+  /// Liga/desliga o flag de fullscreen do palco. A chamada real de janela
+  /// (`window_manager`, Linux/Windows) vive na UI (best-effort); aqui só o
+  /// estado, para a UI expandir o stage e esconder a filmstrip.
+  void setFullscreen(bool value) {
+    if (state.isFullscreen == value) return;
+    state = state.copyWith(isFullscreen: value);
   }
 
   /// Atualiza o cache de câmeras do sheet de settings. Falha de enumeração
@@ -845,6 +873,8 @@ class VoiceController
           savedSpotlightParticipantId: null,
           spotlightParticipantId: null,
           spotlightSource: null,
+          filmstripVisible: true,
+          isFullscreen: false,
           selectedCameraId: null,
           errorMessage: null,
         );

@@ -17,6 +17,10 @@ typedef RtcTokenGenerator = Future<String> Function();
 /// instâncias com a mesma identity representam a mesma pessoa, mesmo que
 /// `name`/`isMicrophoneEnabled`/`isCameraEnabled`/`isScreenSharing`/
 /// `isSpeaking` tenham mudado.
+/// Fonte de áudio remoto para volume individual: a voz (microfone) ou o
+/// áudio que acompanha um compartilhamento de tela (transmissão).
+enum RtcAudioSource { microphone, screenShareAudio }
+
 class RtcParticipant {
   const RtcParticipant({
     required this.id,
@@ -440,6 +444,16 @@ abstract class RtcService {
   /// screen share). Local/desconhecido → no-op seguro. Sem sala ativa, fica
   /// pendente e é aplicado quando as tracks chegarem.
   Future<void> setParticipantVolume(String identity, double gain);
+
+  /// Define o volume individual de UMA fonte de áudio de um participante
+  /// remoto (voz OU áudio da transmissão), como ganho `0.0..2.0`. A outra
+  /// fonte não é afetada. Local/desconhecido → no-op seguro. Sem sala
+  /// ativa, fica pendente e é aplicado quando as tracks chegarem.
+  Future<void> setParticipantSourceVolume(
+    String identity,
+    RtcAudioSource source,
+    double gain,
+  );
 
   /// Seleciona a câmera usada pelo preview e pela publicação local.
   ///

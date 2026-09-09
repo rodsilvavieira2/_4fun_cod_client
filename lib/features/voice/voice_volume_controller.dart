@@ -5,13 +5,30 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/rtc/rtc_providers.dart';
+import '../../core/rtc/rtc_service.dart';
 
-/// Estado do volume de voz: entrada local, saída geral e mapa por participante.
+/// Chave do mapa por (identity, fonte). Voz usa a identity pura (compatível
+/// com o que já está persistido); transmissão sufixa `#screen`.
+String _participantKey(String identity, RtcAudioSource source) =>
+    source == RtcAudioSource.screenShareAudio ? '$identity#screen' : identity;
+
+/// Inverso de [_participantKey] (identity do LiveKit nunca contém `#`).
+(RtcAudioSource, String) _splitParticipantKey(String key) =>
+    key.endsWith('#screen')
+    ? (
+        RtcAudioSource.screenShareAudio,
+        key.substring(0, key.length - '#screen'.length),
+      )
+    : (RtcAudioSource.microphone, key);
+
+/// Estado do volume de voz: entrada local, saída geral e mapa por
+/// participante+fonte.
 ///
 /// Saída/participante usam `0..200`; entrada usa `0..100`. O mapa guarda
 /// apenas entradas diferentes de `100` (identities estáveis do LiveKit
-/// `user_<userId>`, globais — valem para qualquer sala). Mute individual é
-/// local e separado do slider.
+/// `user_<userId>`, globais — valem para qualquer sala; fonte transmissão
+/// usa a chave `identity#screen`). Mute individual é local e separado do
+/// slider.
 class VoiceVolumeState {
   const VoiceVolumeState({
     this.inputPercent = VoiceVolumeDefaults.inputPercent,
@@ -23,25 +40,39 @@ class VoiceVolumeState {
   final int inputPercent;
   final int outputPercent;
 
-  /// identity → percent. Nunca contém `100` (normalizado na escrita).
+  /// chave [identity | identity#screen] → percent. Nunca contém `100`.
   final Map<String, int> participantPercent;
 
-  /// Identities silenciadas só para este usuário.
+  /// Chaves silenciadas só para este usuário (mesmo formato acima).
   final Set<String> mutedParticipantIds;
 
-  int percentOf(String identity) => participantPercent[identity] ?? 100;
+  int percentOf(
+    String identity, {
+    RtcAudioSource source = RtcAudioSource.microphone,
+  }) => participantPercent[_participantKey(identity, source)] ?? 100;
 
-  bool isParticipantMuted(String identity) =>
-      mutedParticipantIds.contains(identity);
+  bool isParticipantMuted(
+    String identity, {
+    RtcAudioSource source = RtcAudioSource.microphone,
+  }) => mutedParticipantIds.contains(_participantKey(identity, source));
 
-  double participantGainOf(String identity) => isParticipantMuted(identity)
+  double participantGainOf(
+    String identity, {
+    RtcAudioSource source = RtcAudioSource.microphone,
+  }) => isParticipantMuted(identity, source: source)
       ? 0.0
-      : VoiceVolumeMath.gainOf(percentOf(identity));
+      : VoiceVolumeMath.gainOf(percentOf(identity, source: source));
 
-  /// Ganho efetivo de um participante: saída × individual, em `0.0..4.0`.
-  double effectiveGainOf(String identity) => isParticipantMuted(identity)
+  /// Ganho efetivo de um participante+fonte: saída × individual, `0.0..4.0`.
+  double effectiveGainOf(
+    String identity, {
+    RtcAudioSource source = RtcAudioSource.microphone,
+  }) => isParticipantMuted(identity, source: source)
       ? 0.0
-      : VoiceVolumeMath.effectiveGain(outputPercent, percentOf(identity));
+      : VoiceVolumeMath.effectiveGain(
+          outputPercent,
+          percentOf(identity, source: source),
+        );
 
   VoiceVolumeState copyWith({
     int? inputPercent,
@@ -195,20 +226,25 @@ class VoiceVolumeController extends Notifier<VoiceVolumeState> {
     _applyToService();
   }
 
-  void setParticipantPercent(String identity, int percent) {
+  void setParticipantPercent(
+    String identity,
+    int percent, {
+    RtcAudioSource source = RtcAudioSource.microphone,
+  }) {
     if (identity.isEmpty) return;
     final clamped = VoiceVolumeMath.clampPercent(percent);
+    final key = _participantKey(identity, source);
     final next = Map<String, int>.of(state.participantPercent);
     if (clamped == 100) {
-      if (!next.containsKey(identity) &&
-          !state.mutedParticipantIds.contains(identity) &&
-          !_appliedParticipantIds.contains(identity)) {
+      if (!next.containsKey(key) &&
+          !state.mutedParticipantIds.contains(key) &&
+          !_appliedParticipantIds.contains(key)) {
         return;
       }
-      next.remove(identity);
+      next.remove(key);
     } else {
-      if (next[identity] == clamped) return;
-      next[identity] = clamped;
+      if (next[key] == clamped) return;
+      next[key] = clamped;
     }
     _mutated = true;
     state = state.copyWith(participantPercent: Map.unmodifiable(next));
@@ -216,10 +252,15 @@ class VoiceVolumeController extends Notifier<VoiceVolumeState> {
     _applyToService();
   }
 
-  void setParticipantMuted(String identity, bool muted) {
+  void setParticipantMuted(
+    String identity,
+    bool muted, {
+    RtcAudioSource source = RtcAudioSource.microphone,
+  }) {
     if (identity.isEmpty) return;
+    final key = _participantKey(identity, source);
     final next = Set<String>.of(state.mutedParticipantIds);
-    final changed = muted ? next.add(identity) : next.remove(identity);
+    final changed = muted ? next.add(key) : next.remove(key);
     if (!changed) return;
     _mutated = true;
     state = state.copyWith(mutedParticipantIds: Set.unmodifiable(next));
@@ -227,15 +268,23 @@ class VoiceVolumeController extends Notifier<VoiceVolumeState> {
     _applyToService();
   }
 
-  void toggleParticipantMuted(String identity) =>
-      setParticipantMuted(identity, !state.isParticipantMuted(identity));
+  void toggleParticipantMuted(
+    String identity, {
+    RtcAudioSource source = RtcAudioSource.microphone,
+  }) => setParticipantMuted(
+    identity,
+    !state.isParticipantMuted(identity, source: source),
+    source: source,
+  );
 
   void resetInput() => setInputPercent(100);
 
   void resetOutput() => setOutputPercent(100);
 
-  void resetParticipant(String identity) =>
-      setParticipantPercent(identity, 100);
+  void resetParticipant(
+    String identity, {
+    RtcAudioSource source = RtcAudioSource.microphone,
+  }) => setParticipantPercent(identity, 100, source: source);
 
   void _schedulePersist() {
     _persistTimer?.cancel();
@@ -273,11 +322,13 @@ class VoiceVolumeController extends Notifier<VoiceVolumeState> {
       ...state.participantPercent.keys,
       ...state.mutedParticipantIds,
     };
-    for (final identity in participantIds) {
+    for (final key in participantIds) {
+      final (source, identity) = _splitParticipantKey(key);
       unawaited(
-        service.setParticipantVolume(
+        service.setParticipantSourceVolume(
           identity,
-          state.participantGainOf(identity),
+          source,
+          state.participantGainOf(identity, source: source),
         ),
       );
     }

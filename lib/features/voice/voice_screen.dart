@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:window_manager/window_manager.dart';
 
 import '../../core/rtc/rtc_providers.dart';
 import '../../core/rtc/rtc_service.dart';
@@ -48,48 +49,108 @@ class VoiceScreen extends ConsumerWidget {
       }
     });
 
-    final controls = _Controls(
-      state: state,
-      onJoin: notifier.join,
-      onLeave: notifier.leave,
-      onToggleMicrophone: notifier.toggleMicrophone,
-      onToggleCamera: notifier.toggleCamera,
-      onToggleScreenShare: () => _toggleScreenShare(context, ref),
-      onToggleSystemAudio: notifier.toggleIncludeSystemAudio,
-      onOpenSettings: () => _openCameraSettings(context, ref, arg),
-      onOpenQuality: () => _openScreenShareQuality(context, ref, arg),
-    );
     final connected = state.status == VoiceSessionStatus.connected;
-
-    return Stack(
-      children: [
-        Column(
-          children: [
-            // Banner de reconexão automática: a sessão continua `connected`.
-            if (state.isReconnecting && connected) const _ReconnectingBanner(),
-            // Áudio remoto bloqueado pelo browser (autoplay policy no web).
-            if (state.isAudioBlocked && connected)
-              _AudioBlockedBanner(onTap: notifier.resumeAudio),
-            Expanded(
-              child: _ParticipantsPanel(
-                state: state,
-                notifier: notifier,
-                arg: arg,
+    if (!connected) {
+      final controls = _Controls(
+        state: state,
+        isSpotlight: false,
+        onJoin: notifier.join,
+        onLeave: notifier.leave,
+        onToggleCamera: notifier.toggleCamera,
+        onToggleScreenShare: () => _toggleScreenShare(context, ref),
+        onToggleFilmstrip: notifier.toggleFilmstrip,
+      );
+      return Stack(
+        children: [
+          Column(
+            children: [
+              // Banner de reconexão automática: a sessão continua `connected`.
+              if (state.isReconnecting && connected)
+                const _ReconnectingBanner(),
+              // Áudio remoto bloqueado pelo browser (autoplay policy no web).
+              if (state.isAudioBlocked && connected)
+                _AudioBlockedBanner(onTap: notifier.resumeAudio),
+              Expanded(
+                child: _ParticipantsPanel(
+                  state: state,
+                  notifier: notifier,
+                  arg: arg,
+                ),
               ),
-            ),
-          ],
-        ),
-        if (connected)
-          Positioned(
-            left: 16,
-            right: 16,
-            bottom: 16,
-            child: Center(child: controls),
-          )
-        else
+            ],
+          ),
           Align(alignment: Alignment.bottomCenter, child: controls),
-      ],
+        ],
+      );
+    }
+
+    // Conectado: palco imersivo com auto-hide (hover revela, parado esconde).
+    return _ConnectedStage(
+      state: state,
+      notifier: notifier,
+      arg: arg,
+      channelName: channelName,
+      onToggleScreenShare: () => _toggleScreenShare(context, ref),
+      onToggleFullscreen: () => _toggleFullscreen(context, ref, arg),
+      onLeave: () => _leave(ref, arg),
     );
+  }
+
+  /// Sai do canal de voz e volta para `idle`, garantindo que a janela
+  /// abandone o fullscreen (best-effort: falha nunca bloqueia o leave).
+  Future<void> _leave(
+    WidgetRef ref,
+    ({String serverId, String channelId}) arg,
+  ) async {
+    try {
+      await WindowManager.instance.setFullScreen(false);
+    } catch (_) {
+      // Sem janela (testes): o estado cobre a UI.
+    }
+    ref.read(voiceControllerProvider(arg).notifier).setFullscreen(false);
+    await ref.read(voiceControllerProvider(arg).notifier).leave();
+  }
+
+  /// Fullscreen completo: janela do SO em fullscreen + takeover imersivo da
+  /// área streamada ocupando o app todo. O pop (botão sair, voltar do
+  /// sistema) cai no `finally`, que devolve a janela e limpa o flag.
+  /// Falha de janela nunca derruba a sessão — o takeover in-app cobre.
+  Future<void> _toggleFullscreen(
+    BuildContext context,
+    WidgetRef ref,
+    ({String serverId, String channelId}) arg,
+  ) async {
+    final notifier = ref.read(voiceControllerProvider(arg).notifier);
+    final navigator = Navigator.of(context);
+    notifier.setFullscreen(true);
+    try {
+      await WindowManager.instance.setFullScreen(true);
+    } catch (_) {
+      // Sem janela (testes): segue só com o takeover in-app.
+    }
+    try {
+      await navigator.push(
+        MaterialPageRoute<void>(
+          fullscreenDialog: true,
+          builder: (_) => _FullscreenTakeover(
+            arg: arg,
+            channelName: channelName,
+            onToggleScreenShare: () => _toggleScreenShare(context, ref),
+            onLeave: () {
+              navigator.pop();
+              _leave(ref, arg);
+            },
+          ),
+        ),
+      );
+    } finally {
+      try {
+        await WindowManager.instance.setFullScreen(false);
+      } catch (_) {
+        // Janela já fechada/indisponível: nada a devolver.
+      }
+      notifier.setFullscreen(false);
+    }
   }
 
   /// Fluxo do botão de compartilhar tela: ativo → encerra; inativo → delega a
@@ -117,40 +178,289 @@ class VoiceScreen extends ConsumerWidget {
       quality: goLiveQualityFor(goLive.quality),
     );
   }
+}
 
-  /// Abre o sheet de settings de câmera; ao abrir, atualiza a lista de
-  /// dispositivos (best-effort — falha de enumeração mantém o cache).
-  Future<void> _openCameraSettings(
-    BuildContext context,
-    WidgetRef ref,
-    ({String serverId, String channelId}) arg,
-  ) async {
-    unawaited(
-      ref.read(voiceControllerProvider(arg).notifier).refreshCameraDevices(),
-    );
-    final rtc = ref.read(rtcServiceProvider);
-    try {
-      await showModalBottomSheet<void>(
-        context: context,
-        builder: (_) => _CameraSettingsSheet(arg: arg),
-      );
-    } finally {
-      // Idempotente: só para a track de preview temporária. Uma câmera já
-      // publicada continua transmitindo normalmente depois de fechar o sheet.
-      await rtc.stopCameraPreview();
-    }
+/// Palco conectado com auto-hide Discord-like: o mouse parado por 2.5s
+/// esconde dock + header (imersivo); qualquer hover revela de novo.
+/// O estado mora aqui (não no controller): é puro chrome de UI.
+class _ConnectedStage extends ConsumerStatefulWidget {
+  const _ConnectedStage({
+    required this.state,
+    required this.notifier,
+    required this.arg,
+    required this.channelName,
+    required this.onToggleScreenShare,
+    required this.onToggleFullscreen,
+    required this.onLeave,
+  });
+
+  final VoiceState state;
+  final VoiceController notifier;
+  final ({String serverId, String channelId}) arg;
+  final String channelName;
+  final VoidCallback onToggleScreenShare;
+  final VoidCallback onToggleFullscreen;
+  final VoidCallback onLeave;
+
+  @override
+  ConsumerState<_ConnectedStage> createState() => _ConnectedStageState();
+}
+
+class _ConnectedStageState extends ConsumerState<_ConnectedStage> {
+  bool _controlsVisible = true;
+  Timer? _hideTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _scheduleHide();
   }
 
-  /// Abre o sheet de qualidade do screen share. Não precisa de
-  /// refresh — o estado do perfil já vive no controller.
-  void _openScreenShareQuality(
-    BuildContext context,
-    WidgetRef ref,
-    ({String serverId, String channelId}) arg,
-  ) {
-    showModalBottomSheet<void>(
-      context: context,
-      builder: (_) => _ScreenShareQualitySheet(arg: arg),
+  @override
+  void dispose() {
+    _hideTimer?.cancel();
+    super.dispose();
+  }
+
+  void _scheduleHide() {
+    _hideTimer?.cancel();
+    _hideTimer = Timer(const Duration(milliseconds: 2500), () {
+      if (mounted) setState(() => _controlsVisible = false);
+    });
+  }
+
+  void _reveal() {
+    _scheduleHide();
+    if (!_controlsVisible && mounted) setState(() => _controlsVisible = true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final state = widget.state;
+    final notifier = widget.notifier;
+    final isSpotlight = state.spotlightParticipantId != null;
+    final controls = _Controls(
+      state: state,
+      isSpotlight: isSpotlight,
+      onJoin: notifier.join,
+      onLeave: widget.onLeave,
+      onToggleCamera: notifier.toggleCamera,
+      onToggleScreenShare: widget.onToggleScreenShare,
+      onToggleFilmstrip: notifier.toggleFilmstrip,
+    );
+    return MouseRegion(
+      onEnter: (_) => _reveal(),
+      onHover: (_) => _reveal(),
+      child: Stack(
+        children: [
+          Column(
+            children: [
+              if (state.isReconnecting) const _ReconnectingBanner(),
+              if (state.isAudioBlocked)
+                _AudioBlockedBanner(onTap: notifier.resumeAudio),
+              Expanded(
+                child: _ParticipantsPanel(
+                  state: state,
+                  notifier: notifier,
+                  arg: widget.arg,
+                ),
+              ),
+            ],
+          ),
+          // Header LIVE (só no hover): canal + contagem + fullscreen.
+          Positioned(
+            left: 12,
+            right: 12,
+            top: 12,
+            child: AnimatedOpacity(
+              duration: const Duration(milliseconds: 200),
+              opacity: _controlsVisible ? 1 : 0,
+              child: IgnorePointer(
+                ignoring: !_controlsVisible,
+                child: _StageHeader(
+                  channelName: widget.channelName,
+                  participantCount: state.participants.length,
+                  qualityLabel: _transmitQualityLabel(state),
+                  isFullscreen: state.isFullscreen,
+                  onToggleFullscreen: widget.onToggleFullscreen,
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 16,
+            right: 16,
+            bottom: 16,
+            child: Center(
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 200),
+                opacity: _controlsVisible ? 1 : 0,
+                child: IgnorePointer(
+                  ignoring: !_controlsVisible,
+                  child: controls,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Header flutuante do palco: qualidade/fps + badge LIVE + canal + contagem,
+/// fullscreen à direita. Visível só no hover (controlado pelo
+/// [_ConnectedStage]).
+class _StageHeader extends StatelessWidget {
+  const _StageHeader({
+    required this.channelName,
+    required this.participantCount,
+    required this.qualityLabel,
+    required this.isFullscreen,
+    required this.onToggleFullscreen,
+  });
+
+  final String channelName;
+  final int participantCount;
+
+  /// Rótulo da qualidade transmitida (ex.: `1080p60`); nulo quando não há
+  /// share de tela ativo. Renderiza à esquerda do badge LIVE.
+  final String? qualityLabel;
+  final bool isFullscreen;
+  final VoidCallback onToggleFullscreen;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.72),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: AppTokens.borderSubtle),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (qualityLabel != null) ...[
+                Text(
+                  qualityLabel!,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: AppTokens.textSecondary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(width: 8),
+              ],
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: AppTokens.accentDanger,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  'LIVE',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  '$channelName • $participantCount',
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const Spacer(),
+        _HeaderIconButton(
+          icon: isFullscreen ? Icons.fullscreen_exit : Icons.fullscreen,
+          tooltip: isFullscreen ? 'Sair do fullscreen' : 'Entrar em fullscreen',
+          onPressed: onToggleFullscreen,
+        ),
+      ],
+    );
+  }
+}
+
+/// Takeover imersivo da área streamada: ocupa a janela toda do app (NÃO é
+/// fullscreen do SO — a janela do usuário fica intacta). Reusa o
+/// [_ConnectedStage] inteiro (auto-hide, dock, filmstrip oculta via
+/// [VoiceState.isFullscreen]); aqui o botão fullscreen vira "sair" (pop) e
+/// sair do canal fecha o takeover antes do leave.
+class _FullscreenTakeover extends ConsumerWidget {
+  const _FullscreenTakeover({
+    required this.arg,
+    required this.channelName,
+    required this.onToggleScreenShare,
+    required this.onLeave,
+  });
+
+  final ({String serverId, String channelId}) arg;
+  final String channelName;
+  final VoidCallback onToggleScreenShare;
+  final VoidCallback onLeave;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(voiceControllerProvider(arg));
+    final notifier = ref.read(voiceControllerProvider(arg).notifier);
+    // Reset externo do flag (leave/disconnect com takeover aberto):
+    // fecha a rota para não largar janela em fullscreen órfã.
+    if (!state.isFullscreen) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (context.mounted) Navigator.of(context).maybePop();
+      });
+    }
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: _ConnectedStage(
+        state: state,
+        notifier: notifier,
+        arg: arg,
+        channelName: channelName,
+        onToggleScreenShare: onToggleScreenShare,
+        onToggleFullscreen: () => Navigator.of(context).pop(),
+        onLeave: onLeave,
+      ),
+    );
+  }
+}
+
+/// Botão circular compacto do header flutuante (40px, mesmo dock).
+class _HeaderIconButton extends StatelessWidget {
+  const _HeaderIconButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      onPressed: onPressed,
+      tooltip: tooltip,
+      style: IconButton.styleFrom(
+        minimumSize: const Size.square(40),
+        backgroundColor: Colors.black.withValues(alpha: 0.72),
+        foregroundColor: AppTokens.textPrimary,
+        side: const BorderSide(color: AppTokens.borderSubtle),
+      ),
+      icon: Icon(icon, size: 20),
     );
   }
 }
@@ -299,10 +609,7 @@ class _ParticipantsPanel extends StatelessWidget {
         }
         return ColoredBox(
           color: Colors.black,
-          child: Padding(
-            padding: const EdgeInsets.only(bottom: 108),
-            child: _SpotlightLayout(state: state, notifier: notifier, arg: arg),
-          ),
+          child: _SpotlightLayout(state: state, notifier: notifier, arg: arg),
         );
     }
   }
@@ -424,6 +731,21 @@ List<_VoiceMediaItem> _mediaItems(List<RtcParticipant> participants) {
   return [...shares, ...people];
 }
 
+/// Rótulo curto da qualidade transmitida (ex.: `1080p60`, `Auto`).
+/// Nulo quando não há share de tela ativo — da câmera não temos perfil
+/// conhecido, então é mais honesto omitir do que chutar.
+String? _transmitQualityLabel(VoiceState state) {
+  if (!state.isScreenSharing) return null;
+  return switch (state.screenShareQuality) {
+    RtcScreenShareQuality.q1080p60 => '1080p60',
+    RtcScreenShareQuality.q1080p30 => '1080p30',
+    RtcScreenShareQuality.q1080p15 => '1080p15',
+    RtcScreenShareQuality.q720p15 => '720p15',
+    RtcScreenShareQuality.q360p3 => '360p3',
+    RtcScreenShareQuality.auto => 'Auto',
+  };
+}
+
 VoiceSpotlightSource _spotlightSource(VoiceVideoSource source) {
   return source == VoiceVideoSource.screen
       ? VoiceSpotlightSource.screen
@@ -455,7 +777,9 @@ class _VideoGrid extends StatelessWidget {
         const gap = 10.0;
         const horizontalPadding = 20.0;
         const topPadding = 14.0;
-        const bottomControlsInset = 104.0;
+        // Dock flutuante sobre o palco (auto-hide): reserva mínima só para
+        // não colar o grid na borda inferior.
+        const bottomControlsInset = 16.0;
         final availableSize = Size(
           math.max(1.0, constraints.maxWidth - horizontalPadding * 2),
           math.max(
@@ -522,7 +846,7 @@ class _EmptyVoiceStage extends StatelessWidget {
     return Center(
       child: Container(
         constraints: const BoxConstraints(maxWidth: 320),
-        margin: const EdgeInsets.fromLTRB(20, 14, 20, 104),
+        margin: const EdgeInsets.fromLTRB(20, 14, 20, 16),
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 22),
         decoration: BoxDecoration(
           color: AppTokens.surface1,
@@ -561,8 +885,9 @@ class _EmptyVoiceStage extends StatelessWidget {
   }
 }
 
-/// Destaque opcional com todas as outras publicações na mesma faixa de
-/// miniaturas. Câmera e tela da mesma pessoa continuam sendo itens distintos.
+/// Destaque opcional com filmstrip colapsável de miniaturas maiores
+/// (192x108, Discord-like). Câmera e tela da mesma pessoa continuam sendo
+/// itens distintos. Fullscreen esconde a filmstrip (palco imersivo).
 class _SpotlightLayout extends StatelessWidget {
   const _SpotlightLayout({
     required this.state,
@@ -573,6 +898,13 @@ class _SpotlightLayout extends StatelessWidget {
   final VoiceState state;
   final VoiceController notifier;
   final ({String serverId, String channelId}) arg;
+
+  /// Altura da faixa de miniaturas (wireframe B).
+  static const double filmstripHeight = 120;
+
+  /// Tamanho do thumb da filmstrip (16:9).
+  static const double miniatureWidth = 192;
+  static const double miniatureHeight = 108;
 
   @override
   Widget build(BuildContext context) {
@@ -599,12 +931,18 @@ class _SpotlightLayout extends StatelessWidget {
       for (final item in items)
         if (item.key != selected.key) item,
     ];
+    // Fullscreen = palco imersivo, sem filmstrip (o dock/header já têm
+    // auto-hide; o toggle de fullscreen mora neles).
+    final showStrip =
+        state.filmstripVisible && !state.isFullscreen && others.isNotEmpty;
 
     return Column(
       children: [
         Expanded(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+            padding: state.isFullscreen
+                ? EdgeInsets.zero
+                : const EdgeInsets.fromLTRB(12, 12, 12, 8),
             child: VoiceVideoTile(
               arg: arg,
               participant: selected.participant,
@@ -617,9 +955,36 @@ class _SpotlightLayout extends StatelessWidget {
             ),
           ),
         ),
-        if (others.isNotEmpty)
+        if (showStrip) ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(
+              children: [
+                Text(
+                  others.length == 1
+                      ? '1 participante'
+                      : '${others.length} participantes',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.labelSmall?.copyWith(color: AppTokens.textMuted),
+                ),
+                const Spacer(),
+                IconButton(
+                  onPressed: notifier.toggleFilmstrip,
+                  tooltip: 'Ocultar miniaturas',
+                  visualDensity: VisualDensity.compact,
+                  style: IconButton.styleFrom(
+                    minimumSize: const Size.square(32),
+                    foregroundColor: AppTokens.textSecondary,
+                  ),
+                  icon: const Icon(Icons.visibility_off, size: 18),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 4),
           SizedBox(
-            height: 92,
+            height: filmstripHeight,
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -629,8 +994,8 @@ class _SpotlightLayout extends StatelessWidget {
                 final item = others[index];
                 return Center(
                   child: SizedBox(
-                    width: 128,
-                    height: 72,
+                    width: miniatureWidth,
+                    height: miniatureHeight,
                     child: VoiceVideoTile(
                       arg: arg,
                       participant: item.participant,
@@ -648,7 +1013,19 @@ class _SpotlightLayout extends StatelessWidget {
               },
             ),
           ),
-        const SizedBox(height: 8),
+        ] else if (!state.isFullscreen && others.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Center(
+              child: TextButton.icon(
+                onPressed: notifier.toggleFilmstrip,
+                icon: const Icon(Icons.visibility, size: 16),
+                label: Text('Mostrar miniaturas (${others.length})'),
+              ),
+            ),
+          )
+        else
+          const SizedBox(height: 8),
       ],
     );
   }
@@ -657,25 +1034,23 @@ class _SpotlightLayout extends StatelessWidget {
 class _Controls extends StatelessWidget {
   const _Controls({
     required this.state,
+    required this.isSpotlight,
     required this.onJoin,
     required this.onLeave,
-    required this.onToggleMicrophone,
     required this.onToggleCamera,
     required this.onToggleScreenShare,
-    required this.onToggleSystemAudio,
-    required this.onOpenSettings,
-    required this.onOpenQuality,
+    required this.onToggleFilmstrip,
   });
 
   final VoiceState state;
+
+  /// Se o painel está em spotlight: mostra o toggle da filmstrip.
+  final bool isSpotlight;
   final VoidCallback onJoin;
   final VoidCallback onLeave;
-  final VoidCallback onToggleMicrophone;
   final VoidCallback onToggleCamera;
   final VoidCallback onToggleScreenShare;
-  final VoidCallback onToggleSystemAudio;
-  final VoidCallback onOpenSettings;
-  final VoidCallback onOpenQuality;
+  final VoidCallback onToggleFilmstrip;
 
   @override
   Widget build(BuildContext context) {
@@ -714,15 +1089,6 @@ class _Controls extends StatelessWidget {
           runSpacing: 8,
           children: [
             _mediaToggleButton(
-              icon: state.isMicrophoneEnabled ? Icons.mic : Icons.mic_off,
-              active: state.isMicrophoneEnabled,
-              activeColor: AppTokens.accentDanger,
-              tooltip: state.isMicrophoneEnabled
-                  ? 'Desativar microfone'
-                  : 'Ativar microfone',
-              onPressed: onToggleMicrophone,
-            ),
-            _mediaToggleButton(
               icon: state.isCameraEnabled ? Icons.videocam : Icons.videocam_off,
               active: state.isCameraEnabled,
               activeColor: AppTokens.accentDanger,
@@ -740,50 +1106,23 @@ class _Controls extends StatelessWidget {
                   : 'Compartilhar tela',
               onPressed: state.isReconnecting ? null : onToggleScreenShare,
             ),
-            AppMenuButton<String>(
-              tooltip: 'Mais opções de voz',
-              icon: const Icon(Icons.more_horiz, color: AppTokens.textPrimary),
-              onSelected: (value) {
-                switch (value) {
-                  case 'quality':
-                    onOpenQuality();
-                    break;
-                  case 'settings':
-                    onOpenSettings();
-                    break;
-                  case 'systemAudio':
-                    onToggleSystemAudio();
-                    break;
-                }
-              },
-              itemBuilder: (context) => [
-                AppMenuItem<String>.labeled(
-                  value: 'quality',
-                  icon: Icons.hd,
-                  label: 'Qualidade de transmissão',
-                ),
-                AppMenuItem<String>.labeled(
-                  value: 'settings',
-                  icon: Icons.settings,
-                  label: 'Configurações de câmera',
-                ),
-                AppMenuItem<String>.labeled(
-                  value: 'systemAudio',
-                  enabled: !state.isScreenSharing && !state.isReconnecting,
-                  icon: state.includeSystemAudio
-                      ? Icons.volume_up
-                      : Icons.volume_off,
-                  label: state.includeSystemAudio
-                      ? 'Áudio de sistema: ligado'
-                      : 'Áudio de sistema: desligado',
-                ),
-              ],
-            ),
+            if (isSpotlight)
+              _mediaToggleButton(
+                icon: state.filmstripVisible
+                    ? Icons.visibility_off
+                    : Icons.visibility,
+                active: false,
+                activeColor: AppTokens.accentDanger,
+                tooltip: state.filmstripVisible
+                    ? 'Ocultar miniaturas'
+                    : 'Mostrar miniaturas',
+                onPressed: onToggleFilmstrip,
+              ),
             IconButton(
               onPressed: onLeave,
               tooltip: 'Sair do canal de voz',
               style: IconButton.styleFrom(
-                minimumSize: const Size.square(48),
+                minimumSize: const Size.square(40),
                 backgroundColor: AppTokens.accentDanger,
                 foregroundColor: Colors.white,
               ),
@@ -795,8 +1134,8 @@ class _Controls extends StatelessWidget {
     );
   }
 
-  /// Botão circular de mídia: o dock usa o mesmo controle em qualquer
-  /// largura, quebrando linhas só quando a janela fica estreita.
+  /// Botão circular de mídia: o dock usa o mesmo controle compacto (40px) em
+  /// qualquer largura, quebrando linhas só quando a janela fica estreita.
   Widget _mediaToggleButton({
     required IconData icon,
     required bool active,
@@ -808,174 +1147,11 @@ class _Controls extends StatelessWidget {
       onPressed: onPressed,
       tooltip: tooltip,
       style: IconButton.styleFrom(
-        minimumSize: const Size.square(48),
+        minimumSize: const Size.square(40),
         backgroundColor: active ? activeColor : null,
         foregroundColor: AppTokens.textPrimary,
       ),
       icon: Icon(icon),
-    );
-  }
-}
-
-/// Sheet de settings de câmera: abre uma captura LOCAL e temporária para o
-/// preview, sem publicar vídeo na sala. A track é liberada pelo método que
-/// abriu o modal; este state só controla loading, erro e renderização.
-class _CameraSettingsSheet extends ConsumerStatefulWidget {
-  const _CameraSettingsSheet({required this.arg});
-
-  final ({String serverId, String channelId}) arg;
-
-  @override
-  ConsumerState<_CameraSettingsSheet> createState() =>
-      _CameraSettingsSheetState();
-}
-
-class _CameraSettingsSheetState extends ConsumerState<_CameraSettingsSheet> {
-  RtcVideoTrackRef? _previewTrack;
-  bool _loadingPreview = true;
-  bool _selectingCamera = false;
-  String? _previewError;
-
-  @override
-  void initState() {
-    super.initState();
-    // Não inicie getUserMedia no mesmo ciclo que monta o bottom sheet: o
-    // plugin pode demorar para abrir a webcam. Deixar o primeiro frame passar
-    // garante que o usuário veja o spinner imediatamente.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      unawaited(_startPreviewAfterFirstFrame());
-    });
-  }
-
-  Future<void> _startPreviewAfterFirstFrame() async {
-    // Cede também a próxima volta do event loop para o frame do modal ser
-    // apresentado pelo compositor antes da inicialização nativa da câmera.
-    await Future<void>.delayed(Duration.zero);
-    if (!mounted) return;
-    await _startPreview();
-  }
-
-  Future<void> _startPreview() async {
-    final selectedCameraId = ref
-        .read(voiceControllerProvider(widget.arg))
-        .selectedCameraId;
-    if (mounted) {
-      setState(() {
-        _loadingPreview = true;
-        _previewError = null;
-      });
-    }
-    try {
-      final track = await ref
-          .read(rtcServiceProvider)
-          .startCameraPreview(deviceId: selectedCameraId);
-      if (!mounted) return;
-      setState(() {
-        _previewTrack = track;
-        _loadingPreview = false;
-      });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        _previewTrack = null;
-        _loadingPreview = false;
-        _previewError = 'Não foi possível iniciar o preview da câmera.';
-      });
-    }
-  }
-
-  Future<void> _selectCamera(VoiceController notifier, String deviceId) async {
-    setState(() => _selectingCamera = true);
-    final changed = await notifier.selectCamera(deviceId);
-    if (!mounted) return;
-    setState(() {
-      _selectingCamera = false;
-      if (!changed) {
-        _previewError = 'Não foi possível trocar a câmera selecionada.';
-      } else {
-        _previewError = null;
-      }
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final state = ref.watch(voiceControllerProvider(widget.arg));
-    final notifier = ref.read(voiceControllerProvider(widget.arg).notifier);
-    final devices = state.cameraDevices;
-
-    return SafeArea(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Câmera', style: theme.textTheme.titleMedium),
-            const SizedBox(height: 12),
-            Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 320),
-                child: AspectRatio(
-                  aspectRatio: 16 / 9,
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: CameraPreviewSurface(
-                      trackRef: _previewTrack,
-                      loading: _loadingPreview,
-                      error: _previewError,
-                      onRetry: _loadingPreview ? null : _startPreview,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Este preview é visível apenas para você. Ative a câmera nos '
-              'controles da chamada para transmitir aos participantes.',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.outline,
-              ),
-            ),
-            const SizedBox(height: 12),
-            if (devices.isEmpty)
-              Text(
-                'Nenhuma câmera encontrada.',
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.outline,
-                ),
-              )
-            else
-              RadioGroup<String>(
-                groupValue: state.selectedCameraId,
-                onChanged: (id) {
-                  if (_selectingCamera || id == null) return;
-                  unawaited(_selectCamera(notifier, id));
-                },
-                child: Column(
-                  children: [
-                    for (var i = 0; i < devices.length; i++)
-                      RadioListTile<String>(
-                        value: devices[i].id,
-                        // Label pode vir vazio antes da permissão (fato do
-                        // contrato) — fallback numerado.
-                        title: Text(
-                          devices[i].label.isEmpty
-                              ? 'Câmera ${i + 1}'
-                              : devices[i].label,
-                        ),
-                        dense: true,
-                        contentPadding: EdgeInsets.zero,
-                      ),
-                  ],
-                ),
-              ),
-          ],
-        ),
-      ),
     );
   }
 }
@@ -1047,75 +1223,6 @@ class CameraPreviewSurface extends StatelessWidget {
               ),
             ),
         ],
-      ),
-    );
-  }
-}
-
-/// Rótulo PT-BR de cada perfil de screen share, com `Auto` no topo.
-const Map<RtcScreenShareQuality, String> _screenShareQualityLabels = {
-  RtcScreenShareQuality.auto: 'Auto',
-  RtcScreenShareQuality.q1080p60: '1080p60',
-  RtcScreenShareQuality.q1080p30: '1080p30',
-  RtcScreenShareQuality.q1080p15: '1080p15',
-  RtcScreenShareQuality.q720p15: '720p15',
-  RtcScreenShareQuality.q360p3: '360p3',
-};
-
-/// Sheet de qualidade de screen share: lista vertical de perfis de publicação
-/// com `Auto` no topo. A escolha é pendente ou aplicada ao vivo conforme o
-/// estado do compartilhamento atual.
-class _ScreenShareQualitySheet extends ConsumerWidget {
-  const _ScreenShareQualitySheet({required this.arg});
-
-  final ({String serverId, String channelId}) arg;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
-    final state = ref.watch(voiceControllerProvider(arg));
-    final notifier = ref.read(voiceControllerProvider(arg).notifier);
-
-    return SafeArea(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Qualidade de transmissão',
-              style: theme.textTheme.titleMedium,
-            ),
-            const SizedBox(height: 4),
-            Text(
-              state.isScreenSharing
-                  ? 'Aplica ao vivo no compartilhamento atual.'
-                  : 'Aplica no próximo compartilhamento.',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.outline,
-              ),
-            ),
-            const SizedBox(height: 8),
-            RadioGroup<RtcScreenShareQuality>(
-              groupValue: state.screenShareQuality,
-              onChanged: (quality) {
-                if (quality != null) notifier.setScreenShareQuality(quality);
-              },
-              child: Column(
-                children: [
-                  for (final entry in _screenShareQualityLabels.entries)
-                    RadioListTile<RtcScreenShareQuality>(
-                      value: entry.key,
-                      title: Text(entry.value),
-                      dense: true,
-                      contentPadding: EdgeInsets.zero,
-                    ),
-                ],
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
