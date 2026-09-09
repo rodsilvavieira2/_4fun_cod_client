@@ -153,9 +153,7 @@ class _ServerEntryDialogState extends ConsumerState<ServerEntryDialog> {
                   shape: BoxShape.circle,
                 ),
                 child: Icon(
-                  isCreate
-                      ? Icons.groups_2_outlined
-                      : Icons.group_add_outlined,
+                  isCreate ? Icons.groups_2_outlined : Icons.group_add_outlined,
                   size: 28,
                   color: AppTokens.textPrimary,
                 ),
@@ -198,8 +196,7 @@ class _ServerEntryDialogState extends ConsumerState<ServerEntryDialog> {
                 autofocus: !kIsWeb,
                 label: 'LINK OU CÓDIGO DO CONVITE',
                 hintText: 'https://…/invite/CodigoDoConvite',
-                validator: (value) =>
-                    extractInviteCode(value ?? '') == null
+                validator: (value) => extractInviteCode(value ?? '') == null
                     ? 'Cole um link de convite válido.'
                     : null,
                 onFieldSubmitted: (_) => _join(),
@@ -224,9 +221,7 @@ class _ServerEntryDialogState extends ConsumerState<ServerEntryDialog> {
                       width: 20,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : Text(
-                      isCreate ? 'Criar servidor' : 'Entrar no servidor',
-                    ),
+                  : Text(isCreate ? 'Criar servidor' : 'Entrar no servidor'),
             ),
           ],
         ),

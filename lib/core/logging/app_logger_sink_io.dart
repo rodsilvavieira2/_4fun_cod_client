@@ -7,7 +7,7 @@ import 'dart:io';
 /// plataformas com `dart.library.io` (import condicional em app_logger.dart).
 class AppLoggerFileSink {
   AppLoggerFileSink({String? logsDirectory})
-      : directory = logsDirectory ?? _defaultDirectory();
+    : directory = logsDirectory ?? _defaultDirectory();
 
   final String? directory;
 

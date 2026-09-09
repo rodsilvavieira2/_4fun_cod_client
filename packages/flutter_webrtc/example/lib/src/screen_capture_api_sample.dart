@@ -56,7 +56,9 @@ class _ScreenCaptureApiSampleState extends State<ScreenCaptureApiSample> {
     try {
       final granted = await Helper.requestCapturePermission();
       setState(() {
-        _status = granted ? 'Capture permission granted.' : 'Capture permission denied.';
+        _status = granted
+            ? 'Capture permission granted.'
+            : 'Capture permission denied.';
       });
     } catch (e) {
       setState(() {
@@ -115,7 +117,8 @@ class _ScreenCaptureApiSampleState extends State<ScreenCaptureApiSample> {
   }
 
   Widget _buildSourceGrid(SourceType type) {
-    final entries = _sources.entries.where((entry) => entry.value.type == type).toList();
+    final entries =
+        _sources.entries.where((entry) => entry.value.type == type).toList();
     if (entries.isEmpty) {
       return Center(child: Text('No sources found.'));
     }

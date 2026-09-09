@@ -12,10 +12,10 @@ class VoiceJoinInfo {
 
   /// Campos em camelCase, como o backend devolve.
   factory VoiceJoinInfo.fromJson(Map<String, dynamic> json) => VoiceJoinInfo(
-        livekitUrl: json['livekitUrl'] as String,
-        token: json['token'] as String,
-        roomName: json['roomName'] as String,
-      );
+    livekitUrl: json['livekitUrl'] as String,
+    token: json['token'] as String,
+    roomName: json['roomName'] as String,
+  );
 
   /// URL WebSocket do servidor LiveKit.
   final String livekitUrl;

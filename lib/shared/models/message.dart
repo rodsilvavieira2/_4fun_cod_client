@@ -13,14 +13,15 @@ class ChatMessage {
   });
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) => ChatMessage(
-        id: json['id'] as String,
-        channelId: json['channelId'] as String,
-        content: json['content'] as String,
-        author: User.fromJson(json['author'] as Map<String, dynamic>),
-        createdAt: DateTime.tryParse(json['createdAt'] as String? ?? '') ??
-            DateTime.fromMillisecondsSinceEpoch(0),
-        updatedAt: DateTime.tryParse(json['updatedAt'] as String? ?? ''),
-      );
+    id: json['id'] as String,
+    channelId: json['channelId'] as String,
+    content: json['content'] as String,
+    author: User.fromJson(json['author'] as Map<String, dynamic>),
+    createdAt:
+        DateTime.tryParse(json['createdAt'] as String? ?? '') ??
+        DateTime.fromMillisecondsSinceEpoch(0),
+    updatedAt: DateTime.tryParse(json['updatedAt'] as String? ?? ''),
+  );
 
   final String id;
   final String channelId;

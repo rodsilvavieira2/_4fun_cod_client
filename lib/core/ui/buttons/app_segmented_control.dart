@@ -3,11 +3,7 @@ import 'package:flutter/material.dart';
 import '../ds_tokens.dart';
 
 class SegmentItem<T> {
-  const SegmentItem({
-    required this.value,
-    required this.label,
-    this.icon,
-  });
+  const SegmentItem({required this.value, required this.label, this.icon});
 
   final T value;
   final String label;
@@ -31,7 +27,9 @@ class AppSegmentedControl<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final selectedIndex = items.indexWhere((item) => item.value == selectedValue);
+    final selectedIndex = items.indexWhere(
+      (item) => item.value == selectedValue,
+    );
 
     return Container(
       height: height,
@@ -60,7 +58,10 @@ class AppSegmentedControl<T> extends StatelessWidget {
                     decoration: BoxDecoration(
                       color: AppTokens.surface3,
                       borderRadius: BorderRadius.circular(AppRadius.sm - 2),
-                      border: Border.all(color: AppTokens.borderSubtle, width: 1),
+                      border: Border.all(
+                        color: AppTokens.borderSubtle,
+                        width: 1,
+                      ),
                       boxShadow: const [
                         BoxShadow(
                           color: Color(0x33000000),
@@ -137,7 +138,9 @@ class _SegmentButtonState<T> extends State<_SegmentButton<T>> {
                 style: TextStyle(
                   fontFamily: 'Geist',
                   fontSize: 12.5,
-                  fontWeight: widget.isSelected ? FontWeight.w600 : FontWeight.w500,
+                  fontWeight: widget.isSelected
+                      ? FontWeight.w600
+                      : FontWeight.w500,
                   color: fgColor,
                 ),
               ),

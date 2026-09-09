@@ -36,12 +36,13 @@ class _FakeServersController extends ServersController {
   Future<List<Server>> build() async => servers;
 
   @override
-  Future<Server> create(String name) async =>
-      Server(id: 'new-1', name: name);
+  Future<Server> create(String name) async => Server(id: 'new-1', name: name);
 }
 
 void main() {
-  testWidgets('App renderiza login quando deslogado', (WidgetTester tester) async {
+  testWidgets('App renderiza login quando deslogado', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -63,7 +64,9 @@ void main() {
     expect(find.text('Criar conta'), findsOneWidget);
   });
 
-  testWidgets('App renderiza home quando autenticado', (WidgetTester tester) async {
+  testWidgets('App renderiza home quando autenticado', (
+    WidgetTester tester,
+  ) async {
     const user = User(
       id: 'user-1',
       name: 'Rodrigo',
@@ -88,7 +91,9 @@ void main() {
     expect(find.byIcon(Icons.account_circle), findsOneWidget);
   });
 
-  testWidgets('Rail renderiza os servidores do usuário', (WidgetTester tester) async {
+  testWidgets('Rail renderiza os servidores do usuário', (
+    WidgetTester tester,
+  ) async {
     const servers = [
       Server(id: 'srv-1', name: 'Gamers'),
       Server(id: 'srv-2', name: 'Devs'),

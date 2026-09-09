@@ -350,8 +350,7 @@ class _MessageTileState extends State<_MessageTile> {
                               width: 36,
                               height: 36,
                               fit: BoxFit.cover,
-                              errorBuilder: (_, _, _) =>
-                                  _avatarInitial(author),
+                              errorBuilder: (_, _, _) => _avatarInitial(author),
                             )
                           : _avatarInitial(author),
                     ),

@@ -20,7 +20,10 @@ Future<T?> showMacModalWindow<T>({
     barrierColor: Colors.black.withValues(alpha: 0.65),
     transitionDuration: const Duration(milliseconds: 180),
     transitionBuilder: (context, animation, secondaryAnimation, child) {
-      final curved = CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
+      final curved = CurvedAnimation(
+        parent: animation,
+        curve: Curves.easeOutCubic,
+      );
       return FadeTransition(
         opacity: curved,
         child: ScaleTransition(
@@ -80,7 +83,10 @@ class _MacModalWindowHost extends StatelessWidget {
                     decoration: BoxDecoration(
                       color: AppTokens.surface2.withValues(alpha: 0.95),
                       borderRadius: BorderRadius.circular(AppRadius.xl),
-                      border: Border.all(color: AppTokens.borderSubtle, width: 1),
+                      border: Border.all(
+                        color: AppTokens.borderSubtle,
+                        width: 1,
+                      ),
                       boxShadow: AppShadows.modalWindow,
                     ),
                     child: Column(
@@ -93,7 +99,9 @@ class _MacModalWindowHost extends StatelessWidget {
                             padding: const EdgeInsets.symmetric(horizontal: 16),
                             decoration: const BoxDecoration(
                               border: Border(
-                                bottom: BorderSide(color: AppTokens.borderHairline),
+                                bottom: BorderSide(
+                                  color: AppTokens.borderHairline,
+                                ),
                               ),
                             ),
                             child: Row(

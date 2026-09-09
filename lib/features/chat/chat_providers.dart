@@ -115,8 +115,7 @@ class ChatController
     // (índice 0 = mais antiga, compatível com o scroll reverso da UI).
     // Ordenação determinística por (createdAt, id): a API/paginação pode
     // devolver rajadas fora de ordem e isso quebrava o agrupamento visual.
-    var messages = page.messages.reversed.toList()
-      ..sort(ChatGrouping.compare);
+    var messages = page.messages.reversed.toList()..sort(ChatGrouping.compare);
     if (_disposed) return ChatState(messages: messages, hasMore: false);
 
     // Publica o estado base e então aplica o buffer de eventos que chegaram
@@ -171,8 +170,7 @@ class ChatController
         for (final message in page.messages.reversed)
           if (!existingIds.contains(message.id)) message,
       ];
-      final merged = [...older, ...next.messages]
-        ..sort(ChatGrouping.compare);
+      final merged = [...older, ...next.messages]..sort(ChatGrouping.compare);
       state = AsyncData(
         next.copyWith(
           messages: merged,

@@ -49,10 +49,9 @@ class _CreateChannelDialogState extends ConsumerState<_CreateChannelDialog> {
       _error = null;
     });
     try {
-      await ref.read(channelsControllerProvider(widget.serverId).notifier).create(
-            _nameController.text.trim(),
-            _type,
-          );
+      await ref
+          .read(channelsControllerProvider(widget.serverId).notifier)
+          .create(_nameController.text.trim(), _type);
       if (!mounted) return;
       Navigator.of(context).pop();
     } on ApiException catch (e) {
@@ -129,7 +128,9 @@ class _CreateChannelDialogState extends ConsumerState<_CreateChannelDialog> {
                 AppButton(
                   label: 'Cancelar',
                   variant: AppButtonVariant.ghost,
-                  onPressed: _creating ? null : () => Navigator.of(context).pop(),
+                  onPressed: _creating
+                      ? null
+                      : () => Navigator.of(context).pop(),
                 ),
                 const SizedBox(width: 10),
                 AppButton(

@@ -74,9 +74,9 @@ class AuthInterceptor extends QueuedInterceptor {
     // (spinner infinito). Timeouts explícitos + conclusão garantida.
     var completed = false;
     try {
-      final token = await _authRepo
-          .refresh()
-          .timeout(const Duration(seconds: 15));
+      final token = await _authRepo.refresh().timeout(
+        const Duration(seconds: 15),
+      );
       request.headers['Authorization'] = 'Bearer $token';
       request.headers['x-retry'] = 'true';
       // Retry pelo dio BARE (fora da cadeia que originou o erro).

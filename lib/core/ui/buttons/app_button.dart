@@ -66,7 +66,13 @@ class _AppButtonState extends State<AppButton> {
     final disabled = widget.onPressed == null || widget.loading;
 
     // Dimensões por tamanho
-    final (height, fontSize, iconSize, hPadding, radius) = switch (widget.size) {
+    final (
+      height,
+      fontSize,
+      iconSize,
+      hPadding,
+      radius,
+    ) = switch (widget.size) {
       AppButtonSize.sm => (28.0, 12.0, 14.0, 10.0, AppRadius.sm),
       AppButtonSize.md => (34.0, 13.0, 16.0, 14.0, AppRadius.sm),
       AppButtonSize.lg => (40.0, 14.5, 18.0, 18.0, AppRadius.md),
@@ -78,8 +84,10 @@ class _AppButtonState extends State<AppButton> {
         disabled
             ? AppTokens.surface3
             : (_pressed
-                ? const Color(0xFFD4D4D8)
-                : (_hovered ? const Color(0xFFFFFFFF) : AppTokens.textPrimary)),
+                  ? const Color(0xFFD4D4D8)
+                  : (_hovered
+                        ? const Color(0xFFFFFFFF)
+                        : AppTokens.textPrimary)),
         disabled ? AppTokens.textMuted : AppTokens.textInverse,
         Colors.transparent,
       ),
@@ -87,8 +95,8 @@ class _AppButtonState extends State<AppButton> {
         disabled
             ? AppTokens.surface1
             : (_pressed
-                ? AppTokens.surface3
-                : (_hovered ? const Color(0xFF1E1E1E) : AppTokens.surface2)),
+                  ? AppTokens.surface3
+                  : (_hovered ? const Color(0xFF1E1E1E) : AppTokens.surface2)),
         disabled ? AppTokens.textMuted : AppTokens.textPrimary,
         AppTokens.borderStrong,
       ),
@@ -96,8 +104,10 @@ class _AppButtonState extends State<AppButton> {
         disabled
             ? AppTokens.surface3
             : (_pressed
-                ? const Color(0xFF0056B3)
-                : (_hovered ? const Color(0xFF1A85FF) : AppTokens.accentVercel)),
+                  ? const Color(0xFF0056B3)
+                  : (_hovered
+                        ? const Color(0xFF1A85FF)
+                        : AppTokens.accentVercel)),
         disabled ? AppTokens.textMuted : Colors.white,
         Colors.transparent,
       ),
@@ -105,8 +115,8 @@ class _AppButtonState extends State<AppButton> {
         disabled
             ? Colors.transparent
             : (_pressed
-                ? AppTokens.activeOverlay
-                : (_hovered ? AppTokens.hoverOverlay : Colors.transparent)),
+                  ? AppTokens.activeOverlay
+                  : (_hovered ? AppTokens.hoverOverlay : Colors.transparent)),
         disabled ? AppTokens.textMuted : AppTokens.textPrimary,
         Colors.transparent,
       ),
@@ -114,8 +124,10 @@ class _AppButtonState extends State<AppButton> {
         disabled
             ? AppTokens.surface1
             : (_pressed
-                ? const Color(0xFF6D28D9)
-                : (_hovered ? const Color(0xFF9333EA) : AppTokens.accentPurple)),
+                  ? const Color(0xFF6D28D9)
+                  : (_hovered
+                        ? const Color(0xFF9333EA)
+                        : AppTokens.accentPurple)),
         disabled ? AppTokens.textMuted : Colors.white,
         Colors.transparent,
       ),

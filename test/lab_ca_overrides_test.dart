@@ -10,8 +10,7 @@ import 'package:fourfun_cod_client/core/config/lab_ca_overrides.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('trustLabCa: carrega a CA do asset e instala o HttpOverrides',
-      () async {
+  test('trustLabCa: carrega a CA do asset e instala o HttpOverrides', () async {
     final previous = HttpOverrides.current;
     addTearDown(() => HttpOverrides.global = previous);
 

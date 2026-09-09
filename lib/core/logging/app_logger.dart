@@ -29,10 +29,8 @@ enum LogLevel {
 ///   de campos `password`/`secret`; os interceptors que o usam não logam
 ///   headers nem bodies de auth.
 class AppLogger {
-  AppLogger({
-    this.minLevel = LogLevel.debug,
-    String? logsDirectory,
-  }) : _fileSink = AppLoggerFileSink(logsDirectory: logsDirectory);
+  AppLogger({this.minLevel = LogLevel.debug, String? logsDirectory})
+    : _fileSink = AppLoggerFileSink(logsDirectory: logsDirectory);
 
   final LogLevel minLevel;
   final AppLoggerFileSink _fileSink;
@@ -54,8 +52,13 @@ class AppLogger {
     Object? error,
     StackTrace? stackTrace,
     String tag = 'app',
-  }) =>
-      _log(LogLevel.error, message, tag: tag, error: error, stackTrace: stackTrace);
+  }) => _log(
+    LogLevel.error,
+    message,
+    tag: tag,
+    error: error,
+    stackTrace: stackTrace,
+  );
 
   void _log(
     LogLevel level,
@@ -78,7 +81,9 @@ class AppLogger {
     StackTrace? stackTrace,
   ) {
     final now = DateTime.now().toIso8601String();
-    final buffer = StringBuffer('$now [${level.label}] [$tag] ${_redact(message)}');
+    final buffer = StringBuffer(
+      '$now [${level.label}] [$tag] ${_redact(message)}',
+    );
     if (error != null) {
       buffer.write(' | ${_redact(error.toString())}');
     }
@@ -99,8 +104,10 @@ class AppLogger {
       (_) => 'Bearer ***',
     );
     out = out.replaceAllMapped(
-      RegExp(r'("(?:password|token|secret|refreshToken)"\s*:\s*")[^"]*(")',
-          caseSensitive: false),
+      RegExp(
+        r'("(?:password|token|secret|refreshToken)"\s*:\s*")[^"]*(")',
+        caseSensitive: false,
+      ),
       (m) => '${m.group(1)}***${m.group(2)}',
     );
     return out;

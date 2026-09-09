@@ -21,7 +21,11 @@ import 'rtc_service.dart' show RtcVideoTrackRef;
 ///   montar o view, então o vazio aqui é proposital;
 /// - [trackRef] de tipo desconhecido (defensivo) → mesmo placeholder.
 class RtcVideoView extends StatelessWidget {
-  const RtcVideoView({super.key, required this.trackRef, this.highDensity = false});
+  const RtcVideoView({
+    super.key,
+    required this.trackRef,
+    this.highDensity = false,
+  });
 
   /// Referência renderizável vinda de [RtcService.videoTrackOf]; null
   /// quando a câmera está OFF/ausente.

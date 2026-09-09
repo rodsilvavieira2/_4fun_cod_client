@@ -7,18 +7,18 @@ import '../../shared/models/auth_tokens.dart';
 /// (flutter_secure_storage — Keychain/Keystore/libsecret).
 class TokenStorage {
   TokenStorage({FlutterSecureStorage? storage})
-      : _storage =
-            storage ??
-            const FlutterSecureStorage(
-              // Android v11+: Keystore AES-GCM por padrão (API 23+) com
-              // resetOnError — dados são limpos (não lançam) se o Keystore
-              // for invalidado (restore de backup, troca de biometria).
-              aOptions: AndroidOptions(),
-              // iOS: itens acessíveis apenas após o primeiro desbloqueio.
-              iOptions: IOSOptions(
-                accessibility: KeychainAccessibility.first_unlock,
-              ),
-            );
+    : _storage =
+          storage ??
+          const FlutterSecureStorage(
+            // Android v11+: Keystore AES-GCM por padrão (API 23+) com
+            // resetOnError — dados são limpos (não lançam) se o Keystore
+            // for invalidado (restore de backup, troca de biometria).
+            aOptions: AndroidOptions(),
+            // iOS: itens acessíveis apenas após o primeiro desbloqueio.
+            iOptions: IOSOptions(
+              accessibility: KeychainAccessibility.first_unlock,
+            ),
+          );
 
   static const _accessTokenKey = 'auth.access_token';
   static const _refreshTokenKey = 'auth.refresh_token';

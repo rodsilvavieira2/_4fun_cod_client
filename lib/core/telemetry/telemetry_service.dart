@@ -73,11 +73,14 @@ class TelemetryService {
         endpoint: _otlpBase,
         spanProcessor: BatchSpanProcessor(
           OtlpHttpSpanExporter(
-              OtlpHttpExporterConfig(endpoint: _otlpBase, headers: _headers)),
+            OtlpHttpExporterConfig(endpoint: _otlpBase, headers: _headers),
+          ),
         ),
         logRecordExporter: OtlpHttpLogRecordExporter(
           OtlpHttpLogRecordExporterConfig(
-              endpoint: _otlpBase, headers: _headers),
+            endpoint: _otlpBase,
+            headers: _headers,
+          ),
         ),
         metricExporter: OtlpHttpMetricExporter(
           OtlpHttpMetricExporterConfig(endpoint: _otlpBase, headers: _headers),
@@ -126,7 +129,9 @@ class TelemetryService {
   Span? startSpan(String name, {Map<String, String>? attributes}) {
     if (!_ready) return null;
     try {
-      return OTel.tracerProvider().getTracer(_scope).startSpan(
+      return OTel.tracerProvider()
+          .getTracer(_scope)
+          .startSpan(
             name,
             kind: SpanKind.client,
             attributes: Attributes.of(
@@ -246,8 +251,10 @@ class TelemetryService {
       (_) => 'Bearer ***',
     );
     out = out.replaceAllMapped(
-      RegExp(r'("(?:password|token|secret|refreshToken)"\s*:\s*")[^"]*(")',
-          caseSensitive: false),
+      RegExp(
+        r'("(?:password|token|secret|refreshToken)"\s*:\s*")[^"]*(")',
+        caseSensitive: false,
+      ),
       (m) => '${m.group(1)}***${m.group(2)}',
     );
     return out;
@@ -269,9 +276,10 @@ class _TelemetryRouteObserver extends NavigatorObserver {
 
   @override
   void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
-    _telemetry.logEvent('navigation.pop', attributes: {
-      'route': route.settings.name ?? 'unknown',
-    });
+    _telemetry.logEvent(
+      'navigation.pop',
+      attributes: {'route': route.settings.name ?? 'unknown'},
+    );
   }
 }
 

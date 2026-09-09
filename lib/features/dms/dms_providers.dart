@@ -26,26 +26,27 @@ class DmConversation {
 ///
 /// O servidor "ativo" é o primeiro da lista do usuário (a rota `/dms` não
 /// carrega serverId — SPEC 3 decisão "Provider sobre server ativo").
-final dmConversationsProvider = Provider.family<List<DmConversation>, String>(
-  (ref, serverId) {
-    final detail = ref.watch(serverDetailProvider(serverId)).valueOrNull;
-    final online = ref.watch(presenceProvider(serverId));
-    final members = detail?.members ?? const [];
-    final conversations = <DmConversation>[];
-    for (final member in members) {
-      if (!online.contains(member.userId)) continue;
-      conversations.add(
-        DmConversation(
-          userId: member.userId,
-          name: member.user.name,
-          avatarUrl: member.user.avatarUrl,
-          online: true,
-        ),
-      );
-    }
-    return conversations;
-  },
-);
+final dmConversationsProvider = Provider.family<List<DmConversation>, String>((
+  ref,
+  serverId,
+) {
+  final detail = ref.watch(serverDetailProvider(serverId)).valueOrNull;
+  final online = ref.watch(presenceProvider(serverId));
+  final members = detail?.members ?? const [];
+  final conversations = <DmConversation>[];
+  for (final member in members) {
+    if (!online.contains(member.userId)) continue;
+    conversations.add(
+      DmConversation(
+        userId: member.userId,
+        name: member.user.name,
+        avatarUrl: member.user.avatarUrl,
+        online: true,
+      ),
+    );
+  }
+  return conversations;
+});
 
 /// Id do usuário com conversa DM selecionada (nulo = nenhuma). StateProvider
 /// local da visão DM; a tela reseta ao sair (autoDispose por construção da

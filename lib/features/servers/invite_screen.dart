@@ -111,8 +111,9 @@ class _InviteScreenState extends ConsumerState<InviteScreen> {
                       const SizedBox(height: 16),
                       Text(
                         _error!,
-                        style:
-                            TextStyle(color: Theme.of(context).colorScheme.error),
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.error,
+                        ),
                       ),
                     ],
                     const SizedBox(height: 24),

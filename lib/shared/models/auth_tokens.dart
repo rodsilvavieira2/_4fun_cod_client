@@ -8,9 +8,9 @@ class SessionTokens {
   const SessionTokens({required this.accessToken, required this.refreshToken});
 
   factory SessionTokens.fromJson(Map<String, dynamic> json) => SessionTokens(
-        accessToken: json['accessToken'] as String,
-        refreshToken: json['refreshToken'] as String,
-      );
+    accessToken: json['accessToken'] as String,
+    refreshToken: json['refreshToken'] as String,
+  );
 
   final String accessToken;
   final String refreshToken;

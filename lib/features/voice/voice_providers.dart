@@ -628,12 +628,14 @@ class VoiceController
     } catch (e, st) {
       // Sem este log, a causa real (sender null, baseline vazia, recusa
       // nativa) virava o toast genérico sem rastro em disco.
-      ref.read(appLoggerProvider).e(
-        'screen quality falhou (pedido=$quality)',
-        error: e,
-        stackTrace: st,
-        tag: 'voice',
-      );
+      ref
+          .read(appLoggerProvider)
+          .e(
+            'screen quality falhou (pedido=$quality)',
+            error: e,
+            stackTrace: st,
+            tag: 'voice',
+          );
       if (_disposed) return;
       state = state.copyWith(
         status: VoiceSessionStatus.connected,

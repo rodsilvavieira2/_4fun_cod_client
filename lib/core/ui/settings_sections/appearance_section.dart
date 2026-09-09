@@ -23,10 +23,7 @@ class AppearanceSection extends StatelessWidget {
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),
               ),
-              const Text(
-                'Escuro (fixo)',
-                style: TextStyle(fontSize: 14),
-              ),
+              const Text('Escuro (fixo)', style: TextStyle(fontSize: 14)),
             ],
           ),
         ),

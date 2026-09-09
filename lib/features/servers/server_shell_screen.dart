@@ -316,8 +316,7 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
         SizedBox(
           // Bloco de navegação (rail + divisor + lista) como base do
           // overlay: o controller flutua sobre rail e canais (wireframe).
-          width:
-              AppLayout.serverRailWidth + 1 + AppLayout.navigationWidth,
+          width: AppLayout.serverRailWidth + 1 + AppLayout.navigationWidth,
           child: Stack(
             children: [
               Row(
@@ -459,11 +458,7 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
             ),
           ),
           if (floatingOverlayReserve == null)
-            _userPanel(
-              activeVoiceChannel,
-              activeVoiceState,
-              floating: false,
-            ),
+            _userPanel(activeVoiceChannel, activeVoiceState, floating: false),
         ],
       ),
     );

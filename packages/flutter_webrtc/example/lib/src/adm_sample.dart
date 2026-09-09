@@ -24,22 +24,26 @@ class AdmSample extends StatelessWidget {
             ListTile(
               title: Text('isVoiceProcessingEnabled'),
               onTap: () async {
-                final result = await NativeAudioManagement.isVoiceProcessingEnabled();
+                final result =
+                    await NativeAudioManagement.isVoiceProcessingEnabled();
                 print('isVoiceProcessingEnabled: $result');
               },
             ),
             ListTile(
               title: Text('Get isVoiceProcessingBypassed'),
               onTap: () async {
-                final result = await NativeAudioManagement.isVoiceProcessingBypassed();
+                final result =
+                    await NativeAudioManagement.isVoiceProcessingBypassed();
                 print('isVoiceProcessingBypassed: $result');
               },
             ),
             ListTile(
               title: Text('Toggle isVoiceProcessingBypassed'),
               onTap: () async {
-                final result = await NativeAudioManagement.isVoiceProcessingBypassed();
-                await NativeAudioManagement.setIsVoiceProcessingBypassed(!result);
+                final result =
+                    await NativeAudioManagement.isVoiceProcessingBypassed();
+                await NativeAudioManagement.setIsVoiceProcessingBypassed(
+                    !result);
                 print('isVoiceProcessingBypassed: $result');
               },
             ),

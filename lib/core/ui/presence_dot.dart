@@ -2,12 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'ds_tokens.dart';
 
-enum PresenceStatus {
-  online,
-  idle,
-  dnd,
-  offline,
-}
+enum PresenceStatus { online, idle, dnd, offline }
 
 /// Indicador visual de presença estilo macOS / Discord refinado (com anel de borda)
 class PresenceDot extends StatelessWidget {
@@ -27,7 +22,9 @@ class PresenceDot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final effectiveStatus = status ?? ((online ?? false) ? PresenceStatus.online : PresenceStatus.offline);
+    final effectiveStatus =
+        status ??
+        ((online ?? false) ? PresenceStatus.online : PresenceStatus.offline);
 
     final (color, label) = switch (effectiveStatus) {
       PresenceStatus.online => (AppTokens.accentGreen, 'Online'),
@@ -45,7 +42,10 @@ class PresenceDot extends StatelessWidget {
           color: color,
           shape: BoxShape.circle,
           border: withBorder
-              ? Border.all(color: AppTokens.surface1, width: size > 10 ? 2 : 1.5)
+              ? Border.all(
+                  color: AppTokens.surface1,
+                  width: size > 10 ? 2 : 1.5,
+                )
               : null,
         ),
       ),

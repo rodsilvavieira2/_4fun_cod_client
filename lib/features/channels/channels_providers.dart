@@ -28,5 +28,7 @@ class ChannelsController
   }
 }
 
-final channelsControllerProvider = AsyncNotifierProvider.autoDispose.family<
-    ChannelsController, List<ServerChannel>, String>(ChannelsController.new);
+final channelsControllerProvider = AsyncNotifierProvider.autoDispose
+    .family<ChannelsController, List<ServerChannel>, String>(
+      ChannelsController.new,
+    );

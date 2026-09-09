@@ -41,10 +41,7 @@ class AppConfig {
       'OTEL_ENDPOINT',
       defaultValue: 'http://localhost:5080',
     );
-    const otelOrg = String.fromEnvironment(
-      'OTEL_ORG',
-      defaultValue: 'default',
-    );
+    const otelOrg = String.fromEnvironment('OTEL_ORG', defaultValue: 'default');
     const otelBasicAuthDefine = String.fromEnvironment(
       'OTEL_BASIC_AUTH',
       defaultValue: '',

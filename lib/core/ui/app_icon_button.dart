@@ -38,7 +38,9 @@ class _AppIconButtonState extends State<AppIconButton> {
   Widget build(BuildContext context) {
     final effectiveColor = widget.isActive
         ? (widget.activeColor ?? AppTokens.accentVercel)
-        : (_hovered ? AppTokens.textPrimary : (widget.color ?? AppTokens.textSecondary));
+        : (_hovered
+              ? AppTokens.textPrimary
+              : (widget.color ?? AppTokens.textSecondary));
 
     return Tooltip(
       message: widget.tooltip,

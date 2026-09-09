@@ -14,10 +14,7 @@ void main() {
       expect(
         findSystemAudioMonitorDevice([
           device('mic1', 'Built-in Audio Analog Stereo'),
-          device(
-            'mon1',
-            'alsa_output.pci-0000_00_1f.3.analog-stereo.monitor',
-          ),
+          device('mon1', 'alsa_output.pci-0000_00_1f.3.analog-stereo.monitor'),
         ]),
         'mon1',
       );
@@ -43,9 +40,7 @@ void main() {
 
     test('acha o loopback do pw-loopback ("[Loopback]")', () {
       expect(
-        findSystemAudioMonitorDevice([
-          device('loop1', '[Loopback]'),
-        ]),
+        findSystemAudioMonitorDevice([device('loop1', '[Loopback]')]),
         'loop1',
       );
     });

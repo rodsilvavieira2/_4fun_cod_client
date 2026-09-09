@@ -39,10 +39,7 @@ class DioLoggingInterceptor extends Interceptor {
     if (telemetry != null) {
       options.extra['_otelSpan'] = telemetry.startSpan(
         '${options.method} ${options.path}',
-        attributes: {
-          'http.method': options.method,
-          'http.path': options.path,
-        },
+        attributes: {'http.method': options.method, 'http.path': options.path},
       );
     }
     handler.next(options);

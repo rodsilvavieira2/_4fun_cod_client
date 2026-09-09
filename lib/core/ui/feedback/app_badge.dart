@@ -2,13 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../ds_tokens.dart';
 
-enum AppBadgeVariant {
-  neutral,
-  accent,
-  success,
-  warning,
-  danger,
-}
+enum AppBadgeVariant { neutral, accent, success, warning, danger }
 
 /// Badge compacta com tipografia mono estilo Vercel / Dev-Tool
 class AppBadge extends StatelessWidget {

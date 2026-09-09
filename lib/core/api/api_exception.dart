@@ -21,7 +21,8 @@ class ApiException implements Exception {
         error: data['error'] as String?,
       );
     }
-    final isConnectionProblem = e.type == DioExceptionType.connectionError ||
+    final isConnectionProblem =
+        e.type == DioExceptionType.connectionError ||
         e.type == DioExceptionType.connectionTimeout ||
         e.type == DioExceptionType.sendTimeout ||
         e.type == DioExceptionType.receiveTimeout;
