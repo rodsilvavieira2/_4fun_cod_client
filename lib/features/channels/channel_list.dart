@@ -88,7 +88,7 @@ class ChannelList extends ConsumerWidget {
                     ),
                   ),
                 ),
-                PopupMenuButton<String>(
+                AppMenuButton<String>(
                   tooltip: 'Menu do servidor',
                   icon: const Icon(
                     Icons.keyboard_arrow_down,
@@ -116,46 +116,36 @@ class ChannelList extends ConsumerWidget {
                   },
                   itemBuilder: (context) => [
                     if (canManageServer) ...[
-                      const PopupMenuItem(
+                      AppMenuItem<String>.labeled(
                         value: 'invite',
-                        child: _ServerMenuEntry(
-                          icon: Icons.person_add_alt_1_outlined,
-                          label: 'Convidar pessoas',
-                        ),
+                        icon: Icons.person_add_alt_1_outlined,
+                        label: 'Convidar pessoas',
                       ),
-                      const PopupMenuItem(
+                      AppMenuItem<String>.labeled(
                         value: 'create',
-                        child: _ServerMenuEntry(
-                          icon: Icons.add_circle_outline,
-                          label: 'Criar canal',
-                        ),
+                        icon: Icons.add_circle_outline,
+                        label: 'Criar canal',
                       ),
                     ],
-                    const PopupMenuItem(
+                    AppMenuItem<String>.labeled(
                       value: 'members',
-                      child: _ServerMenuEntry(
-                        icon: Icons.group_outlined,
-                        label: 'Membros e cargos',
-                      ),
+                      icon: Icons.group_outlined,
+                      label: 'Membros e cargos',
                     ),
                     if (canManageServer) ...[
-                      const PopupMenuDivider(),
-                      const PopupMenuItem(
+                      const AppMenuDivider(),
+                      AppMenuItem<String>.labeled(
                         value: 'settings',
-                        child: _ServerMenuEntry(
-                          icon: Icons.settings_outlined,
-                          label: 'Configurações do servidor',
-                        ),
+                        icon: Icons.settings_outlined,
+                        label: 'Configurações do servidor',
                       ),
                     ],
                     if (canLeaveServer) ...[
-                      const PopupMenuDivider(),
-                      const PopupMenuItem(
+                      const AppMenuDivider(),
+                      AppMenuItem<String>.labeled(
                         value: 'leave',
-                        child: _ServerMenuEntry(
-                          icon: Icons.logout,
-                          label: 'Sair do servidor',
-                        ),
+                        icon: Icons.logout,
+                        label: 'Sair do servidor',
                       ),
                     ],
                   ],
@@ -342,20 +332,6 @@ class ChannelList extends ConsumerWidget {
     await ref
         .read(channelsControllerProvider(serverId).notifier)
         .delete(channel.id);
-  }
-}
-
-class _ServerMenuEntry extends StatelessWidget {
-  const _ServerMenuEntry({required this.icon, required this.label});
-
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [Icon(icon, size: 17), const SizedBox(width: 10), Text(label)],
-    );
   }
 }
 

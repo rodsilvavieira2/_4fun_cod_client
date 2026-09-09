@@ -256,18 +256,18 @@ class _MemberAdminTile extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             if (canChangeRole)
-              PopupMenuButton<ServerRole>(
+              AppMenuButton<ServerRole>(
                 tooltip: 'Alterar cargo',
                 initialValue: member.role,
                 onSelected: onRoleChanged,
-                itemBuilder: (context) => const [
-                  PopupMenuItem(
+                itemBuilder: (context) => [
+                  AppMenuItem<ServerRole>.labeled(
                     value: ServerRole.admin,
-                    child: Text('Administrador'),
+                    label: 'Administrador',
                   ),
-                  PopupMenuItem(
+                  AppMenuItem<ServerRole>.labeled(
                     value: ServerRole.member,
-                    child: Text('Membro'),
+                    label: 'Membro',
                   ),
                 ],
                 child: ServerRoleBadge(role: member.role),

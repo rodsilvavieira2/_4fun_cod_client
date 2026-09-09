@@ -189,6 +189,7 @@ class UserPanel extends ConsumerWidget {
                         selectedId: devices.preferredInputId,
                         unavailable: devices.preferredInputUnavailable,
                         title: 'Dispositivo de entrada',
+                        deviceIcon: Icons.mic_outlined,
                         onSelected: (id) => _selectInput(context, ref, id),
                       ),
                     ),
@@ -211,6 +212,7 @@ class UserPanel extends ConsumerWidget {
                         selectedId: devices.preferredOutputId,
                         unavailable: devices.preferredOutputUnavailable,
                         title: 'Dispositivo de saída',
+                        deviceIcon: Icons.headset_outlined,
                         onSelected: (id) => _selectOutput(context, ref, id),
                       ),
                     ),
@@ -323,25 +325,20 @@ class UserPanel extends ConsumerWidget {
     }
   }
 
-  PopupMenuButton<String> _audioMenu({
+  Widget _audioMenu({
     required BuildContext context,
     required List<RtcAudioDevice> devices,
     required String? selectedId,
     required bool unavailable,
     required String title,
+    required IconData deviceIcon,
     required Future<void> Function(String? id) onSelected,
   }) {
     const defaultValue = '__system_default__';
     const settingsValue = '__voice_settings__';
-    return PopupMenuButton<String>(
+    return AppMenuButton<String>(
       tooltip: title,
       padding: EdgeInsets.zero,
-      color: AppTokens.surface2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        side: const BorderSide(color: AppTokens.borderSubtle, width: 1),
-      ),
-      elevation: 12,
       icon: const Icon(
         Icons.arrow_drop_down,
         size: 14,
@@ -358,28 +355,15 @@ class UserPanel extends ConsumerWidget {
         unawaited(onSelected(value == defaultValue ? null : value));
       },
       itemBuilder: (context) => [
-        PopupMenuItem<String>(
-          enabled: false,
-          child: Text(
-            title,
-            style: const TextStyle(
-              fontFamily: 'Geist',
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: AppTokens.textMuted,
-            ),
-          ),
-        ),
-        CheckedPopupMenuItem<String>(
+        AppMenuHeader<String>(title: title),
+        AppMenuCheckedItem<String>.labeled(
           value: defaultValue,
           checked: selectedId == null,
-          child: const Text(
-            'Padrão do sistema',
-            style: TextStyle(fontFamily: 'Geist', fontSize: 13),
-          ),
+          icon: deviceIcon,
+          label: 'Padrão do sistema',
         ),
         if (unavailable)
-          const PopupMenuItem<String>(
+          const AppMenuItem<String>(
             enabled: false,
             child: Text(
               'Preferido indisponível; usando o padrão.',
@@ -391,23 +375,19 @@ class UserPanel extends ConsumerWidget {
             ),
           ),
         for (var index = 0; index < devices.length; index++)
-          CheckedPopupMenuItem<String>(
+          AppMenuCheckedItem<String>.labeled(
             value: devices[index].id,
             checked: devices[index].id == selectedId,
-            child: Text(
-              devices[index].label.isEmpty
-                  ? '$title ${index + 1}'
-                  : devices[index].label,
-              style: const TextStyle(fontFamily: 'Geist', fontSize: 13),
-            ),
+            icon: deviceIcon,
+            label: devices[index].label.isEmpty
+                ? '$title ${index + 1}'
+                : devices[index].label,
           ),
-        const PopupMenuDivider(),
-        const PopupMenuItem<String>(
+        const AppMenuDivider(),
+        AppMenuItem<String>.labeled(
           value: settingsValue,
-          child: Text(
-            'Configurações de voz',
-            style: TextStyle(fontFamily: 'Geist', fontSize: 13),
-          ),
+          icon: Icons.settings_outlined,
+          label: 'Configurações de voz',
         ),
       ],
     );
@@ -577,7 +557,7 @@ class _SplitMediaControl extends StatelessWidget {
   final IconData icon;
   final String tooltip;
   final VoidCallback? onMainPressed;
-  final PopupMenuButton<String> menu;
+  final Widget menu;
   final bool isActive;
   final Color? activeColor;
 

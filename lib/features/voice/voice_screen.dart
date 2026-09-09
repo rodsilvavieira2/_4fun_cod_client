@@ -740,7 +740,7 @@ class _Controls extends StatelessWidget {
                   : 'Compartilhar tela',
               onPressed: state.isReconnecting ? null : onToggleScreenShare,
             ),
-            PopupMenuButton<String>(
+            AppMenuButton<String>(
               tooltip: 'Mais opções de voz',
               icon: const Icon(Icons.more_horiz, color: AppTokens.textPrimary),
               onSelected: (value) {
@@ -757,44 +757,25 @@ class _Controls extends StatelessWidget {
                 }
               },
               itemBuilder: (context) => [
-                PopupMenuItem(
+                AppMenuItem<String>.labeled(
                   value: 'quality',
-                  child: Row(
-                    children: const [
-                      Icon(Icons.hd),
-                      SizedBox(width: 12),
-                      Text('Qualidade de transmissão'),
-                    ],
-                  ),
+                  icon: Icons.hd,
+                  label: 'Qualidade de transmissão',
                 ),
-                PopupMenuItem(
+                AppMenuItem<String>.labeled(
                   value: 'settings',
-                  child: Row(
-                    children: const [
-                      Icon(Icons.settings),
-                      SizedBox(width: 12),
-                      Text('Configurações de câmera'),
-                    ],
-                  ),
+                  icon: Icons.settings,
+                  label: 'Configurações de câmera',
                 ),
-                PopupMenuItem(
+                AppMenuItem<String>.labeled(
                   value: 'systemAudio',
                   enabled: !state.isScreenSharing && !state.isReconnecting,
-                  child: Row(
-                    children: [
-                      Icon(
-                        state.includeSystemAudio
-                            ? Icons.volume_up
-                            : Icons.volume_off,
-                      ),
-                      const SizedBox(width: 12),
-                      Text(
-                        state.includeSystemAudio
-                            ? 'Áudio de sistema: ligado'
-                            : 'Áudio de sistema: desligado',
-                      ),
-                    ],
-                  ),
+                  icon: state.includeSystemAudio
+                      ? Icons.volume_up
+                      : Icons.volume_off,
+                  label: state.includeSystemAudio
+                      ? 'Áudio de sistema: ligado'
+                      : 'Áudio de sistema: desligado',
                 ),
               ],
             ),

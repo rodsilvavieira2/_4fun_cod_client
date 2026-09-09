@@ -7,6 +7,7 @@ export 'ds_tokens.dart';
 export 'feedback/app_badge.dart';
 export 'inputs/app_text_field.dart';
 export 'invite_dialog.dart';
+export 'menus/app_menu.dart';
 export 'overlays/app_modal_window.dart';
 export 'presence_dot.dart';
 export 'section_header.dart';
