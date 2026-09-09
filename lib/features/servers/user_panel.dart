@@ -263,8 +263,9 @@ class UserPanel extends ConsumerWidget {
     if (goLive == null) return;
     await notifier.startScreenShare(
       goLive.sourceId,
-      includeSystemAudio: current.includeSystemAudio,
+      includeSystemAudio: goLive.includeAudio,
       quality: goLiveQualityFor(goLive.quality),
+      kind: goLive.kind,
     );
   }
 

@@ -133,6 +133,11 @@ void main() {
       expect(result!.kind, RtcScreenShareSourceKind.display);
       expect(result!.sourceId, isNull);
       expect(result!.quality, GoLiveQuality.auto);
+      expect(
+        result!.includeAudio,
+        isTrue,
+        reason: 'áudio de sistema vai junto por padrão (opt-out)',
+      );
     });
 
     testWidgets('troca de tipo e qualidade reflete no resultado', (
@@ -159,11 +164,44 @@ void main() {
       expect(result!.quality, GoLiveQuality.high);
     });
 
+    testWidgets('opt-out do áudio reflete no resultado', (tester) async {
+      GoLiveResult? result;
+      await _openModal(
+        tester,
+        backend: _FakeScreenShareBackend(usesSystemPicker: true),
+        pending: RtcScreenShareQuality.auto,
+        onResult: (f) => f.then((r) => result = r),
+      );
+
+      await tester.tap(find.text('Incluir áudio do sistema'));
+      await tester.pump();
+      await tester.tap(find.text('Go Live'));
+      await tester.pumpAndSettle();
+
+      expect(result, isNotNull);
+      expect(result!.includeAudio, isFalse);
+    });
+
+    testWidgets('modo janela no Linux avisa mix geral', (tester) async {
+      await _openModal(
+        tester,
+        backend: _FakeScreenShareBackend(usesSystemPicker: true),
+        pending: RtcScreenShareQuality.auto,
+        onResult: (_) async {},
+      );
+
+      await tester.tap(find.text('Janela'));
+      await tester.pump();
+
+      expect(find.textContaining('mix geral do sistema'), findsOneWidget);
+    });
+
     testWidgets('Cancelar retorna null', (tester) async {
       GoLiveResult? result = const GoLiveResult(
         kind: RtcScreenShareSourceKind.display,
         sourceId: 'x',
         quality: GoLiveQuality.high,
+        includeAudio: true,
       );
       var completed = false;
       await _openModal(

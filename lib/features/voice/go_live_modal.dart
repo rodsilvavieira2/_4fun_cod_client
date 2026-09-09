@@ -34,17 +34,20 @@ GoLiveQuality goLiveQualityFromPending(RtcScreenShareQuality pending) =>
     };
 
 /// Escolha confirmada no modal Go Live: tipo de fonte (+ fonte específica
-/// pré-escolhida no Windows, quando houver) e qualidade one-shot.
+/// pré-escolhida no Windows, quando houver), qualidade one-shot e se o áudio
+/// de sistema vai junto (opt-out, default ligado).
 class GoLiveResult {
   const GoLiveResult({
     required this.kind,
     required this.sourceId,
     required this.quality,
+    required this.includeAudio,
   });
 
   final RtcScreenShareSourceKind kind;
   final String? sourceId;
   final GoLiveQuality quality;
+  final bool includeAudio;
 }
 
 /// Modal "Go Live" na língua do modal de configurações ([AppTokens] +
@@ -92,6 +95,9 @@ class _GoLiveDialogState extends State<_GoLiveDialog> {
   late GoLiveQuality _quality = goLiveQualityFromPending(widget.pendingQuality);
   RtcScreenShareSelection? _preselected;
 
+  /// Opt-out do áudio de sistema: ligado por padrão (regra 1 da SPEC).
+  bool _includeAudio = true;
+
   bool get _canUseKind => widget.backend.canUseKind(_kind);
 
   Future<void> _goLive() async {
@@ -109,6 +115,7 @@ class _GoLiveDialogState extends State<_GoLiveDialog> {
         kind: selection.kind,
         sourceId: selection.sourceId,
         quality: _quality,
+        includeAudio: _includeAudio,
       ),
     );
   }
@@ -203,6 +210,33 @@ class _GoLiveDialogState extends State<_GoLiveDialog> {
                         preselected: _preselected != null,
                         onChoose: _chooseSource,
                       ),
+                      const SizedBox(height: 20),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          'Áudio da transmissão.',
+                          style: textTheme.bodyMedium?.copyWith(
+                            color: AppTokens.textPrimary,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      _AudioToggleRow(
+                        value: _includeAudio,
+                        kind: _kind,
+                        onChanged: (value) =>
+                            setState(() => _includeAudio = value),
+                      ),
+                      if (_includeAudio &&
+                          widget.backend.capabilities.usesSystemPicker &&
+                          _kind == RtcScreenShareSourceKind.window) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          'Nesta plataforma o áudio compartilhado é o mix geral do sistema (não é possível isolar só esta janela).',
+                          textAlign: TextAlign.center,
+                          style: textTheme.bodySmall,
+                        ),
+                      ],
                       const SizedBox(height: 20),
                       Align(
                         alignment: Alignment.centerLeft,
@@ -423,6 +457,66 @@ class _SourceNote extends StatelessWidget {
       child: TextButton(
         onPressed: onChoose,
         child: Text(preselected ? 'Trocar de fonte…' : 'Escolher fonte…'),
+      ),
+    );
+  }
+}
+
+/// Toggle "Incluir áudio do sistema" (opt-out, default ligado): o áudio vai
+/// junto com o share a menos que o usuário desligue. O subtítulo espelha a
+/// semântica do modo ativo.
+class _AudioToggleRow extends StatelessWidget {
+  const _AudioToggleRow({
+    required this.value,
+    required this.kind,
+    required this.onChanged,
+  });
+
+  final bool value;
+  final RtcScreenShareSourceKind kind;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+        onTap: () => onChanged(!value),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Incluir áudio do sistema',
+                      style: TextStyle(
+                        fontFamily: 'Geist',
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: AppTokens.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      kind == RtcScreenShareSourceKind.display
+                          ? 'Transmite todo o áudio do sistema.'
+                          : 'Transmite o áudio da janela.',
+                      style: textTheme.bodySmall?.copyWith(
+                        color: AppTokens.textMuted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Switch(value: value, onChanged: onChanged),
+            ],
+          ),
+        ),
       ),
     );
   }

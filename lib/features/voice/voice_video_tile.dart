@@ -250,6 +250,10 @@ class _TileOverlay extends StatelessWidget {
                 source: source == VoiceVideoSource.screen
                     ? RtcAudioSource.screenShareAudio
                     : RtcAudioSource.microphone,
+                // Sem track de áudio na transmissão, o controle mostra mutado.
+                audioAvailable: source == VoiceVideoSource.screen
+                    ? participant.isSystemAudioEnabled
+                    : null,
                 iconColor: AppTokens.textPrimary,
                 iconSize: 15.4,
                 padding: EdgeInsets.zero,

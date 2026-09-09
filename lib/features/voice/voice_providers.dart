@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/logging/app_logger.dart';
+import '../../core/native/native_media_backend.dart';
 import '../../core/rtc/media_devices_provider.dart';
 import '../../core/rtc/rtc_providers.dart';
 import '../../core/rtc/rtc_service.dart';
@@ -38,7 +39,6 @@ class VoiceState {
     this.isMicrophoneEnabled = false,
     this.isCameraEnabled = false,
     this.isScreenSharing = false,
-    this.includeSystemAudio = false,
     this.isSystemAudioEnabled = false,
     this.isDeafened = false,
     this.isReconnecting = false,
@@ -75,12 +75,6 @@ class VoiceState {
   /// Se a tela LOCAL está sendo compartilhada (espelho do botão de share; o
   /// [ScreenShareEnabledChangedEvent] do participante local reconcilia).
   final bool isScreenSharing;
-
-  /// Preferência do PRÓXIMO compartilhamento: incluir o ÁUDIO DE SISTEMA
-  /// (som de jogos/vídeos/música — track de screenShareAudio). Só é lida no
-  /// START do share (toggle desabilitado com share ativo); por sessão,
-  /// resetada no join (padrão de [screenShareQuality]).
-  final bool includeSystemAudio;
 
   /// Se o áudio de sistema LOCAL está sendo transmitido agora (espelho do
   /// [SystemAudioEnabledChangedEvent] do participante local reconcilia).
@@ -148,7 +142,6 @@ class VoiceState {
     bool? isMicrophoneEnabled,
     bool? isCameraEnabled,
     bool? isScreenSharing,
-    bool? includeSystemAudio,
     bool? isSystemAudioEnabled,
     bool? isDeafened,
     bool? isReconnecting,
@@ -176,7 +169,6 @@ class VoiceState {
       isMicrophoneEnabled: isMicrophoneEnabled ?? this.isMicrophoneEnabled,
       isCameraEnabled: isCameraEnabled ?? this.isCameraEnabled,
       isScreenSharing: isScreenSharing ?? this.isScreenSharing,
-      includeSystemAudio: includeSystemAudio ?? this.includeSystemAudio,
       isSystemAudioEnabled: isSystemAudioEnabled ?? this.isSystemAudioEnabled,
       isDeafened: isDeafened ?? this.isDeafened,
       isReconnecting: isReconnecting ?? this.isReconnecting,
@@ -294,8 +286,6 @@ class VoiceController
       errorMessage: null,
       // Sessão nova = perfil de screen share default (decisão: por sessão).
       screenShareQuality: RtcScreenShareQuality.auto,
-      // Preferências de mídia são por sessão.
-      includeSystemAudio: false,
       latencyMs: null,
       selectedCameraId: null,
     );
@@ -347,7 +337,6 @@ class VoiceController
       isMicrophoneEnabled: false,
       isCameraEnabled: false,
       isScreenSharing: false,
-      includeSystemAudio: false,
       isSystemAudioEnabled: false,
       isDeafened: false,
       isReconnecting: false,
@@ -441,17 +430,21 @@ class VoiceController
   /// otimismo antes do await, erro de captura NUNCA derruba a sessão e o
   /// [ScreenShareEnabledChangedEvent] local reconcilia.
   ///
-  /// Com [includeSystemAudio] true, pede o áudio de sistema junto. Falha do
-  /// áudio (sem device monitor no SO) NÃO bloqueia o share: o vídeo já saiu
-  /// e o [SystemAudioPublishException] só troca a mensagem — o
+  /// Com [includeSystemAudio] true (default), pede o áudio de sistema junto.
+  /// Falha do áudio (sem device monitor no SO) NÃO bloqueia o share: o vídeo
+  /// já saiu e o [SystemAudioPublishException] só troca a mensagem — o
   /// [ScreenShareEnabledChangedEvent] confirma o share na sequência.
+  ///
+  /// [kind] serve só ao aviso best-effort de fallback (regra 4 da SPEC):
+  /// Windows + janela sem HWND válido faz o nativo cair no mix geral.
   ///
   /// [quality] one-shot (modal Go Live): vale só para este share, sem alterar
   /// o perfil pendente. Omitido, usa o pendente.
   Future<void> startScreenShare(
     String? sourceId, {
-    bool includeSystemAudio = false,
+    bool includeSystemAudio = true,
     RtcScreenShareQuality? quality,
+    RtcScreenShareSourceKind? kind,
   }) async {
     final current = state;
     if (current.status != VoiceSessionStatus.connected) return;
@@ -493,26 +486,46 @@ class VoiceController
     // One-shot: o estado reflete o pedido (o pendente ficou intacto).
     // Pendente: o getter já reflete o pós-start (inclui fallback para Auto).
     final effectiveQuality = quality ?? rtc.screenShareQuality;
+    final warnings = <String>[];
+    if (effectiveQuality != (quality ?? current.screenShareQuality)) {
+      warnings.add(
+        'Não foi possível aplicar a qualidade escolhida; transmissão mantida em Auto.',
+      );
+    }
+    if (_usedSystemMixFallback(
+      kind: kind,
+      sourceId: sourceId,
+      includeAudio: includeSystemAudio,
+    )) {
+      warnings.add(
+        'Não foi possível isolar o áudio da janela; transmitindo o áudio geral do sistema.',
+      );
+    }
     state = state.copyWith(
       isScreenSharing: true,
       screenShareQuality: effectiveQuality,
-      errorMessage: effectiveQuality == (quality ?? current.screenShareQuality)
-          ? null
-          : 'Não foi possível aplicar a qualidade escolhida; transmissão mantida em Auto.',
+      errorMessage: warnings.isEmpty ? null : warnings.join(' '),
     );
   }
 
-  /// Alterna a preferência de incluir o ÁUDIO DE SISTEMA no PRÓXIMO
-  /// compartilhamento (botão da barra de controles). No-op com share ativo:
-  /// a decisão é lida apenas no start — mudar ao vivo exigiria
-  /// despublicar/republicar (fora do escopo V1).
-  void toggleIncludeSystemAudio() {
-    if (state.status != VoiceSessionStatus.connected) return;
-    if (state.isScreenSharing) return;
-    state = state.copyWith(
-      includeSystemAudio: !state.includeSystemAudio,
-      errorMessage: null,
-    );
+  /// Best-effort (regra 4 da SPEC): detecta quando o nativo Windows caiu no
+  /// mix geral — janela sem HWND decimal válido (o factory faz
+  /// `stoull(source_id)` e usa o mix geral em qualquer falha). No Linux
+  /// (system picker) o mix geral no modo janela é o comportamento
+  /// documentado no modal — sem aviso.
+  bool _usedSystemMixFallback({
+    required RtcScreenShareSourceKind? kind,
+    required String? sourceId,
+    required bool includeAudio,
+  }) {
+    if (!includeAudio || kind != RtcScreenShareSourceKind.window) return false;
+    final usesSystemPicker = ref
+        .read(nativeMediaServicesProvider)
+        .screenShare
+        .capabilities
+        .usesSystemPicker;
+    if (usesSystemPicker) return false;
+    return sourceId == null || int.tryParse(sourceId) == null;
   }
 
   /// Encerra o compartilhamento de tela local (botão ativo → parar).
@@ -863,7 +876,6 @@ class VoiceController
           isCameraEnabled: false,
           isScreenSharing: false,
           screenShareQuality: RtcScreenShareQuality.auto,
-          includeSystemAudio: false,
           isSystemAudioEnabled: false,
           isDeafened: false,
           isReconnecting: false,
@@ -945,7 +957,6 @@ class VoiceController
           isCameraEnabled: false,
           isScreenSharing: false,
           screenShareQuality: RtcScreenShareQuality.auto,
-          includeSystemAudio: false,
           isSystemAudioEnabled: false,
           isAudioBlocked: false,
           latencyMs: null,

@@ -374,7 +374,7 @@ abstract class RtcService {
   /// perfil pendente (comportamento histórico).
   Future<void> startScreenShare(
     String? sourceId, {
-    bool includeSystemAudio = false,
+    bool includeSystemAudio = true,
     RtcScreenShareQuality? quality,
   });
 

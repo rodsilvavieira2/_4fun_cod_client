@@ -509,7 +509,7 @@ class LiveKitRtcService implements RtcService {
   @override
   Future<void> startScreenShare(
     String? sourceId, {
-    bool includeSystemAudio = false,
+    bool includeSystemAudio = true,
     RtcScreenShareQuality? quality,
   }) async {
     final room = _room;

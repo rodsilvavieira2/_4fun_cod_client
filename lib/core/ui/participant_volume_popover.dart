@@ -16,6 +16,7 @@ class ParticipantVolumeButton extends ConsumerWidget {
     this.iconSize = 14,
     this.padding,
     this.constraints,
+    this.audioAvailable,
   });
 
   /// Identity estável do LiveKit (`user_<userId>`).
@@ -24,6 +25,11 @@ class ParticipantVolumeButton extends ConsumerWidget {
 
   /// Fonte controlada: voz ou áudio da transmissão (tile de tela).
   final RtcAudioSource source;
+
+  /// Se a fonte existe de verdade (null = desconhecido, comportamento atual).
+  /// Tile de tela sem track de `screenShareAudio` passa false → ícone mutado
+  /// (regra 6 da SPEC de áudio de sistema).
+  final bool? audioAvailable;
   final Color iconColor;
   final double iconSize;
 
@@ -39,7 +45,12 @@ class ParticipantVolumeButton extends ConsumerWidget {
       displayName: displayName,
       source: source,
       builder: (context, controller, percent, muted, child) {
-        final label = muted ? 'silenciado' : '$percent%';
+        final noAudio = audioAvailable == false;
+        final label = noAudio
+            ? 'sem áudio'
+            : muted
+            ? 'silenciado'
+            : '$percent%';
         final tooltip = source == RtcAudioSource.screenShareAudio
             ? 'Volume da transmissão de $displayName ($label)'
             : 'Volume de $displayName ($label)';
@@ -48,7 +59,7 @@ class ParticipantVolumeButton extends ConsumerWidget {
           padding: padding ?? const EdgeInsets.all(8),
           constraints: constraints,
           icon: Icon(
-            muted || percent == 0
+            noAudio || muted || percent == 0
                 ? Icons.volume_off
                 : percent > 100
                 ? Icons.volume_up
