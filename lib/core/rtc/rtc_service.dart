@@ -439,6 +439,12 @@ abstract class RtcService {
   /// Troca de microfone, reconnect e unmute devem reaplicar este ganho.
   Future<void> setInputVolume(double gain);
 
+  /// Liga/desliga a supressão de ruído nativa do WebRTC no microfone local.
+  ///
+  /// Echo cancellation, AGC e high-pass continuam ligados. Sem sala ativa,
+  /// fica pendente para a próxima publicação do microfone.
+  Future<void> setNoiseSuppressionEnabled(bool enabled);
+
   /// Define o volume individual de um participante remoto, como ganho
   /// `0.0..2.0`. Aplica-se a TODAS as faixas de áudio dele (voz + áudio de
   /// screen share). Local/desconhecido → no-op seguro. Sem sala ativa, fica

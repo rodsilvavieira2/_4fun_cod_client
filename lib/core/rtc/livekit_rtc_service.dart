@@ -83,10 +83,9 @@ class LiveKitRtcService implements RtcService {
   /// - screen share usa um teto de captura 1080p60 e publica inicialmente no
   ///   perfil Auto (1080p15), com simulcast calculado pelo SDK.
   static final RoomOptions defaultRoomOptions = RoomOptions(
-    defaultAudioCaptureOptions: const AudioCaptureOptions(
-      echoCancellation: true,
-      noiseSuppression: true,
-      autoGainControl: true,
+    defaultAudioCaptureOptions: _buildMicrophoneCaptureOptions(
+      noiseSuppressionEnabled: true,
+      defaults: const AudioCaptureOptions(),
     ),
     defaultAudioPublishOptions: const AudioPublishOptions(
       encoding: AudioEncoding(maxBitrate: 64000),
@@ -105,6 +104,37 @@ class LiveKitRtcService implements RtcService {
   static const VideoParameters screenShareH1080FPS60 = VideoParameters(
     dimensions: VideoDimensions(1920, 1080),
     encoding: VideoEncoding(maxBitrate: 8000000, maxFramerate: 60),
+  );
+
+  @visibleForTesting
+  static AudioCaptureOptions microphoneCaptureOptionsForTesting({
+    required bool noiseSuppressionEnabled,
+    String? deviceId,
+    AudioCaptureOptions defaults = const AudioCaptureOptions(),
+  }) => _buildMicrophoneCaptureOptions(
+    noiseSuppressionEnabled: noiseSuppressionEnabled,
+    deviceId: deviceId,
+    defaults: defaults,
+  );
+
+  static AudioCaptureOptions _buildMicrophoneCaptureOptions({
+    required bool noiseSuppressionEnabled,
+    String? deviceId,
+    required AudioCaptureOptions defaults,
+  }) => AudioCaptureOptions(
+    deviceId: deviceId,
+    echoCancellation: true,
+    noiseSuppression: noiseSuppressionEnabled,
+    autoGainControl: true,
+    highPassFilter: true,
+    echoCancellationMode: defaults.echoCancellationMode,
+    noiseSuppressionMode: defaults.noiseSuppressionMode,
+    autoGainControlMode: defaults.autoGainControlMode,
+    highPassFilterMode: defaults.highPassFilterMode,
+    voiceIsolation: noiseSuppressionEnabled,
+    typingNoiseDetection: noiseSuppressionEnabled,
+    stopAudioCaptureOnMute: defaults.stopAudioCaptureOnMute,
+    processor: defaults.processor,
   );
 
   /// Opções da sala. O microfone é publicado conforme a preferência global
@@ -141,6 +171,7 @@ class LiveKitRtcService implements RtcService {
   String? _selectedAudioOutputId;
   bool _microphoneEnabled = true;
   bool _remoteAudioEnabled = true;
+  bool _noiseSuppressionEnabled = true;
 
   /// Volume de voz (fatia volumes): entrada `0.0..1.0`, demais `0.0..2.0`.
   /// Pendentes sem sala — aplicados em publicação/subscribe/reconexão/device.
@@ -268,7 +299,10 @@ class LiveKitRtcService implements RtcService {
       return;
     }
     try {
-      await localParticipant.setMicrophoneEnabled(_microphoneEnabled);
+      await localParticipant.setMicrophoneEnabled(
+        _microphoneEnabled,
+        audioCaptureOptions: _currentMicrophoneCaptureOptions(room),
+      );
       await _applyInputVolumeToMicrophone();
     } catch (_) {
       // Falha ao publicar o mic: NUNCA deixa o Room órfão — limpa e propaga.
@@ -311,7 +345,10 @@ class LiveKitRtcService implements RtcService {
       _microphoneEnabled = true;
       return;
     }
-    await localParticipant.setMicrophoneEnabled(true);
+    await localParticipant.setMicrophoneEnabled(
+      true,
+      audioCaptureOptions: _currentMicrophoneCaptureOptions(room),
+    );
     _microphoneEnabled = true;
     await _applyInputVolumeToMicrophone();
     // O estado é atualizado pelos eventos TrackMuted/Unmuted +
@@ -687,12 +724,7 @@ class LiveKitRtcService implements RtcService {
     //    Construtor + createStream são @internal na 2.11.0 (track/local/
     //    audio.dart:162, local.dart:245): aceitos como dependência conhecida,
     //    documentada — o próprio SDK usa o padrão para o browser.
-    final captureOptions = AudioCaptureOptions(
-      deviceId: monitorId,
-      echoCancellation: false,
-      noiseSuppression: false,
-      autoGainControl: false,
-    );
+    final captureOptions = systemAudioCaptureOptionsFor(monitorId);
     // ignore: invalid_use_of_internal_member
     final stream = await LocalTrack.createStream(captureOptions);
     // ignore: invalid_use_of_internal_member
@@ -830,6 +862,8 @@ class LiveKitRtcService implements RtcService {
     final room = _room;
     if (room != null) {
       await room.setAudioInputDevice(device);
+      _selectedAudioInputId = deviceId;
+      _syncRoomAudioCaptureOptions(room);
       await _applyInputVolumeToMicrophone();
     } else if (!kIsWeb) {
       await _nativeMediaServices.audioDevices.selectInput(device);
@@ -915,6 +949,47 @@ class LiveKitRtcService implements RtcService {
   Future<void> setInputVolume(double gain) async {
     _inputGain = normalizeInputGain(gain);
     await _applyInputVolumeToMicrophone();
+  }
+
+  @override
+  Future<void> setNoiseSuppressionEnabled(bool enabled) async {
+    if (_disposed) return;
+    if (_noiseSuppressionEnabled == enabled) return;
+
+    final previousEnabled = _noiseSuppressionEnabled;
+    _noiseSuppressionEnabled = enabled;
+
+    final room = _room;
+    if (room == null) return;
+
+    final localParticipant = room.localParticipant;
+    final publication = localParticipant?.getTrackPublicationBySource(
+      TrackSource.microphone,
+    );
+    final track = publication?.track;
+    final nextRoomOptions = _syncRoomAudioCaptureOptions(room);
+
+    if (track is! LocalAudioTrack) return;
+
+    final previousTrackOptions = track.currentOptions;
+    final nextTrackOptions = _microphoneCaptureOptions(
+      base: previousTrackOptions,
+      deviceId: nextRoomOptions.deviceId,
+    );
+
+    try {
+      if (publication?.muted ?? track.muted) {
+        track.currentOptions = nextTrackOptions;
+        return;
+      }
+      await track.restartTrack(nextTrackOptions);
+      await _applyInputVolumeToMicrophone();
+    } catch (_) {
+      _noiseSuppressionEnabled = previousEnabled;
+      _syncRoomAudioCaptureOptions(room);
+      track.currentOptions = previousTrackOptions;
+      rethrow;
+    }
   }
 
   @override
@@ -1504,7 +1579,7 @@ class LiveKitRtcService implements RtcService {
         break;
       }
 
-      final room = Room(roomOptions: _roomOptions);
+      final room = Room(roomOptions: _effectiveRoomOptions());
       _room = room;
       _wire(room);
       try {
@@ -1525,7 +1600,10 @@ class LiveKitRtcService implements RtcService {
       try {
         // Reaplica a preferência global antes de notificar a UI. Câmera/share
         // locais continuam desligados após a reconexão.
-        await localParticipant.setMicrophoneEnabled(_microphoneEnabled);
+        await localParticipant.setMicrophoneEnabled(
+          _microphoneEnabled,
+          audioCaptureOptions: _currentMicrophoneCaptureOptions(room),
+        );
       } catch (error) {
         debugPrint('[rtc] falha ao republicar o mic na reconexão: $error');
         await _teardownRoom();
@@ -1568,8 +1646,43 @@ class LiveKitRtcService implements RtcService {
     await _teardownRoom();
   }
 
+  AudioCaptureOptions _microphoneCaptureOptions({
+    required AudioCaptureOptions base,
+    String? deviceId,
+  }) => _buildMicrophoneCaptureOptions(
+    noiseSuppressionEnabled: _noiseSuppressionEnabled,
+    deviceId: deviceId,
+    defaults: base,
+  );
+
+  AudioCaptureOptions _currentMicrophoneCaptureOptions([Room? room]) {
+    final base =
+        room?.roomOptions.defaultAudioCaptureOptions ??
+        _roomOptions.defaultAudioCaptureOptions;
+    return _microphoneCaptureOptions(
+      base: base,
+      deviceId: _selectedAudioInputId ?? base.deviceId,
+    );
+  }
+
+  AudioCaptureOptions _syncRoomAudioCaptureOptions(Room room) {
+    final options = _currentMicrophoneCaptureOptions(room);
+    // O SDK atual só expõe o default mutável pela engine interna; mantemos o
+    // uso isolado aqui, igual ao acesso de stats da conexão.
+    // ignore: invalid_use_of_internal_member
+    room.engine.roomOptions = room.roomOptions.copyWith(
+      defaultAudioCaptureOptions: options,
+    );
+    return options;
+  }
+
   RoomOptions _effectiveRoomOptions() {
-    var options = _roomOptions;
+    var options = _roomOptions.copyWith(
+      defaultAudioCaptureOptions: _microphoneCaptureOptions(
+        base: _roomOptions.defaultAudioCaptureOptions,
+        deviceId: _selectedAudioInputId,
+      ),
+    );
     final audioInputId = _selectedAudioInputId;
     if (audioInputId != null) {
       options = options.copyWith(
@@ -1867,6 +1980,18 @@ ScreenShareCaptureOptions screenShareCaptureOptionsFor(String? sourceId) =>
       sourceId: sourceId,
       maxFrameRate: 60,
       params: LiveKitRtcService.screenShareH1080FPS60,
+    );
+
+@visibleForTesting
+AudioCaptureOptions systemAudioCaptureOptionsFor(String deviceId) =>
+    AudioCaptureOptions(
+      deviceId: deviceId,
+      echoCancellation: false,
+      noiseSuppression: false,
+      autoGainControl: false,
+      highPassFilter: false,
+      voiceIsolation: false,
+      typingNoiseDetection: false,
     );
 
 /// Transforma cada camada a partir do baseline do sender, preservando RID e

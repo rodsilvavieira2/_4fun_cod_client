@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../rtc/media_devices_provider.dart';
 import '../../rtc/rtc_service.dart';
 import '../section_header.dart';
+import '../../../features/voice/voice_audio_processing_provider.dart';
 import '../../../features/voice/voice_controls_provider.dart';
 import '../../../features/voice/voice_volume_controller.dart';
 
@@ -63,6 +64,8 @@ class VoiceVideoSection extends ConsumerWidget {
         const SizedBox(height: 24),
         const _InputVolumeField(),
         const SizedBox(height: 16),
+        const _NoiseSuppressionField(),
+        const SizedBox(height: 16),
         const _OutputVolumeField(),
         const SizedBox(height: 24),
         const Divider(),
@@ -72,6 +75,49 @@ class VoiceVideoSection extends ConsumerWidget {
           const SizedBox(height: 12),
           Text(
             state.errorMessage!,
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.error,
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _NoiseSuppressionField extends ConsumerWidget {
+  const _NoiseSuppressionField();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(voiceAudioProcessingProvider);
+    final controller = ref.read(voiceAudioProcessingProvider.notifier);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Supressão de ruído',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ),
+            Switch(
+              value: state.isNoiseSuppressionEnabled,
+              onChanged: state.isApplying
+                  ? null
+                  : (enabled) => unawaited(
+                      controller.setNoiseSuppressionEnabled(enabled),
+                    ),
+            ),
+          ],
+        ),
+        if (state.errorMessage case final message?) ...[
+          const SizedBox(height: 2),
+          Text(
+            message,
             style: TextStyle(
               color: Theme.of(context).colorScheme.error,
               fontSize: 12,

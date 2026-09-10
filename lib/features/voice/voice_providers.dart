@@ -9,6 +9,7 @@ import '../../core/rtc/rtc_providers.dart';
 import '../../core/rtc/rtc_service.dart';
 import '../../shared/models/voice.dart';
 import '../servers/servers_providers.dart';
+import 'voice_audio_processing_provider.dart';
 import 'voice_controls_provider.dart';
 
 /// Estado da sessão de voz de um canal.
@@ -301,6 +302,10 @@ class VoiceController
       final generation = ++_joinGeneration;
       try {
         await ref.read(voiceControlsProvider.notifier).ensureInitialized();
+        if (_disposed || generation != _joinGeneration) return;
+        await ref
+            .read(voiceAudioProcessingProvider.notifier)
+            .ensureInitialized();
         if (_disposed || generation != _joinGeneration) return;
         await ref.read(audioDevicesProvider.notifier).ensureInitialized();
         if (_disposed || generation != _joinGeneration) return;

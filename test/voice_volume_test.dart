@@ -94,6 +94,45 @@ void main() {
       expect(LiveKitRtcService.effectiveVolumeGain(0.0, 2.0), 0.0);
       expect(LiveKitRtcService.effectiveVolumeGain(1.0, 1.0), 1.0);
     });
+
+    test('opções do microfone fixam EC/AGC/high-pass e alternam ruído', () {
+      final enabled = LiveKitRtcService.microphoneCaptureOptionsForTesting(
+        noiseSuppressionEnabled: true,
+        deviceId: 'mic-usb',
+      );
+      final disabled = LiveKitRtcService.microphoneCaptureOptionsForTesting(
+        noiseSuppressionEnabled: false,
+        deviceId: 'mic-usb',
+      );
+
+      expect(enabled.deviceId, 'mic-usb');
+      expect(enabled.echoCancellation, isTrue);
+      expect(enabled.noiseSuppression, isTrue);
+      expect(enabled.autoGainControl, isTrue);
+      expect(enabled.highPassFilter, isTrue);
+      expect(enabled.voiceIsolation, isTrue);
+      expect(enabled.typingNoiseDetection, isTrue);
+
+      expect(disabled.deviceId, 'mic-usb');
+      expect(disabled.echoCancellation, isTrue);
+      expect(disabled.noiseSuppression, isFalse);
+      expect(disabled.autoGainControl, isTrue);
+      expect(disabled.highPassFilter, isTrue);
+      expect(disabled.voiceIsolation, isFalse);
+      expect(disabled.typingNoiseDetection, isFalse);
+    });
+
+    test('áudio de sistema não usa processamento de voz', () {
+      final options = systemAudioCaptureOptionsFor('monitor-id');
+
+      expect(options.deviceId, 'monitor-id');
+      expect(options.echoCancellation, isFalse);
+      expect(options.noiseSuppression, isFalse);
+      expect(options.autoGainControl, isFalse);
+      expect(options.highPassFilter, isFalse);
+      expect(options.voiceIsolation, isFalse);
+      expect(options.typingNoiseDetection, isFalse);
+    });
   });
 
   group('VoiceVolumeController', () {

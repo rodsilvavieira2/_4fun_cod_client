@@ -10,7 +10,9 @@ import 'package:fourfun_cod_client/core/auth/auth_controller.dart';
 import 'package:fourfun_cod_client/core/auth/auth_state.dart';
 import 'package:fourfun_cod_client/core/rtc/rtc_providers.dart';
 import 'package:fourfun_cod_client/core/rtc/rtc_service.dart';
+import 'package:fourfun_cod_client/core/ui/settings_sections/voice_video_section.dart';
 import 'package:fourfun_cod_client/features/servers/user_panel.dart';
+import 'package:fourfun_cod_client/features/voice/voice_audio_processing_provider.dart';
 import 'package:fourfun_cod_client/features/voice/voice_controls_provider.dart';
 import 'package:fourfun_cod_client/features/voice/voice_providers.dart';
 import 'package:fourfun_cod_client/features/voice/voice_volume_controller.dart';
@@ -31,6 +33,7 @@ class _FakeRtcService implements RtcService {
   int disableMicrophoneCalls = 0;
   double inputGain = 1.0;
   double outputGain = 1.0;
+  bool noiseSuppressionEnabled = true;
   final List<bool> remoteAudioSelections = [];
   List<RtcAudioDevice> inputs = const [
     RtcAudioDevice(
@@ -81,6 +84,11 @@ class _FakeRtcService implements RtcService {
 
   @override
   Future<void> setOutputVolume(double gain) async => outputGain = gain;
+
+  @override
+  Future<void> setNoiseSuppressionEnabled(bool enabled) async {
+    noiseSuppressionEnabled = enabled;
+  }
 
   @override
   dynamic noSuchMethod(Invocation invocation) => null;
@@ -227,6 +235,47 @@ void main() {
 
     expect(container.read(voiceVolumeProvider).inputPercent, 50);
     expect(rtc.inputGain, 0.5);
+  });
+
+  testWidgets('Voz e Vídeo exibe e aplica supressão de ruído', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      VoiceAudioProcessingController.noiseSuppressionKey: false,
+    });
+    final rtc = _FakeRtcService();
+    final container = ProviderContainer(
+      overrides: [rtcServiceProvider.overrideWithValue(rtc)],
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          theme: theme4funCod,
+          home: const Scaffold(
+            body: SingleChildScrollView(child: VoiceVideoSection()),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Supressão de ruído'), findsOneWidget);
+    expect(tester.widget<Switch>(find.byType(Switch).first).value, isFalse);
+
+    tester.widget<Switch>(find.byType(Switch).first).onChanged?.call(true);
+    await tester.pumpAndSettle();
+
+    final preferences = await SharedPreferences.getInstance();
+    expect(rtc.noiseSuppressionEnabled, isTrue);
+    expect(
+      container.read(voiceAudioProcessingProvider).isNoiseSuppressionEnabled,
+      isTrue,
+    );
+    expect(
+      preferences.getBool(VoiceAudioProcessingController.noiseSuppressionKey),
+      isTrue,
+    );
   });
 
   testWidgets('UserPanel organiza ações de voz acima dos controles pessoais', (

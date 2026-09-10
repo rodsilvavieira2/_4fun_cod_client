@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:fourfun_cod_client/core/api/api_exception.dart';
 import 'package:fourfun_cod_client/core/native/native_media_backend.dart';
@@ -9,6 +10,7 @@ import 'package:fourfun_cod_client/core/rtc/rtc_providers.dart';
 import 'package:fourfun_cod_client/core/rtc/rtc_service.dart';
 import 'package:fourfun_cod_client/features/servers/servers_providers.dart';
 import 'package:fourfun_cod_client/features/servers/servers_repository.dart';
+import 'package:fourfun_cod_client/features/voice/voice_audio_processing_provider.dart';
 import 'package:fourfun_cod_client/features/voice/voice_controls_provider.dart';
 import 'package:fourfun_cod_client/features/voice/voice_providers.dart';
 import 'package:fourfun_cod_client/shared/models/voice.dart';
@@ -58,6 +60,7 @@ class FakeRtcService implements RtcService {
   String? selectedAudioInputId;
   String? selectedAudioOutputId;
   bool remoteAudioEnabled = true;
+  bool noiseSuppressionEnabled = true;
   RtcVideoTrackRef? cameraTrackRef;
 
   // Contrato de qualidade do screen share — registra escolhas pendentes e
@@ -271,6 +274,11 @@ class FakeRtcService implements RtcService {
   Future<void> setInputVolume(double gain) async {}
 
   @override
+  Future<void> setNoiseSuppressionEnabled(bool enabled) async {
+    noiseSuppressionEnabled = enabled;
+  }
+
+  @override
   Future<void> setParticipantVolume(String identity, double gain) async {}
 
   @override
@@ -343,6 +351,7 @@ void main() {
     late FakeRtcService rtc;
 
     setUp(() {
+      SharedPreferences.setMockInitialValues({});
       repo = FakeServersRepository();
       rtc = FakeRtcService();
       container = ProviderContainer(
@@ -400,6 +409,21 @@ void main() {
         );
       },
     );
+
+    test('join restaura supressão de ruído antes de conectar', () async {
+      SharedPreferences.setMockInitialValues({
+        VoiceAudioProcessingController.noiseSuppressionKey: false,
+      });
+      repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
+      final notifier = buildVoice();
+
+      await notifier.join();
+      await settle();
+
+      expect(rtc.noiseSuppressionEnabled, isFalse);
+      expect(rtc.connections, [(url: 'wss://livekit.test', token: 'token-1')]);
+      expect(state().status, VoiceSessionStatus.connected);
+    });
 
     test(
       'falha de connect refaz o join e reconecta com token fresco',
@@ -537,6 +561,8 @@ void main() {
         isTrue,
         reason: 'mic entra ATIVO por padrão (Fase 7)',
       );
+      rtc.enableMicCalls = 0;
+      rtc.disableMicCalls = 0;
 
       await notifier.toggleMicrophone();
       await settle();
@@ -553,6 +579,11 @@ void main() {
       'toggleMicrophone fora da sessão fica pendente para o próximo join',
       () async {
         final notifier = buildVoice();
+        await container
+            .read(voiceControlsProvider.notifier)
+            .ensureInitialized();
+        rtc.enableMicCalls = 0;
+        rtc.disableMicCalls = 0;
 
         await notifier.toggleMicrophone();
         await settle();
@@ -568,6 +599,8 @@ void main() {
       final notifier = buildVoice();
       await notifier.join();
       await settle();
+      rtc.enableMicCalls = 0;
+      rtc.disableMicCalls = 0;
 
       await notifier.toggleDeafen();
 
@@ -937,6 +970,7 @@ void main() {
         final notifier = buildVoice();
         await notifier.join();
         await settle();
+        rtc.listCameraDevicesCalls = 0;
 
         rtc.cameraDevices = const [
           RtcVideoDevice(id: 'dev-1', label: 'Webcam integrada'),
