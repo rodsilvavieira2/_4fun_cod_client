@@ -1,4 +1,6 @@
+import 'dart:math' as math;
 import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -61,16 +63,17 @@ class _SettingsModalState extends State<_SettingsModal> {
 
   @override
   Widget build(BuildContext context) {
-    // Modal ocupa 90% da área disponível (largura e altura).
     final screenSize = MediaQuery.sizeOf(context);
+    final maxWidth = math.min(920.0, math.max(320.0, screenSize.width - 32));
+    final maxHeight = math.min(680.0, math.max(320.0, screenSize.height - 32));
     return SettingsModalEscClose(
       child: Center(
         child: ConstrainedBox(
           constraints: BoxConstraints(
-            maxWidth: screenSize.width * 0.9,
-            maxHeight: screenSize.height * 0.9,
-            minWidth: 320,
-            minHeight: 320,
+            maxWidth: maxWidth,
+            maxHeight: maxHeight,
+            minWidth: math.min(620.0, maxWidth),
+            minHeight: math.min(420.0, maxHeight),
           ),
           child: Material(
             color: Colors.transparent,
@@ -89,7 +92,7 @@ class _SettingsModalState extends State<_SettingsModal> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       SizedBox(
-                        width: 190,
+                        width: 202,
                         child: SettingsModalSidebar(
                           section: _section,
                           onSectionChanged: (section) =>
@@ -126,8 +129,8 @@ class _SettingsBody extends StatelessWidget {
     return Column(
       children: [
         Container(
-          height: 48,
-          padding: const EdgeInsets.symmetric(horizontal: 16),
+          height: 44,
+          padding: const EdgeInsets.fromLTRB(16, 0, 10, 0),
           decoration: const BoxDecoration(
             border: Border(
               bottom: BorderSide(color: AppTokens.borderHairline, width: 1),
@@ -142,7 +145,7 @@ class _SettingsBody extends StatelessWidget {
                   fontSize: 14.5,
                   fontWeight: FontWeight.w600,
                   color: AppTokens.textPrimary,
-                  letterSpacing: -0.2,
+                  letterSpacing: 0,
                 ),
               ),
               const Spacer(),
@@ -155,18 +158,19 @@ class _SettingsBody extends StatelessWidget {
           ),
         ),
         Expanded(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(20),
-            child: switch (section) {
-              SettingsSection.account => AccountSection(
-                onCloseSettings: onClose,
-              ),
-              SettingsSection.appearance => const AppearanceSection(),
-              SettingsSection.voiceVideo => const VoiceVideoSection(),
-              SettingsSection.notifications => const NotificationsSection(),
-              SettingsSection.updates => const UpdatesSection(),
-              SettingsSection.signOut => const SizedBox.shrink(),
-            },
+          child: Scrollbar(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
+              child: switch (section) {
+                SettingsSection.account => AccountSection(
+                  onCloseSettings: onClose,
+                ),
+                SettingsSection.voiceVideo => const VoiceVideoSection(),
+                SettingsSection.notifications => const NotificationsSection(),
+                SettingsSection.appearance => const AppearanceSection(),
+                SettingsSection.updates => const UpdatesSection(),
+              },
+            ),
           ),
         ),
       ],

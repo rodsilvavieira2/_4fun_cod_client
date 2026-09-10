@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../section_header.dart';
+import '../settings_section_layout.dart';
+import '../ui.dart';
 
 /// Seção Aparência do modal (UI shell): tema único (dark) — sem toggle
 /// funcional (não há persistência de preferência no client).
@@ -9,23 +10,18 @@ class AppearanceSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+    return const SettingsStack(
       children: [
-        const SectionHeader('APARÊNCIA'),
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'Tema',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-              ),
-              const Text('Escuro (fixo)', style: TextStyle(fontSize: 14)),
-            ],
-          ),
+        SettingsGroup(
+          title: 'Interface',
+          children: [
+            SettingsRow(
+              icon: Icons.dark_mode_outlined,
+              title: 'Tema',
+              subtitle: 'Escuro',
+              trailing: AppBadge(label: 'Fixo'),
+            ),
+          ],
         ),
       ],
     );

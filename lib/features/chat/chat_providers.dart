@@ -135,15 +135,36 @@ class ChatController
   /// no [_applyEvent] torna a inserção idempotente quando o evento
   /// `message.created` chegar pelo socket (autor fora da room durante uma
   /// queda de rede não perde a própria mensagem da tela).
-  Future<void> send(String content) async {
+  Future<void> send(
+    String content, {
+    ChatMessageKind kind = ChatMessageKind.text,
+    String? gifUrl,
+    String? replyToId,
+  }) async {
     final message = await ref
         .read(serversRepositoryProvider)
-        .sendMessage(arg.channelId, content);
+        .sendMessage(
+          arg.channelId,
+          content,
+          kind: kind,
+          gifUrl: gifUrl,
+          replyToId: replyToId,
+        );
     if (_disposed) return;
     final current = state.valueOrNull;
     if (current == null) return;
     _applyEvent(
       MessageCreatedEvent(channelId: arg.channelId, message: message),
+    );
+  }
+
+  Future<void> toggleReaction(String messageId, String emoji) async {
+    final message = await ref
+        .read(serversRepositoryProvider)
+        .toggleMessageReaction(messageId, emoji);
+    if (_disposed) return;
+    _applyEvent(
+      MessageUpdatedEvent(channelId: arg.channelId, message: message),
     );
   }
 

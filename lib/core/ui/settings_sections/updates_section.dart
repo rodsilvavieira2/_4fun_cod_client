@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../updates/app_update_state.dart';
 import '../../updates/update_config.dart';
 import '../../updates/update_providers.dart';
+import '../settings_section_layout.dart';
 import '../ui.dart';
 
 /// Seção Atualizações do modal: versão instalada, estado do feed e ações
@@ -39,77 +40,123 @@ class UpdatesSection extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const SectionHeader('ATUALIZAÇÕES'),
-        _Row(label: 'Versão instalada', value: backend.currentVersion ?? '…'),
-        _Row(label: 'Última disponível', value: backend.latestVersion ?? '—'),
-        _Row(label: 'Estado', value: _statusLabel(status, backend)),
-        if (status == AppUpdateStatus.failed && backend.errorMessage != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: Text(
-              backend.errorMessage!,
-              style: Theme.of(
-                context,
-              ).textTheme.bodySmall?.copyWith(color: AppTokens.accentDanger),
-            ),
-          ),
-        if (status == AppUpdateStatus.upToDate && backend.manualUpToDate)
-          Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: Text(
-              'Você já está na última versão.',
-              style: Theme.of(
-                context,
-              ).textTheme.bodySmall?.copyWith(color: AppTokens.accentGreen),
-            ),
-          ),
-        const SizedBox(height: 12),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
+        SettingsStack(
           children: [
-            if (backend.isSupported) ...[
-              AppButton(
-                label: 'Verificar atualizações',
-                size: AppButtonSize.sm,
-                variant: AppButtonVariant.secondary,
-                onPressed: status == AppUpdateStatus.checking
-                    ? null
-                    : () => _run(context, backend, () async {
-                        await backend.checkForUpdates();
-                      }),
+            SettingsGroup(
+              title: 'Status',
+              children: [
+                SettingsRow(
+                  icon: Icons.inventory_2_outlined,
+                  title: 'Versão instalada',
+                  trailing: SizedBox(
+                    width: 150,
+                    child: SettingsValueText(
+                      backend.currentVersion ?? '…',
+                      monospace: true,
+                    ),
+                  ),
+                ),
+                SettingsRow(
+                  icon: Icons.cloud_download_outlined,
+                  title: 'Última disponível',
+                  trailing: SizedBox(
+                    width: 150,
+                    child: SettingsValueText(
+                      backend.latestVersion ?? '—',
+                      monospace: true,
+                    ),
+                  ),
+                ),
+                SettingsRow(
+                  icon: Icons.info_outline,
+                  title: 'Estado',
+                  trailing: AppBadge(
+                    label: _statusLabel(status, backend),
+                    variant: _statusVariant(status),
+                  ),
+                ),
+              ],
+            ),
+            if (status == AppUpdateStatus.failed &&
+                backend.errorMessage != null)
+              SettingsNotice(
+                message: backend.errorMessage!,
+                tone: SettingsNoticeTone.danger,
               ),
-              if (status == AppUpdateStatus.available && !backend.isDismissed)
-                AppButton(
-                  label: 'Baixar',
-                  size: AppButtonSize.sm,
-                  variant: AppButtonVariant.accent,
-                  onPressed: () =>
-                      _run(context, backend, backend.downloadUpdate),
+            if (status == AppUpdateStatus.upToDate && backend.manualUpToDate)
+              const SettingsNotice(
+                message: 'Você já está na última versão.',
+                tone: SettingsNoticeTone.success,
+              ),
+            SettingsGroup(
+              title: 'Ações',
+              children: [
+                if (backend.isSupported)
+                  SettingsRow(
+                    icon: Icons.sync_outlined,
+                    title: 'Verificar atualizações',
+                    trailing: AppButton(
+                      label: 'Verificar',
+                      icon: Icons.refresh,
+                      size: AppButtonSize.sm,
+                      variant: AppButtonVariant.secondary,
+                      onPressed: status == AppUpdateStatus.checking
+                          ? null
+                          : () => _run(context, backend, () async {
+                              await backend.checkForUpdates();
+                            }),
+                    ),
+                  ),
+                if (backend.isSupported &&
+                    status == AppUpdateStatus.available &&
+                    !backend.isDismissed)
+                  SettingsRow(
+                    icon: Icons.download_outlined,
+                    title: 'Atualização disponível',
+                    trailing: AppButton(
+                      label: 'Baixar',
+                      icon: Icons.download_outlined,
+                      size: AppButtonSize.sm,
+                      variant: AppButtonVariant.accent,
+                      onPressed: () =>
+                          _run(context, backend, backend.downloadUpdate),
+                    ),
+                  ),
+                if (backend.isSupported &&
+                    status == AppUpdateStatus.readyToInstall)
+                  SettingsRow(
+                    icon: Icons.restart_alt,
+                    title: 'Instalação pronta',
+                    trailing: AppButton(
+                      label: 'Reiniciar',
+                      icon: Icons.restart_alt,
+                      size: AppButtonSize.sm,
+                      variant: AppButtonVariant.accent,
+                      onPressed: () =>
+                          _run(context, backend, backend.restartToInstall),
+                    ),
+                  ),
+                SettingsRow(
+                  icon: Icons.link_outlined,
+                  title: 'Link de download',
+                  trailing: AppButton(
+                    label: 'Copiar',
+                    icon: Icons.copy,
+                    size: AppButtonSize.sm,
+                    variant: AppButtonVariant.ghost,
+                    onPressed: () async {
+                      await Clipboard.setData(
+                        const ClipboardData(text: updateReleasesPageUrl),
+                      );
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Link copiado.')),
+                        );
+                      }
+                    },
+                  ),
                 ),
-              if (status == AppUpdateStatus.readyToInstall)
-                AppButton(
-                  label: 'Reiniciar para instalar',
-                  size: AppButtonSize.sm,
-                  variant: AppButtonVariant.accent,
-                  onPressed: () =>
-                      _run(context, backend, backend.restartToInstall),
-                ),
-            ],
-            AppButton(
-              label: 'Copiar link de download',
-              size: AppButtonSize.sm,
-              variant: AppButtonVariant.ghost,
-              onPressed: () async {
-                await Clipboard.setData(
-                  const ClipboardData(text: updateReleasesPageUrl),
-                );
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Link copiado.')),
-                  );
-                }
-              },
+              ],
             ),
           ],
         ),
@@ -133,32 +180,17 @@ class UpdatesSection extends ConsumerWidget {
       AppUpdateStatus.unconfigured => 'Não configurado',
     };
   }
-}
 
-class _Row extends StatelessWidget {
-  const _Row({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(label, style: Theme.of(context).textTheme.bodyMedium),
-          ),
-          Flexible(
-            child: Text(
-              value,
-              textAlign: TextAlign.end,
-              style: const TextStyle(fontSize: 14),
-            ),
-          ),
-        ],
-      ),
-    );
+  static AppBadgeVariant _statusVariant(AppUpdateStatus status) {
+    return switch (status) {
+      AppUpdateStatus.upToDate => AppBadgeVariant.success,
+      AppUpdateStatus.available ||
+      AppUpdateStatus.downloading ||
+      AppUpdateStatus.readyToInstall => AppBadgeVariant.accent,
+      AppUpdateStatus.failed => AppBadgeVariant.danger,
+      AppUpdateStatus.unconfigured => AppBadgeVariant.warning,
+      AppUpdateStatus.idle ||
+      AppUpdateStatus.checking => AppBadgeVariant.neutral,
+    };
   }
 }

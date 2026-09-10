@@ -24,6 +24,9 @@ class AppChatInput extends StatefulWidget {
     this.maxLines = 5,
     this.sendTooltip = 'Enviar mensagem',
     this.sendActiveColor = AppTokens.accentVercel,
+    this.leadingActions = const [],
+    this.topPanel,
+    this.canSendEmpty = false,
   });
 
   /// Dono do texto continua sendo o chamador (ele lê via [onSend] e decide
@@ -39,6 +42,9 @@ class AppChatInput extends StatefulWidget {
   final int maxLines;
   final String sendTooltip;
   final Color sendActiveColor;
+  final List<Widget> leadingActions;
+  final Widget? topPanel;
+  final bool canSendEmpty;
 
   @override
   State<AppChatInput> createState() => _AppChatInputState();
@@ -113,7 +119,7 @@ class _AppChatInputState extends State<AppChatInput> {
   void _submit() {
     if (!widget.enabled) return;
     final text = widget.controller.text.trim();
-    if (text.isEmpty) return;
+    if (text.isEmpty && !widget.canSendEmpty) return;
     widget.onSend(text);
     setState(() {}); // atualiza o estado do botão de envio
     if (_focusNode.canRequestFocus) _focusNode.requestFocus();
@@ -121,89 +127,112 @@ class _AppChatInputState extends State<AppChatInput> {
 
   @override
   Widget build(BuildContext context) {
+    final canSubmit =
+        widget.enabled &&
+        (widget.controller.text.trim().isNotEmpty || widget.canSendEmpty);
     return SafeArea(
       top: false,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
-          constraints: const BoxConstraints(minHeight: 46),
-          decoration: BoxDecoration(
-            color: AppTokens.surface2,
-            borderRadius: BorderRadius.circular(AppRadius.md),
-            border: Border.all(
-              color: _focused ? AppTokens.borderFocus : AppTokens.borderStrong,
-              width: _focused ? 1.2 : 1.0,
-            ),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x44000000),
-                blurRadius: 10,
-                offset: Offset(0, 4),
-              ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (widget.topPanel != null) ...[
+              widget.topPanel!,
+              const SizedBox(height: 8),
             ],
-          ),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(14, 4, 6, 4),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: widget.controller,
-                    focusNode: _focusNode,
-                    enabled: widget.enabled,
-                    autofocus: widget.autofocus,
-                    minLines: 1,
-                    maxLines: widget.maxLines,
-                    keyboardType: TextInputType.multiline,
-                    textInputAction: TextInputAction.newline,
-                    style: const TextStyle(
-                      fontFamily: 'Geist',
-                      fontSize: 13.5,
-                      color: AppTokens.textPrimary,
-                    ),
-                    decoration: InputDecoration(
-                      hintText: widget.hintText,
-                      hintStyle: const TextStyle(
-                        fontFamily: 'Geist',
-                        fontSize: 13.5,
-                        color: AppTokens.textMuted,
-                      ),
-                      // Superfície única: só o container pinta.
-                      filled: false,
-                      fillColor: Colors.transparent,
-                      border: InputBorder.none,
-                      enabledBorder: InputBorder.none,
-                      focusedBorder: InputBorder.none,
-                      disabledBorder: InputBorder.none,
-                      isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 0,
-                        vertical: 10,
-                      ),
-                    ),
-                    onChanged: (_) => setState(() {}),
-                  ),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
+              constraints: const BoxConstraints(minHeight: 46),
+              decoration: BoxDecoration(
+                color: AppTokens.surface2,
+                borderRadius: BorderRadius.circular(AppRadius.md),
+                border: Border.all(
+                  color: _focused
+                      ? AppTokens.borderFocus
+                      : AppTokens.borderStrong,
+                  width: _focused ? 1.2 : 1.0,
                 ),
-                const SizedBox(width: 8),
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: AppIconButton(
-                    icon: Icons.arrow_upward,
-                    tooltip: widget.sendTooltip,
-                    minSize: 30,
-                    iconSize: 16,
-                    isActive:
-                        widget.enabled &&
-                        widget.controller.text.trim().isNotEmpty,
-                    activeColor: widget.sendActiveColor,
-                    onPressed: widget.enabled ? _submit : null,
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x44000000),
+                    blurRadius: 10,
+                    offset: Offset(0, 4),
                   ),
+                ],
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(6, 4, 6, 4),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    if (widget.leadingActions.isNotEmpty) ...[
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: widget.leadingActions,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                    ] else
+                      const SizedBox(width: 8),
+                    Expanded(
+                      child: TextField(
+                        controller: widget.controller,
+                        focusNode: _focusNode,
+                        enabled: widget.enabled,
+                        autofocus: widget.autofocus,
+                        minLines: 1,
+                        maxLines: widget.maxLines,
+                        keyboardType: TextInputType.multiline,
+                        textInputAction: TextInputAction.newline,
+                        style: const TextStyle(
+                          fontFamily: 'Geist',
+                          fontSize: 13.5,
+                          color: AppTokens.textPrimary,
+                        ),
+                        decoration: InputDecoration(
+                          hintText: widget.hintText,
+                          hintStyle: const TextStyle(
+                            fontFamily: 'Geist',
+                            fontSize: 13.5,
+                            color: AppTokens.textMuted,
+                          ),
+                          // Superfície única: só o container pinta.
+                          filled: false,
+                          fillColor: Colors.transparent,
+                          border: InputBorder.none,
+                          enabledBorder: InputBorder.none,
+                          focusedBorder: InputBorder.none,
+                          disabledBorder: InputBorder.none,
+                          isDense: true,
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 0,
+                            vertical: 10,
+                          ),
+                        ),
+                        onChanged: (_) => setState(() {}),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: AppIconButton(
+                        icon: Icons.arrow_upward,
+                        tooltip: widget.sendTooltip,
+                        minSize: 30,
+                        iconSize: 16,
+                        isActive: canSubmit,
+                        activeColor: widget.sendActiveColor,
+                        onPressed: canSubmit ? _submit : null,
+                      ),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
-          ),
+          ],
         ),
       ),
     );

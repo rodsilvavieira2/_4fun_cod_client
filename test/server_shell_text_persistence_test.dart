@@ -94,6 +94,7 @@ class _Repo implements ServersRepository {
           id: 'm1',
           channelId: channelId,
           content: 'olá do texto',
+          kind: ChatMessageKind.text,
           author: const User(id: 'u1', name: 'Ana', username: 'ana'),
           createdAt: DateTime.fromMillisecondsSinceEpoch(0),
         ),

@@ -63,9 +63,41 @@ class FakeServersRepository implements ServersRepository {
   }
 
   @override
-  Future<ChatMessage> sendMessage(String channelId, String content) async {
+  Future<ChatMessage> sendMessage(
+    String channelId,
+    String content, {
+    ChatMessageKind kind = ChatMessageKind.text,
+    String? gifUrl,
+    String? replyToId,
+  }) async {
     sentContents.add(content);
-    return _msg('sent-$content', channelId, content);
+    return _msg(
+      'sent-$content',
+      channelId,
+      content,
+      kind: kind,
+      gifUrl: gifUrl,
+    );
+  }
+
+  @override
+  Future<ChatMessage> toggleMessageReaction(
+    String messageId,
+    String emoji,
+  ) async {
+    return _msg(
+      messageId,
+      'c1',
+      'com reação',
+      reactions: [
+        MessageReaction(
+          id: 'reaction-$emoji',
+          emoji: emoji,
+          userId: 'u1',
+          createdAt: _epoch,
+        ),
+      ],
+    );
   }
 
   @override
@@ -116,10 +148,20 @@ class DelayedServerDetailController extends ServerDetailController {
 
 final _epoch = DateTime.fromMillisecondsSinceEpoch(0);
 
-ChatMessage _msg(String id, String channelId, String content) => ChatMessage(
+ChatMessage _msg(
+  String id,
+  String channelId,
+  String content, {
+  ChatMessageKind kind = ChatMessageKind.text,
+  String? gifUrl,
+  List<MessageReaction> reactions = const [],
+}) => ChatMessage(
   id: id,
   channelId: channelId,
   content: content,
+  kind: kind,
+  gifUrl: gifUrl,
+  reactions: reactions,
   author: const User(id: 'u1', name: 'Ana', username: 'ana'),
   createdAt: DateTime.fromMillisecondsSinceEpoch(0),
 );
@@ -132,6 +174,10 @@ Map<String, dynamic> _messageJson(
   'id': id,
   'channelId': channelId,
   'content': content,
+  'kind': 'TEXT',
+  'gifUrl': null,
+  'replyTo': null,
+  'reactions': [],
   'createdAt': '2026-08-18T20:00:00.000Z',
   'author': {'id': 'u1', 'name': 'Ana', 'username': 'ana'},
 };

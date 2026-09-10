@@ -2,16 +2,16 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../auth/auth_controller.dart';
 import 'ui.dart';
 
 /// Seções do modal de configurações (wireframe v4).
 enum SettingsSection {
   account('Conta', Icons.person_outline),
-  appearance('Aparência', Icons.palette_outlined),
-  voiceVideo('Voz e Vídeo', Icons.mic_none),
+  voiceVideo('Voz e vídeo', Icons.headset_mic_outlined),
   notifications('Notificações', Icons.notifications_none),
-  updates('Atualizações', Icons.system_update_alt),
-  signOut('Sair', Icons.logout);
+  appearance('Aparência', Icons.palette_outlined),
+  updates('Atualizações', Icons.system_update_alt);
 
   const SettingsSection(this.title, this.icon);
 
@@ -34,13 +34,15 @@ class SettingsModalSidebar extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final sections = <SettingsSection>[
-      SettingsSection.account,
-      SettingsSection.appearance,
-      SettingsSection.voiceVideo,
-      SettingsSection.notifications,
+    final groups = <_SidebarGroup>[
+      const _SidebarGroup('Perfil', [SettingsSection.account]),
+      const _SidebarGroup('Comunicação', [
+        SettingsSection.voiceVideo,
+        SettingsSection.notifications,
+      ]),
+      const _SidebarGroup('Interface', [SettingsSection.appearance]),
       // Update in-place só existe no desktop (web = stub sem updater).
-      if (!kIsWeb) SettingsSection.updates,
+      if (!kIsWeb) const _SidebarGroup('Sistema', [SettingsSection.updates]),
     ];
 
     return Container(
@@ -54,7 +56,7 @@ class SettingsModalSidebar extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const Padding(
-            padding: EdgeInsets.fromLTRB(16, 16, 16, 10),
+            padding: EdgeInsets.fromLTRB(16, 14, 16, 10),
             child: Text(
               'Configurações',
               style: TextStyle(
@@ -62,7 +64,7 @@ class SettingsModalSidebar extends ConsumerWidget {
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
                 color: AppTokens.textPrimary,
-                letterSpacing: -0.2,
+                letterSpacing: 0,
               ),
             ),
           ),
@@ -70,22 +72,69 @@ class SettingsModalSidebar extends ConsumerWidget {
             padding: EdgeInsets.symmetric(horizontal: 12),
             child: Divider(height: 1, color: AppTokens.borderHairline),
           ),
-          const SizedBox(height: 8),
-          for (final item in sections)
-            _SidebarItem(
-              item: item,
-              selected: item == section,
-              onTap: () => onSectionChanged(item),
-            ),
+          const SizedBox(height: 6),
+          for (final group in groups) ...[
+            _SidebarGroupLabel(group.label),
+            for (final item in group.items)
+              _SidebarItem(
+                item: item,
+                selected: item == section,
+                onTap: () => onSectionChanged(item),
+              ),
+            const SizedBox(height: 4),
+          ],
           const Spacer(),
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 12),
             child: Divider(height: 1, color: AppTokens.borderHairline),
           ),
           const SizedBox(height: 6),
-          _SignOutButton(onTap: onClose),
+          _SignOutButton(onTap: () => _confirmSignOut(context, ref)),
           const SizedBox(height: 8),
         ],
+      ),
+    );
+  }
+
+  Future<void> _confirmSignOut(BuildContext context, WidgetRef ref) async {
+    final authController = ref.read(authControllerProvider.notifier);
+    final confirmed = await showMacModalWindow<bool>(
+      context: context,
+      title: 'Encerrar sessão',
+      maxWidth: 360,
+      child: const _SignOutConfirmation(),
+    );
+    if (confirmed != true || !context.mounted) return;
+    onClose();
+    await authController.logout();
+  }
+}
+
+class _SidebarGroup {
+  const _SidebarGroup(this.label, this.items);
+
+  final String label;
+  final List<SettingsSection> items;
+}
+
+class _SidebarGroupLabel extends StatelessWidget {
+  const _SidebarGroupLabel(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 12, 4),
+      child: Text(
+        label,
+        style: const TextStyle(
+          fontFamily: 'Geist Mono',
+          fontSize: 10.5,
+          fontWeight: FontWeight.w600,
+          color: AppTokens.textMuted,
+          letterSpacing: 0,
+        ),
       ),
     );
   }
@@ -124,12 +173,12 @@ class _SidebarItemState extends State<_SidebarItem> {
         onTap: widget.onTap,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 120),
-          height: 32,
-          margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 1.5),
-          padding: const EdgeInsets.symmetric(horizontal: 8),
+          height: 30,
+          margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
+          padding: const EdgeInsets.symmetric(horizontal: 7),
           decoration: BoxDecoration(
             color: selected
-                ? AppTokens.surface3
+                ? AppTokens.surface2
                 : (_hovered ? AppTokens.hoverOverlay : Colors.transparent),
             borderRadius: BorderRadius.circular(AppRadius.sm),
             border: Border.all(
@@ -139,8 +188,18 @@ class _SidebarItemState extends State<_SidebarItem> {
           ),
           child: Row(
             children: [
-              Icon(widget.item.icon, size: 15, color: fgColor),
-              const SizedBox(width: 8),
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 120),
+                width: 2,
+                height: 14,
+                decoration: BoxDecoration(
+                  color: selected ? AppTokens.accentVercel : Colors.transparent,
+                  borderRadius: BorderRadius.circular(AppRadius.full),
+                ),
+              ),
+              const SizedBox(width: 7),
+              Icon(widget.item.icon, size: 14.5, color: fgColor),
+              const SizedBox(width: 7),
               Expanded(
                 child: Text(
                   widget.item.title,
@@ -149,6 +208,7 @@ class _SidebarItemState extends State<_SidebarItem> {
                     fontSize: 13,
                     fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
                     color: fgColor,
+                    letterSpacing: 0,
                   ),
                 ),
               ),
@@ -160,8 +220,7 @@ class _SidebarItemState extends State<_SidebarItem> {
   }
 }
 
-/// Botão "Sair": preenchimento vermelho ([AppTokens.accentDanger]) com
-/// texto/ícone brancos. Mantém as mesmas medidas do [_SidebarItem].
+/// Ação destrutiva da conta, isolada do fechamento normal do modal.
 class _SignOutButton extends StatefulWidget {
   const _SignOutButton({required this.onTap});
 
@@ -192,8 +251,8 @@ class _SignOutButtonState extends State<_SignOutButton> {
         onTapCancel: () => setState(() => _pressed = false),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 120),
-          height: 32,
-          margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 1.5),
+          height: 30,
+          margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
           padding: const EdgeInsets.symmetric(horizontal: 8),
           decoration: BoxDecoration(
             color: bgColor,
@@ -201,22 +260,67 @@ class _SignOutButtonState extends State<_SignOutButton> {
           ),
           child: const Row(
             children: [
-              Icon(Icons.logout, size: 15, color: Colors.white),
+              Icon(Icons.logout, size: 14.5, color: Colors.white),
               SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'Sair',
+                  'Encerrar sessão',
                   style: TextStyle(
                     fontFamily: 'Geist',
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
                     color: Colors.white,
+                    letterSpacing: 0,
                   ),
                 ),
               ),
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _SignOutConfirmation extends StatelessWidget {
+  const _SignOutConfirmation();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(18),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            'Sua sessão local será encerrada neste dispositivo.',
+            style: TextStyle(
+              fontFamily: 'Geist',
+              fontSize: 13,
+              height: 1.35,
+              color: AppTokens.textSecondary,
+              letterSpacing: 0,
+            ),
+          ),
+          const SizedBox(height: 18),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              AppButton(
+                label: 'Cancelar',
+                variant: AppButtonVariant.ghost,
+                onPressed: () => Navigator.of(context).pop(false),
+              ),
+              const SizedBox(width: 8),
+              AppButton(
+                label: 'Encerrar',
+                variant: AppButtonVariant.danger,
+                onPressed: () => Navigator.of(context).pop(true),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

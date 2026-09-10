@@ -264,12 +264,39 @@ class ServersRepository {
     }
   }
 
-  /// `POST /channels/:id/messages { content }` → 201 com a mensagem criada.
-  Future<ChatMessage> sendMessage(String channelId, String content) async {
+  /// `POST /channels/:id/messages` → 201 com a mensagem criada.
+  Future<ChatMessage> sendMessage(
+    String channelId,
+    String content, {
+    ChatMessageKind kind = ChatMessageKind.text,
+    String? gifUrl,
+    String? replyToId,
+  }) async {
     try {
       final response = await _dio.post(
         '/channels/$channelId/messages',
-        data: {'content': content},
+        data: {
+          'content': content,
+          'kind': kind.apiValue,
+          'gifUrl': ?gifUrl,
+          'replyToId': ?replyToId,
+        },
+      );
+      return ChatMessage.fromJson(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      throw ApiException.fromDio(e);
+    }
+  }
+
+  /// `POST /messages/:id/reactions { emoji }` → mensagem atualizada.
+  Future<ChatMessage> toggleMessageReaction(
+    String messageId,
+    String emoji,
+  ) async {
+    try {
+      final response = await _dio.post(
+        '/messages/$messageId/reactions',
+        data: {'emoji': emoji},
       );
       return ChatMessage.fromJson(response.data as Map<String, dynamic>);
     } on DioException catch (e) {

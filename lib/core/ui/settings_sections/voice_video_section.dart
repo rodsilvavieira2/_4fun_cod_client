@@ -4,12 +4,13 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../rtc/media_devices_provider.dart';
-import '../../rtc/rtc_service.dart';
-import '../section_header.dart';
 import '../../../features/voice/voice_audio_processing_provider.dart';
 import '../../../features/voice/voice_controls_provider.dart';
 import '../../../features/voice/voice_volume_controller.dart';
+import '../../rtc/media_devices_provider.dart';
+import '../../rtc/rtc_service.dart';
+import '../settings_section_layout.dart';
+import '../ui.dart';
 
 /// Configuração de dispositivos de voz e vídeo. As trocas são aplicadas na
 /// hora e ficam salvas no dispositivo; não existe botão "Salvar".
@@ -20,67 +21,59 @@ class VoiceVideoSection extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(audioDevicesProvider);
     final controller = ref.read(audioDevicesProvider.notifier);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+    return SettingsStack(
       children: [
-        Row(
+        SettingsGroup(
+          title: 'Dispositivos',
+          trailing: AppIconButton(
+            tooltip: 'Atualizar dispositivos',
+            onPressed: state.isLoading
+                ? null
+                : () => unawaited(controller.refresh()),
+            icon: Icons.refresh,
+          ),
           children: [
-            const Expanded(child: SectionHeader('VOZ E VÍDEO')),
-            IconButton(
-              tooltip: 'Atualizar dispositivos',
-              onPressed: state.isLoading
-                  ? null
-                  : () => unawaited(controller.refresh()),
-              icon: const Icon(Icons.refresh, size: 18),
+            _AudioDeviceField(
+              icon: Icons.mic_none,
+              label: 'Entrada',
+              devices: state.inputs,
+              selectedId: state.preferredInputId,
+              unavailable: state.preferredInputUnavailable,
+              loading: state.isLoading,
+              onChanged: (id) => unawaited(controller.selectInput(id)),
+            ),
+            _AudioDeviceField(
+              icon: Icons.volume_up_outlined,
+              label: 'Saída',
+              devices: state.outputs,
+              selectedId: state.preferredOutputId,
+              unavailable: state.preferredOutputUnavailable,
+              loading: state.isLoading,
+              onChanged: (id) => unawaited(controller.selectOutput(id)),
+            ),
+            _CameraField(
+              devices: state.cameras,
+              selectedId: state.preferredCameraId,
+              unavailable: state.preferredCameraUnavailable,
+              loading: state.isLoading,
+              onChanged: (id) => unawaited(controller.selectCamera(id)),
             ),
           ],
         ),
-        const SizedBox(height: 8),
-        _AudioDeviceField(
-          label: 'Dispositivo de entrada',
-          devices: state.inputs,
-          selectedId: state.preferredInputId,
-          unavailable: state.preferredInputUnavailable,
-          loading: state.isLoading,
-          onChanged: (id) => unawaited(controller.selectInput(id)),
-        ),
-        const SizedBox(height: 16),
-        _AudioDeviceField(
-          label: 'Dispositivo de saída',
-          devices: state.outputs,
-          selectedId: state.preferredOutputId,
-          unavailable: state.preferredOutputUnavailable,
-          loading: state.isLoading,
-          onChanged: (id) => unawaited(controller.selectOutput(id)),
-        ),
-        const SizedBox(height: 16),
-        _CameraField(
-          devices: state.cameras,
-          selectedId: state.preferredCameraId,
-          unavailable: state.preferredCameraUnavailable,
-          loading: state.isLoading,
-          onChanged: (id) => unawaited(controller.selectCamera(id)),
-        ),
-        const SizedBox(height: 24),
-        const _InputVolumeField(),
-        const SizedBox(height: 16),
-        const _NoiseSuppressionField(),
-        const SizedBox(height: 16),
-        const _OutputVolumeField(),
-        const SizedBox(height: 24),
-        const Divider(),
-        const SizedBox(height: 16),
-        const _PushToTalkSettings(),
-        if (state.errorMessage != null) ...[
-          const SizedBox(height: 12),
-          Text(
-            state.errorMessage!,
-            style: TextStyle(
-              color: Theme.of(context).colorScheme.error,
-              fontSize: 12,
-            ),
+        if (state.errorMessage != null)
+          SettingsNotice(
+            message: state.errorMessage!,
+            tone: SettingsNoticeTone.danger,
           ),
-        ],
+        const SettingsGroup(
+          title: 'Áudio',
+          children: [
+            _InputVolumeField(),
+            _NoiseSuppressionField(),
+            _OutputVolumeField(),
+          ],
+        ),
+        const _PushToTalkSettings(),
       ],
     );
   }
@@ -93,44 +86,25 @@ class _NoiseSuppressionField extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(voiceAudioProcessingProvider);
     final controller = ref.read(voiceAudioProcessingProvider.notifier);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                'Supressão de ruído',
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-            ),
-            Switch(
-              value: state.isNoiseSuppressionEnabled,
-              onChanged: state.isApplying
-                  ? null
-                  : (enabled) => unawaited(
-                      controller.setNoiseSuppressionEnabled(enabled),
-                    ),
-            ),
-          ],
-        ),
-        if (state.errorMessage case final message?) ...[
-          const SizedBox(height: 2),
-          Text(
-            message,
-            style: TextStyle(
-              color: Theme.of(context).colorScheme.error,
-              fontSize: 12,
-            ),
-          ),
-        ],
-      ],
+    return SettingsRow(
+      icon: Icons.graphic_eq_outlined,
+      title: 'Supressão de ruído',
+      subtitle: state.errorMessage,
+      subtitleColor: AppTokens.accentPurple,
+      trailing: SettingsSwitch(
+        value: state.isNoiseSuppressionEnabled,
+        onChanged: state.isApplying
+            ? null
+            : (enabled) =>
+                  unawaited(controller.setNoiseSuppressionEnabled(enabled)),
+      ),
     );
   }
 }
 
 class _AudioDeviceField extends StatelessWidget {
   const _AudioDeviceField({
+    required this.icon,
     required this.label,
     required this.devices,
     required this.selectedId,
@@ -139,6 +113,7 @@ class _AudioDeviceField extends StatelessWidget {
     required this.onChanged,
   });
 
+  final IconData icon;
   final String label;
   final List<RtcAudioDevice> devices;
   final String? selectedId;
@@ -152,25 +127,35 @@ class _AudioDeviceField extends StatelessWidget {
         ? selectedId
         : _systemDefault;
     return _DeviceFieldShell(
+      icon: icon,
       label: label,
       unavailable: unavailable,
       child: DropdownButtonFormField<String>(
         key: ValueKey(value),
         initialValue: value,
         isExpanded: true,
-        decoration: const InputDecoration(isDense: true),
+        menuMaxHeight: 280,
+        style: const TextStyle(
+          fontFamily: 'Geist',
+          fontSize: 12.5,
+          color: AppTokens.textPrimary,
+        ),
+        decoration: _compactFieldDecoration(),
         onChanged: loading
             ? null
             : (value) => onChanged(value == _systemDefault ? null : value),
         items: [
           const DropdownMenuItem(
             value: _systemDefault,
-            child: Text('Padrão do sistema'),
+            child: Text('Padrão do sistema', overflow: TextOverflow.ellipsis),
           ),
           for (var index = 0; index < devices.length; index++)
             DropdownMenuItem(
               value: devices[index].id,
-              child: Text(_deviceLabel(devices[index], label, index)),
+              child: Text(
+                _deviceLabel(devices[index], label, index),
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
         ],
       ),
@@ -199,14 +184,21 @@ class _CameraField extends StatelessWidget {
         ? selectedId
         : null;
     return _DeviceFieldShell(
+      icon: Icons.videocam_outlined,
       label: 'Câmera',
       unavailable: unavailable,
       child: DropdownButtonFormField<String>(
         key: ValueKey(value),
         initialValue: value,
         isExpanded: true,
-        decoration: const InputDecoration(isDense: true),
-        hint: const Text('Padrão do sistema'),
+        menuMaxHeight: 280,
+        style: const TextStyle(
+          fontFamily: 'Geist',
+          fontSize: 12.5,
+          color: AppTokens.textPrimary,
+        ),
+        decoration: _compactFieldDecoration(),
+        hint: const Text('Padrão do sistema', overflow: TextOverflow.ellipsis),
         onChanged: loading || devices.isEmpty
             ? null
             : (id) {
@@ -216,7 +208,10 @@ class _CameraField extends StatelessWidget {
           for (var index = 0; index < devices.length; index++)
             DropdownMenuItem(
               value: devices[index].id,
-              child: Text(_deviceLabel(devices[index], 'Câmera', index)),
+              child: Text(
+                _deviceLabel(devices[index], 'Câmera', index),
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
         ],
       ),
@@ -235,7 +230,9 @@ class _InputVolumeField extends ConsumerWidget {
     );
     final controller = ref.read(voiceVolumeProvider.notifier);
     return _VolumeField(
+      icon: Icons.keyboard_voice_outlined,
       label: 'Volume de entrada',
+      subtitle: 'Ganho publicado do microfone',
       percent: percent,
       max: 100,
       onChanged: controller.setInputPercent,
@@ -258,7 +255,9 @@ class _OutputVolumeField extends ConsumerWidget {
     );
     final controller = ref.read(voiceVolumeProvider.notifier);
     return _VolumeField(
+      icon: Icons.speaker_outlined,
       label: 'Volume de saída',
+      subtitle: 'Volume mestre local',
       percent: percent,
       max: 200,
       onChanged: controller.setOutputPercent,
@@ -269,14 +268,18 @@ class _OutputVolumeField extends ConsumerWidget {
 
 class _VolumeField extends StatelessWidget {
   const _VolumeField({
+    required this.icon,
     required this.label,
+    required this.subtitle,
     required this.percent,
     required this.max,
     required this.onChanged,
     required this.onReset,
   });
 
+  final IconData icon;
   final String label;
+  final String subtitle;
   final int percent;
   final int max;
   final ValueChanged<int> onChanged;
@@ -284,61 +287,99 @@ class _VolumeField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
+    return SettingsRow(
+      icon: icon,
+      title: label,
+      subtitle: subtitle,
+      minHeight: 58,
+      trailing: SizedBox(
+        width: 330,
+        child: Row(
           children: [
             Expanded(
-              child: Text(label, style: Theme.of(context).textTheme.bodyMedium),
+              child: SliderTheme(
+                data: SliderTheme.of(context).copyWith(
+                  trackHeight: 2.5,
+                  thumbShape: const RoundSliderThumbShape(
+                    enabledThumbRadius: 6,
+                    disabledThumbRadius: 6,
+                  ),
+                  overlayShape: const RoundSliderOverlayShape(
+                    overlayRadius: 12,
+                  ),
+                ),
+                child: Slider(
+                  value: percent.toDouble(),
+                  min: 0,
+                  max: max.toDouble(),
+                  divisions: max ~/ 5,
+                  label: '$percent%',
+                  onChanged: (value) => onChanged((value / 5).round() * 5),
+                ),
+              ),
             ),
-            Text('$percent%'),
-            TextButton(onPressed: onReset, child: const Text('100%')),
+            SizedBox(
+              width: 52,
+              child: SettingsValueText('$percent%', monospace: true),
+            ),
+            const SizedBox(width: 6),
+            AppIconButton(
+              icon: Icons.restart_alt,
+              tooltip: 'Redefinir para 100%',
+              onPressed: onReset,
+            ),
           ],
         ),
-        Slider(
-          value: percent.toDouble(),
-          min: 0,
-          max: max.toDouble(),
-          divisions: max ~/ 5,
-          label: '$percent%',
-          onChanged: (value) => onChanged((value / 5).round() * 5),
-        ),
-      ],
+      ),
     );
   }
 }
 
 class _DeviceFieldShell extends StatelessWidget {
   const _DeviceFieldShell({
+    required this.icon,
     required this.label,
     required this.unavailable,
     required this.child,
   });
 
+  final IconData icon;
   final String label;
   final bool unavailable;
   final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: Theme.of(context).textTheme.bodyMedium),
-        const SizedBox(height: 6),
-        child,
-        if (unavailable)
-          Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: Text(
-              'Dispositivo preferido indisponível; usando o padrão do sistema.',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          ),
-      ],
+    return SettingsRow(
+      icon: icon,
+      title: label,
+      subtitle: unavailable
+          ? 'Dispositivo preferido indisponível; usando o padrão do sistema.'
+          : null,
+      subtitleColor: unavailable ? AppTokens.accentAmber : null,
+      minHeight: unavailable ? 64 : 52,
+      trailing: SizedBox(width: 330, child: child),
     );
   }
+}
+
+InputDecoration _compactFieldDecoration() {
+  const border = OutlineInputBorder(
+    borderRadius: AppRadius.brSm,
+    borderSide: BorderSide(color: AppTokens.borderStrong, width: 1),
+  );
+  return const InputDecoration(
+    isDense: true,
+    filled: true,
+    fillColor: AppTokens.surface2,
+    contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+    border: border,
+    enabledBorder: border,
+    focusedBorder: OutlineInputBorder(
+      borderRadius: AppRadius.brSm,
+      borderSide: BorderSide(color: AppTokens.borderFocus, width: 1.2),
+    ),
+  );
 }
 
 const _systemDefault = '__system_default__';
@@ -354,142 +395,158 @@ class _PushToTalkSettings extends ConsumerWidget {
     final state = ref.watch(voiceControlsProvider);
     final controller = ref.read(voiceControlsProvider.notifier);
     final binding = state.pushToTalkBinding;
+    final shortcutLabel = state.isRecordingPushToTalk
+        ? 'Aguardando entrada…'
+        : binding?.displayLabel ?? 'Nenhum atalho definido';
+    final statusLabel = state.isPushToTalkEnabled
+        ? (state.isPushToTalkRegistered ? 'Ativo' : 'Aguardando registro')
+        : 'Desativado';
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const SectionHeader('PUSH TO TALK'),
-        const SizedBox(height: 4),
-        Row(
+        SettingsGroup(
+          title: 'Push to Talk',
           children: [
-            Expanded(
-              child: Text(
-                'Push to Talk',
-                style: Theme.of(context).textTheme.bodyMedium,
+            SettingsRow(
+              icon: Icons.radio_button_checked,
+              title: 'Modo',
+              subtitle: statusLabel,
+              trailing: SettingsSwitch(
+                value: state.isPushToTalkEnabled,
+                onChanged: state.isApplying
+                    ? null
+                    : (enabled) =>
+                          unawaited(controller.setPushToTalkEnabled(enabled)),
               ),
             ),
-            Switch(
-              value: state.isPushToTalkEnabled,
-              onChanged: state.isApplying
-                  ? null
-                  : (enabled) =>
-                        unawaited(controller.setPushToTalkEnabled(enabled)),
+            SettingsRow(
+              icon: Icons.keyboard_alt_outlined,
+              title: 'Atalho',
+              subtitle: shortcutLabel,
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  AppButton(
+                    label: state.isRecordingPushToTalk ? 'Cancelar' : 'Gravar',
+                    icon: state.isRecordingPushToTalk
+                        ? Icons.close
+                        : Icons.fiber_manual_record,
+                    size: AppButtonSize.sm,
+                    variant: state.isRecordingPushToTalk
+                        ? AppButtonVariant.ghost
+                        : AppButtonVariant.secondary,
+                    onPressed: state.isRecordingPushToTalk
+                        ? controller.cancelPushToTalkRecording
+                        : controller.startPushToTalkRecording,
+                  ),
+                  if (binding != null) ...[
+                    const SizedBox(width: 4),
+                    AppIconButton(
+                      tooltip: 'Limpar atalho',
+                      onPressed: () =>
+                          unawaited(controller.clearPushToTalkBinding()),
+                      icon: Icons.clear,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            _PushToTalkDelayField(
+              delayMs: state.pushToTalkReleaseDelayMs,
+              enabled: binding != null,
+              onChanged: (value) => unawaited(
+                controller.setPushToTalkReleaseDelay(value.round()),
+              ),
             ),
           ],
         ),
-        const SizedBox(height: 10),
-        Text(
-          'Atalho do Push to Talk',
-          style: Theme.of(context).textTheme.bodyMedium,
-        ),
-        const SizedBox(height: 4),
-        Text(
-          state.isRecordingPushToTalk
-              ? 'Pressione o atalho em qualquer ordem e solte para confirmar. Ctrl, Alt ou Ctrl+Alt isolados valem. ESC cancela; Backspace limpa.'
-              : 'No navegador, o Push to Talk funciona enquanto esta aba estiver focada.',
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
+        if (state.isRecordingPushToTalk) ...[
+          const SizedBox(height: 8),
+          const SettingsNotice(
+            message:
+                'Pressione o atalho em qualquer ordem e solte para confirmar. ESC cancela; Backspace limpa.',
+            tone: SettingsNoticeTone.neutral,
+          ),
+        ],
         if (!kIsWeb &&
             defaultTargetPlatform == TargetPlatform.linux &&
             binding?.kind.name == 'mouse') ...[
-          const SizedBox(height: 4),
-          Text(
-            'No Linux, botões globais do mouse exigem instalar a regra de acesso do aplicativo.',
-            style: Theme.of(context).textTheme.bodySmall,
+          const SizedBox(height: 8),
+          const SettingsNotice(
+            message:
+                'No Linux, botões globais do mouse exigem instalar a regra de acesso do aplicativo.',
+            tone: SettingsNoticeTone.warning,
           ),
         ],
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            Expanded(
-              child: Container(
-                height: 40,
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                alignment: Alignment.centerLeft,
-                decoration: BoxDecoration(
-                  color: Theme.of(context).inputDecorationTheme.fillColor,
-                  border: Border.all(
-                    color: Theme.of(context).colorScheme.outline,
-                  ),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text(
-                  state.isRecordingPushToTalk
-                      ? 'Aguardando entrada…'
-                      : binding?.displayLabel ?? 'Nenhum atalho definido',
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: binding == null && !state.isRecordingPushToTalk
-                        ? Theme.of(context).hintColor
-                        : null,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            FilledButton.tonal(
-              onPressed: state.isRecordingPushToTalk
-                  ? controller.cancelPushToTalkRecording
-                  : controller.startPushToTalkRecording,
-              child: Text(state.isRecordingPushToTalk ? 'Cancelar' : 'Gravar'),
-            ),
-            if (binding != null) ...[
-              const SizedBox(width: 4),
-              IconButton(
-                tooltip: 'Limpar atalho',
-                onPressed: () => unawaited(controller.clearPushToTalkBinding()),
-                icon: const Icon(Icons.clear, size: 18),
-              ),
-            ],
-          ],
-        ),
-        const SizedBox(height: 16),
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                'Atraso de liberação',
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-            ),
-            Text('${state.pushToTalkReleaseDelayMs} ms'),
-          ],
-        ),
-        Slider(
-          value: state.pushToTalkReleaseDelayMs.toDouble(),
-          min: 0,
-          max: 2000,
-          divisions: 200,
-          label: '${state.pushToTalkReleaseDelayMs} ms',
-          onChanged: binding == null
-              ? null
-              : (value) => unawaited(
-                  controller.setPushToTalkReleaseDelay(value.round()),
-                ),
-        ),
         if (state.isPushToTalkEnabled && !state.isPushToTalkRegistered) ...[
-          const SizedBox(height: 2),
-          Text(
-            'O atalho global não está disponível; o microfone permanece fechado.',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-        ] else if (state.isPushToTalkEnabled && !state.isPushToTalkPressed) ...[
-          const SizedBox(height: 2),
-          Text(
-            'Pronto: segure ${binding?.displayLabel ?? 'o atalho'} para transmitir.',
-            style: Theme.of(context).textTheme.bodySmall,
+          const SizedBox(height: 8),
+          const SettingsNotice(
+            message:
+                'O atalho global não está disponível; o microfone permanece fechado.',
+            tone: SettingsNoticeTone.warning,
           ),
         ],
         if (state.errorMessage case final message?) ...[
           const SizedBox(height: 8),
-          Text(
-            message,
-            style: TextStyle(
-              color: Theme.of(context).colorScheme.error,
-              fontSize: 12,
-            ),
-          ),
+          SettingsNotice(message: message, tone: SettingsNoticeTone.danger),
         ],
       ],
+    );
+  }
+}
+
+class _PushToTalkDelayField extends StatelessWidget {
+  const _PushToTalkDelayField({
+    required this.delayMs,
+    required this.enabled,
+    required this.onChanged,
+  });
+
+  final int delayMs;
+  final bool enabled;
+  final ValueChanged<double> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return SettingsRow(
+      icon: Icons.timelapse_outlined,
+      title: 'Atraso de liberação',
+      subtitle: enabled ? null : 'Disponível após definir um atalho',
+      minHeight: 58,
+      trailing: SizedBox(
+        width: 330,
+        child: Row(
+          children: [
+            Expanded(
+              child: SliderTheme(
+                data: SliderTheme.of(context).copyWith(
+                  trackHeight: 2.5,
+                  thumbShape: const RoundSliderThumbShape(
+                    enabledThumbRadius: 6,
+                    disabledThumbRadius: 6,
+                  ),
+                  overlayShape: const RoundSliderOverlayShape(
+                    overlayRadius: 12,
+                  ),
+                ),
+                child: Slider(
+                  value: delayMs.toDouble(),
+                  min: 0,
+                  max: 2000,
+                  divisions: 200,
+                  label: '$delayMs ms',
+                  onChanged: enabled ? onChanged : null,
+                ),
+              ),
+            ),
+            SizedBox(
+              width: 64,
+              child: SettingsValueText('$delayMs ms', monospace: true),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

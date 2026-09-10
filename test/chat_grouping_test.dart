@@ -10,6 +10,7 @@ ChatMessage _msg(String id, User author, DateTime createdAt) => ChatMessage(
   id: id,
   channelId: 'c1',
   content: 'msg $id',
+  kind: ChatMessageKind.text,
   author: author,
   createdAt: createdAt,
 );

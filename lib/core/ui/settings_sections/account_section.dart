@@ -7,6 +7,7 @@ import '../../api/api_exception.dart';
 import '../../auth/auth_controller.dart';
 import '../../auth/auth_state.dart';
 import '../../storage/api_storage_service.dart';
+import '../settings_section_layout.dart';
 import '../ui.dart';
 
 /// Conta do usuário dentro do modal principal de configurações.
@@ -32,45 +33,67 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const SectionHeader('CONTA'),
-        _ProfileSummary(
-          user: user,
-          onEdit: () => _openProfileDialog(context, user),
-        ),
-        const SizedBox(height: 16),
-        _AccountRow(
-          label: 'E-MAIL',
-          value: _emailVisible ? user.email ?? '—' : _maskEmail(user.email),
-          actions: [
-            AppButton(
-              label: _emailVisible ? 'Ocultar' : 'Revelar',
-              size: AppButtonSize.sm,
-              variant: AppButtonVariant.ghost,
-              onPressed: () => setState(() => _emailVisible = !_emailVisible),
+        SettingsStack(
+          children: [
+            SettingsGroup(
+              title: 'Perfil',
+              children: [
+                _ProfileSummary(
+                  user: user,
+                  onEdit: () => _openProfileDialog(context, user),
+                ),
+              ],
             ),
-            AppIconButton(
-              icon: Icons.edit_outlined,
-              tooltip: 'Editar e-mail',
-              onPressed: () => _openEmailDialog(context, user),
+            SettingsGroup(
+              title: 'Dados da conta',
+              children: [
+                SettingsRow(
+                  icon: Icons.alternate_email,
+                  title: 'E-mail',
+                  subtitle: _emailVisible
+                      ? user.email ?? '—'
+                      : _maskEmail(user.email),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      AppButton(
+                        label: _emailVisible ? 'Ocultar' : 'Revelar',
+                        size: AppButtonSize.sm,
+                        variant: AppButtonVariant.ghost,
+                        onPressed: () =>
+                            setState(() => _emailVisible = !_emailVisible),
+                      ),
+                      const SizedBox(width: 4),
+                      AppIconButton(
+                        icon: Icons.edit_outlined,
+                        tooltip: 'Editar e-mail',
+                        onPressed: () => _openEmailDialog(context, user),
+                      ),
+                    ],
+                  ),
+                ),
+                SettingsRow(
+                  icon: Icons.tag_outlined,
+                  title: 'ID da conta',
+                  subtitle: user.id,
+                ),
+              ],
             ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        _AccountRow(label: 'ID', value: user.id),
-        const Padding(
-          padding: EdgeInsets.symmetric(vertical: 20),
-          child: Divider(color: AppTokens.borderHairline, height: 1),
-        ),
-        const SectionHeader('SENHA E SEGURANÇA'),
-        _AccountRow(
-          label: 'SENHA',
-          value: '••••••••',
-          actions: [
-            AppButton(
-              label: 'Alterar',
-              size: AppButtonSize.sm,
-              variant: AppButtonVariant.secondary,
-              onPressed: () => _openPasswordDialog(context),
+            SettingsGroup(
+              title: 'Segurança',
+              children: [
+                SettingsRow(
+                  icon: Icons.lock_outline,
+                  title: 'Senha',
+                  subtitle: '••••••••',
+                  trailing: AppButton(
+                    label: 'Alterar',
+                    size: AppButtonSize.sm,
+                    variant: AppButtonVariant.secondary,
+                    onPressed: () => _openPasswordDialog(context),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -116,16 +139,11 @@ class _ProfileSummary extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return Padding(
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppTokens.surface3,
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(color: AppTokens.borderSubtle, width: 1),
-      ),
       child: Row(
         children: [
-          _Avatar(user: user, size: 44),
+          _Avatar(user: user, size: 40),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -136,9 +154,10 @@ class _ProfileSummary extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     fontFamily: 'Geist',
-                    fontSize: 15,
+                    fontSize: 14,
                     fontWeight: FontWeight.w600,
                     color: AppTokens.textPrimary,
+                    letterSpacing: 0,
                   ),
                 ),
                 const SizedBox(height: 2),
@@ -147,8 +166,9 @@ class _ProfileSummary extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     fontFamily: 'Geist',
-                    fontSize: 13,
+                    fontSize: 12.5,
                     color: AppTokens.textSecondary,
+                    letterSpacing: 0,
                   ),
                 ),
               ],
@@ -157,58 +177,11 @@ class _ProfileSummary extends StatelessWidget {
           const SizedBox(width: 8),
           AppButton(
             label: 'Editar',
+            icon: Icons.edit_outlined,
             size: AppButtonSize.sm,
             variant: AppButtonVariant.secondary,
             onPressed: onEdit,
           ),
-        ],
-      ),
-    );
-  }
-}
-
-class _AccountRow extends StatelessWidget {
-  const _AccountRow({
-    required this.label,
-    required this.value,
-    this.actions = const [],
-  });
-
-  final String label;
-  final String value;
-  final List<Widget> actions;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 80,
-            child: Text(
-              label,
-              style: const TextStyle(
-                fontFamily: 'Geist Mono',
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: AppTokens.textMuted,
-                letterSpacing: 0.6,
-              ),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontFamily: 'Geist',
-                fontSize: 13.5,
-                color: AppTokens.textPrimary,
-              ),
-            ),
-          ),
-          ...actions,
         ],
       ),
     );
