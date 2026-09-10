@@ -46,8 +46,8 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
   bool _didSelectInitialChannel = false;
   bool _leavingServer = false;
 
-  /// Painel de membros lateral (desktop): alternável pela ação do header.
-  bool _showMembers = true;
+  /// Painel de membros lateral (desktop): oculto por padrão, alternável pela ação do header.
+  bool _showMembers = false;
 
   @override
   void initState() {
