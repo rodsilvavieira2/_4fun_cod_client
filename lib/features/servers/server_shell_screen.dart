@@ -13,6 +13,7 @@ import '../../shared/models/servers.dart';
 import '../channels/channel_header.dart';
 import '../channels/channel_list.dart';
 import '../channels/channels_providers.dart';
+import '../chat/chat_providers.dart';
 import '../chat/chat_screen.dart';
 import '../voice/voice_screen.dart';
 import '../voice/voice_providers.dart';
@@ -42,6 +43,9 @@ class ServerShellScreen extends ConsumerStatefulWidget {
 class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
   String? _selectedChannelId;
   String? _activeVoiceChannelId;
+  // Room de texto com `channel:join` ativo. Pode diferir da seleção visível:
+  // ao ver voz, a room de texto permanece conectada (volta sem refetch).
+  String? _joinedTextChannelId;
   int _voiceSwitchEpoch = 0;
   bool _didSelectInitialChannel = false;
   bool _leavingServer = false;
@@ -49,9 +53,15 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
   /// Painel de membros lateral (desktop): oculto por padrão, alternável pela ação do header.
   bool _showMembers = false;
 
+  /// Container capturado no initState: o `ref` do widget já está morto quando
+  /// o `State.dispose` roda (`context.mounted == false` no unmount) — todo
+  /// cleanup de saída (rooms + leave da voz) usa o container direto.
+  late final ProviderContainer _container;
+
   @override
   void initState() {
     super.initState();
+    _container = ProviderScope.containerOf(context, listen: false);
     // Pós-frame: o socket pode ainda não ter conectado; o estado de join é
     // registrado e reemitido no 'connect'.
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -62,15 +72,19 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
 
   @override
   void dispose() {
-    final socket = ref.read(socketServiceProvider);
+    final socket = _container.read(socketServiceProvider);
     final channelId = _selectedChannelId;
     if (channelId != null) {
       socket.leaveChannel(channelId);
     }
+    final joinedTextChannelId = _joinedTextChannelId;
+    if (joinedTextChannelId != null && joinedTextChannelId != channelId) {
+      socket.leaveChannel(joinedTextChannelId);
+    }
     final activeVoiceChannelId = _activeVoiceChannelId;
     if (activeVoiceChannelId != null) {
       unawaited(
-        ref
+        _container
             .read(
               voiceControllerProvider((
                 serverId: widget.serverId,
@@ -134,18 +148,53 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
     }
     final previous = _selectedChannelId;
     final socket = ref.read(socketServiceProvider);
-    if (previous != null) {
-      socket.leaveChannel(previous);
-    }
-    setState(() => _selectedChannelId = channelId);
     if (channel.type == ChannelType.text) {
+      // Texto → outro texto: troca a room. Voz → texto: a sessão de voz
+      // segue intacta (só pausa o vídeo local abaixo).
+      if (previous != null) {
+        socket.leaveChannel(previous);
+      }
+      final joined = _joinedTextChannelId;
+      if (joined != null && joined != channelId) {
+        socket.leaveChannel(joined);
+      }
+      setState(() {
+        _selectedChannelId = channelId;
+        _joinedTextChannelId = channelId;
+      });
       socket.joinChannel(channelId);
+      // Voz → texto: a sessão PERMANECE (spec voz-persistente); só a
+      // câmera/tela LOCAL pausa. Remotos continuam recebidos e religar é
+      // manual ao voltar à sala.
+      unawaited(_pauseLocalVideoOnTextView());
+      return;
+    }
+    // Texto → voz: a room de texto PERMANECE conectada e o ChatController
+    // segue vivo (watch em `build`) — voltar ao texto é instantâneo, sem
+    // refetch, com os eventos aplicados em segundo plano. Só a seleção
+    // visível muda; a voz troca com leave-then-join abaixo.
+    setState(() => _selectedChannelId = channelId);
+
+    final previousVoiceChannelId = _activeVoiceChannelId;
+    // Retorno à MESMA voz com sessão viva: só seleciona — sem leave, sem
+    // token novo, sem rejoin (spec voz-persistente: a sessão se mantém até
+    // encerrar explícito ou trocar de voz). Join só se a sessão caiu.
+    if (previousVoiceChannelId == channelId) {
+      setState(() => _activeVoiceChannelId = channelId);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _activeVoiceChannelId != channelId) return;
+        final arg = (serverId: widget.serverId, channelId: channelId);
+        final status = ref.read(voiceControllerProvider(arg)).status;
+        if (status == VoiceSessionStatus.idle ||
+            status == VoiceSessionStatus.error) {
+          unawaited(ref.read(voiceControllerProvider(arg).notifier).join());
+        }
+      });
       return;
     }
 
     final epoch = ++_voiceSwitchEpoch;
-    final previousVoiceChannelId = _activeVoiceChannelId;
-    if (previousVoiceChannelId != null && previousVoiceChannelId != channelId) {
+    if (previousVoiceChannelId != null) {
       await ref
           .read(
             voiceControllerProvider((
@@ -193,6 +242,28 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
     setState(() => _activeVoiceChannelId = null);
   }
 
+  /// Pausa o vídeo LOCAL ao exibir um chat de texto com voz ativa: a sessão
+  /// LiveKit continua (voz publica, remotos recebidos), só câmera e tela
+  /// locais param. Idempotente — só age sobre o que está ligado — e nunca
+  /// religa nada sozinho (retorno à sala é manual, privacy-safe).
+  Future<void> _pauseLocalVideoOnTextView() async {
+    final voiceId = _activeVoiceChannelId;
+    if (voiceId == null) return;
+    final arg = (serverId: widget.serverId, channelId: voiceId);
+    final controller = ref.read(voiceControllerProvider(arg).notifier);
+    final state = ref.read(voiceControllerProvider(arg));
+    if (state.status != VoiceSessionStatus.connected) return;
+    if (state.isCameraEnabled) {
+      await controller.toggleCamera();
+    }
+    if (!mounted) return;
+    final afterCamera = ref.read(voiceControllerProvider(arg));
+    if (afterCamera.status == VoiceSessionStatus.connected &&
+        afterCamera.isScreenSharing) {
+      await controller.stopScreenShare();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final detail = ref.watch(serverDetailProvider(widget.serverId));
@@ -227,7 +298,10 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted || _selectedChannelId != null) return;
           _didSelectInitialChannel = true;
-          setState(() => _selectedChannelId = firstTextChannel.id);
+          setState(() {
+            _selectedChannelId = firstTextChannel.id;
+            _joinedTextChannelId = firstTextChannel.id;
+          });
           ref.read(socketServiceProvider).joinChannel(firstTextChannel.id);
         });
       }
@@ -240,8 +314,41 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted || _selectedChannelId != removedId) return;
         ref.read(socketServiceProvider).leaveChannel(removedId);
-        setState(() => _selectedChannelId = null);
+        setState(() {
+          _selectedChannelId = null;
+          if (_joinedTextChannelId == removedId) _joinedTextChannelId = null;
+        });
       });
+    }
+
+    // Room de texto em segundo plano removida (owner deletou enquanto a voz
+    // estava em vista): sai do join e solta o keep-alive abaixo.
+    final backgroundRemovedId = _joinedTextChannelId;
+    if (backgroundRemovedId != null &&
+        backgroundRemovedId != _selectedChannelId &&
+        channels.hasValue &&
+        channelList.where((c) => c.id == backgroundRemovedId).firstOrNull ==
+            null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _joinedTextChannelId != backgroundRemovedId) return;
+        ref.read(socketServiceProvider).leaveChannel(backgroundRemovedId);
+        setState(() => _joinedTextChannelId = null);
+      });
+    }
+
+    // Texto em segundo plano (vendo voz ou lista): mantém o ChatController
+    // vivo para a volta ser instantânea, sem refetch — os eventos realtime
+    // seguem aplicados porque a room continua conectada.
+    final backgroundTextId = selectedChannel?.type == ChannelType.text
+        ? null
+        : _joinedTextChannelId;
+    if (backgroundTextId != null) {
+      ref.watch(
+        chatControllerProvider((
+          serverId: widget.serverId,
+          channelId: backgroundTextId,
+        )),
+      );
     }
 
     // Layout responsivo pelo ESPAÇO disponível (skill flutter de layout) —

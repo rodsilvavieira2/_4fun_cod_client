@@ -213,6 +213,9 @@ class VoiceState {
 /// - Troca de canal/fechamento da view: o `autoDispose` descarta o
 ///   provider e o `ref.onDispose` desconecta — o usuário nunca fica
 ///   "preso" numa sala depois de navegar para outro canal.
+///   Exceção: navegar para um canal de TEXTO mantém `_activeVoiceChannelId`
+///   no shell, que segue observando o provider — a sessão persiste e o
+///   shell pausa só a câmera/tela local (ver `_pauseLocalVideoOnTextView`).
 /// - Queda da sala por conta própria: [DisconnectedEvent] volta para
 ///   `idle` (o serviço já limpou o estado interno).
 class VoiceController
@@ -753,12 +756,16 @@ class VoiceController
     // Instância descartada (ou join cancelado por leave) não pode tocar o
     // serviço compartilhado: o connect aqui criaria uma sala órfã.
     if (_disposed || generation != _joinGeneration) return;
+    // URL discada (sem token — nunca logar o JWT): sem esta linha, um
+    // LiveKit inalcançável vira spinner eterno sem rastro em disco.
+    log.d('voice connect iniciando (url=${info.livekitUrl})', tag: 'voice');
     try {
-      await rtc.connect(
-        info.livekitUrl,
-        info.token,
-        tokenGenerator: _tokenGenerator,
-      );
+      // Sem timeout próprio: LiveKit filtrado/buraco-negro pendura o
+      // `connect` para sempre (status `connecting`, zero logs). 20s cobre
+      // handshake intercontinental sem falso-positivo no lab local.
+      await rtc
+          .connect(info.livekitUrl, info.token, tokenGenerator: _tokenGenerator)
+          .timeout(const Duration(seconds: 20));
     } catch (e, st) {
       // Sem este log, falhas de `room.connect` (LiveKit fora, rede, token)
       // viravam a mensagem genérica da UI sem rastro em disco.
