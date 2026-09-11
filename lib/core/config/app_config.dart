@@ -18,10 +18,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 ///   fallback para a env de runtime `OTEL_BASIC_AUTH` (desktop lê
 ///   `Platform.environment`). Nunca commitar valor real.
 /// - `OTEL_ENABLED`: `true` liga a telemetria (default `false`).
+/// - `GIFSNAP_BASE_URL`: base da API GifSnap gratuita (default
+///   `https://gifsnap.com/api/v1`).
 class AppConfig {
   const AppConfig({
     required this.apiBaseUrl,
     required this.livekitUrl,
+    this.gifSnapBaseUrl = 'https://gifsnap.com/api/v1',
     this.otelEndpoint = 'http://localhost:5080',
     this.otelOrg = 'default',
     this.otelBasicAuth = '',
@@ -39,6 +42,10 @@ class AppConfig {
     const livekitUrl = String.fromEnvironment(
       'LIVEKIT_URL',
       defaultValue: 'ws://localhost:7880',
+    );
+    const gifSnapBaseUrl = String.fromEnvironment(
+      'GIFSNAP_BASE_URL',
+      defaultValue: 'https://gifsnap.com/api/v1',
     );
     const otelEndpoint = String.fromEnvironment(
       'OTEL_ENDPOINT',
@@ -66,6 +73,7 @@ class AppConfig {
     return AppConfig(
       apiBaseUrl: apiBaseUrl,
       livekitUrl: livekitUrl,
+      gifSnapBaseUrl: gifSnapBaseUrl,
       otelEndpoint: otelEndpoint,
       otelOrg: otelOrg,
       otelBasicAuth: otelBasicAuth,
@@ -91,6 +99,9 @@ class AppConfig {
 
   /// URL do servidor LiveKit (WebSocket).
   final String livekitUrl;
+
+  /// Base URL da API GifSnap gratuita, sem chave.
+  final String gifSnapBaseUrl;
 
   /// Base do OpenObserve (UI+API+OTLP) — Fase 1 desktop.
   final String otelEndpoint;

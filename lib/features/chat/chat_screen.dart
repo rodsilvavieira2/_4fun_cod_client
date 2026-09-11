@@ -10,6 +10,8 @@ import '../../shared/models/message.dart';
 import '../../shared/models/user.dart';
 import 'chat_grouping.dart';
 import 'chat_providers.dart';
+import 'emoji_catalog.dart';
+import 'gif_repository.dart';
 
 /// Chat de um canal de texto: fluxo contínuo estilo Discord, com ações no
 /// hover, replies, reações, emoji no composer e GIFs.
@@ -1010,13 +1012,14 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
     _insertText(emoji);
   }
 
-  Future<void> _pickGif() async {
-    final gifUrl = await showDialog<String>(
-      context: context,
-      builder: (context) => const _GifPickerDialog(),
+  Future<void> _pickGif(BuildContext anchorContext) async {
+    final gif = await _showGifPopup(
+      anchorContext,
+      repository: ref.read(gifRepositoryProvider),
     );
-    if (gifUrl == null) return;
-    setState(() => _gifUrl = gifUrl);
+    if (gif == null) return;
+    if (!mounted) return;
+    setState(() => _gifUrl = gif.imageUrl);
   }
 
   void _clearGif() {
@@ -1063,7 +1066,7 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
       enabled: !_sending,
       hintText: 'Mensagem em #${widget.channelName}',
       canSendEmpty: _gifUrl != null,
-      leadingActions: [
+      trailingActions: [
         Builder(
           builder: (anchorContext) => AppIconButton(
             icon: Icons.add_reaction_outlined,
@@ -1074,12 +1077,14 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
           ),
         ),
         const SizedBox(width: 2),
-        AppIconButton(
-          icon: Icons.gif_box_outlined,
-          tooltip: 'Inserir GIF',
-          minSize: 30,
-          iconSize: 18,
-          onPressed: _sending ? null : _pickGif,
+        Builder(
+          builder: (anchorContext) => AppIconButton(
+            icon: Icons.gif_box_outlined,
+            tooltip: 'Inserir GIF',
+            minSize: 30,
+            iconSize: 18,
+            onPressed: _sending ? null : () => _pickGif(anchorContext),
+          ),
         ),
       ],
       topPanel: _composerPanel(),
@@ -1238,9 +1243,24 @@ Future<String?> _showEmojiPopup(
 }) {
   return _showAnchoredPopup<String>(
     anchorContext: anchorContext,
-    preferredSize: const Size(380, 366),
+    preferredSize: const Size(340, 300),
     builder: (onSelected, onClose) => _EmojiPickerPopup(
       title: title,
+      onSelected: onSelected,
+      onClose: onClose,
+    ),
+  );
+}
+
+Future<GifResult?> _showGifPopup(
+  BuildContext anchorContext, {
+  required GifRepository repository,
+}) {
+  return _showAnchoredPopup<GifResult>(
+    anchorContext: anchorContext,
+    preferredSize: const Size(340, 300),
+    builder: (onSelected, onClose) => _GifPickerPopup(
+      repository: repository,
       onSelected: onSelected,
       onClose: onClose,
     ),
@@ -1367,7 +1387,7 @@ class _EmojiPickerPopupState extends State<_EmojiPickerPopup> {
 
   @override
   Widget build(BuildContext context) {
-    final options = _emojiOptions
+    final options = emojiCatalogEntries
         .where((option) => option.matches(_query))
         .toList();
     return DecoratedBox(
@@ -1378,7 +1398,7 @@ class _EmojiPickerPopupState extends State<_EmojiPickerPopup> {
         boxShadow: AppShadows.popover,
       ),
       child: Padding(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(10),
         child: Column(
           children: [
             Row(
@@ -1387,7 +1407,7 @@ class _EmojiPickerPopupState extends State<_EmojiPickerPopup> {
                   widget.title,
                   style: const TextStyle(
                     fontFamily: 'Geist',
-                    fontSize: 14,
+                    fontSize: 13.5,
                     fontWeight: FontWeight.w700,
                     color: AppTokens.textPrimary,
                   ),
@@ -1396,41 +1416,52 @@ class _EmojiPickerPopupState extends State<_EmojiPickerPopup> {
                 AppIconButton(
                   icon: Icons.close,
                   tooltip: 'Fechar',
-                  minSize: 28,
-                  iconSize: 15,
+                  minSize: 26,
+                  iconSize: 14,
                   onPressed: widget.onClose,
                 ),
               ],
             ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: _searchController,
-              autofocus: true,
-              cursorColor: AppTokens.borderFocus,
-              style: const TextStyle(
-                fontFamily: 'Geist',
-                fontSize: 13.5,
-                color: AppTokens.textPrimary,
-              ),
-              decoration: InputDecoration(
-                hintText: 'Buscar emoji',
-                prefixIcon: const Icon(Icons.search, size: 18),
-                isDense: true,
-                filled: true,
-                fillColor: AppTokens.surface1,
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(AppRadius.md),
-                  borderSide: const BorderSide(color: AppTokens.borderHairline),
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 34,
+              child: TextField(
+                controller: _searchController,
+                autofocus: true,
+                cursorColor: AppTokens.borderFocus,
+                textAlignVertical: TextAlignVertical.center,
+                style: const TextStyle(
+                  fontFamily: 'Geist',
+                  fontSize: 13,
+                  color: AppTokens.textPrimary,
                 ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(AppRadius.md),
-                  borderSide: const BorderSide(color: AppTokens.borderFocus),
+                decoration: InputDecoration(
+                  hintText: 'Buscar emoji',
+                  prefixIcon: const Icon(Icons.search, size: 15),
+                  prefixIconConstraints: const BoxConstraints(
+                    minWidth: 30,
+                    minHeight: 30,
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                  isDense: true,
+                  filled: true,
+                  fillColor: AppTokens.surface1,
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(AppRadius.sm),
+                    borderSide: const BorderSide(
+                      color: AppTokens.borderHairline,
+                    ),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(AppRadius.sm),
+                    borderSide: const BorderSide(color: AppTokens.borderFocus),
+                  ),
                 ),
+                onChanged: (value) =>
+                    setState(() => _query = value.trim().toLowerCase()),
               ),
-              onChanged: (value) =>
-                  setState(() => _query = value.trim().toLowerCase()),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
             Expanded(
               child: options.isEmpty
                   ? const Center(
@@ -1443,18 +1474,22 @@ class _EmojiPickerPopupState extends State<_EmojiPickerPopup> {
                         ),
                       ),
                     )
-                  : SingleChildScrollView(
-                      child: Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          for (final option in options)
-                            _PickerEmojiButton(
-                              option: option,
-                              onSelected: widget.onSelected,
-                            ),
-                        ],
-                      ),
+                  : GridView.builder(
+                      padding: EdgeInsets.zero,
+                      itemCount: options.length,
+                      gridDelegate:
+                          const SliverGridDelegateWithMaxCrossAxisExtent(
+                            maxCrossAxisExtent: 34,
+                            mainAxisSpacing: 4,
+                            crossAxisSpacing: 4,
+                            childAspectRatio: 1,
+                          ),
+                      itemBuilder: (context, index) {
+                        return _PickerEmojiButton(
+                          option: options[index],
+                          onSelected: widget.onSelected,
+                        );
+                      },
                     ),
             ),
           ],
@@ -1467,7 +1502,7 @@ class _EmojiPickerPopupState extends State<_EmojiPickerPopup> {
 class _PickerEmojiButton extends StatefulWidget {
   const _PickerEmojiButton({required this.option, required this.onSelected});
 
-  final _EmojiOption option;
+  final EmojiCatalogEntry option;
   final ValueChanged<String> onSelected;
 
   @override
@@ -1490,17 +1525,17 @@ class _PickerEmojiButtonState extends State<_PickerEmojiButton> {
           behavior: HitTestBehavior.opaque,
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 120),
-            width: 40,
-            height: 40,
+            width: 32,
+            height: 32,
             alignment: Alignment.center,
             decoration: BoxDecoration(
               color: _hovered ? AppTokens.hoverOverlay : AppTokens.surface1,
-              borderRadius: BorderRadius.circular(AppRadius.md),
+              borderRadius: BorderRadius.circular(AppRadius.sm),
               border: Border.all(color: AppTokens.borderHairline, width: 1),
             ),
             child: Text(
               widget.option.value,
-              style: const TextStyle(fontSize: 22),
+              style: const TextStyle(fontSize: 19, height: 1),
             ),
           ),
         ),
@@ -1509,153 +1544,249 @@ class _PickerEmojiButtonState extends State<_PickerEmojiButton> {
   }
 }
 
-class _GifPickerDialog extends StatefulWidget {
-  const _GifPickerDialog();
+class _GifPickerPopup extends StatefulWidget {
+  const _GifPickerPopup({
+    required this.repository,
+    required this.onSelected,
+    required this.onClose,
+  });
+
+  final GifRepository repository;
+  final ValueChanged<GifResult> onSelected;
+  final VoidCallback onClose;
 
   @override
-  State<_GifPickerDialog> createState() => _GifPickerDialogState();
+  State<_GifPickerPopup> createState() => _GifPickerPopupState();
 }
 
-class _GifPickerDialogState extends State<_GifPickerDialog> {
+class _GifPickerPopupState extends State<_GifPickerPopup> {
+  static const _perPage = 18;
   final TextEditingController _searchController = TextEditingController();
-  String _query = '';
+  Timer? _debounce;
+  List<GifResult> _items = const [];
+  bool _loading = true;
+  String? _error;
+  int _requestVersion = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _load('');
+  }
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _searchController.dispose();
     super.dispose();
   }
 
+  void _onSearchChanged(String value) {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 350), () => _load(value));
+  }
+
+  Future<void> _load(String query) async {
+    final version = ++_requestVersion;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final items = query.trim().isEmpty
+          ? await widget.repository.trending(perPage: _perPage)
+          : await widget.repository.search(query: query, perPage: _perPage);
+      if (!mounted || version != _requestVersion) return;
+      setState(() {
+        _items = items;
+        _loading = false;
+      });
+    } on GifRepositoryException catch (error) {
+      if (!mounted || version != _requestVersion) return;
+      setState(() {
+        _items = const [];
+        _error = error.message;
+        _loading = false;
+      });
+    } catch (_) {
+      if (!mounted || version != _requestVersion) return;
+      setState(() {
+        _items = const [];
+        _error = 'Não foi possível carregar GIFs.';
+        _loading = false;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final options = _gifOptions
-        .where((option) => option.title.toLowerCase().contains(_query))
-        .toList();
-    return Dialog(
-      backgroundColor: Colors.transparent,
-      insetPadding: const EdgeInsets.all(24),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 560, maxHeight: 520),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: AppTokens.surface2,
-            borderRadius: BorderRadius.circular(AppRadius.lg),
-            border: Border.all(color: AppTokens.borderSubtle, width: 1),
-            boxShadow: AppShadows.modalWindow,
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Column(
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: AppTokens.surface2,
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        border: Border.all(color: AppTokens.borderSubtle, width: 1),
+        boxShadow: AppShadows.popover,
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(10),
+        child: Column(
+          children: [
+            Row(
               children: [
-                Row(
-                  children: [
-                    const Text(
-                      'GIFs',
-                      style: TextStyle(
-                        fontFamily: 'Geist',
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: AppTokens.textPrimary,
-                      ),
-                    ),
-                    const Spacer(),
-                    AppIconButton(
-                      icon: Icons.close,
-                      tooltip: 'Fechar',
-                      minSize: 28,
-                      iconSize: 15,
-                      onPressed: () => Navigator.of(context).pop(),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _searchController,
-                  style: const TextStyle(
+                const Text(
+                  'GIFs',
+                  style: TextStyle(
                     fontFamily: 'Geist',
                     fontSize: 13.5,
+                    fontWeight: FontWeight.w700,
                     color: AppTokens.textPrimary,
                   ),
-                  decoration: InputDecoration(
-                    hintText: 'Buscar GIF',
-                    prefixIcon: const Icon(Icons.search, size: 18),
-                    isDense: true,
-                    filled: true,
-                    fillColor: AppTokens.surface1,
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(AppRadius.md),
-                      borderSide: const BorderSide(
-                        color: AppTokens.borderHairline,
-                      ),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(AppRadius.md),
-                      borderSide: const BorderSide(
-                        color: AppTokens.borderFocus,
-                      ),
-                    ),
-                  ),
-                  onChanged: (value) =>
-                      setState(() => _query = value.trim().toLowerCase()),
                 ),
-                const SizedBox(height: 12),
-                Expanded(
-                  child: GridView.builder(
-                    itemCount: options.length,
-                    gridDelegate:
-                        const SliverGridDelegateWithMaxCrossAxisExtent(
-                          maxCrossAxisExtent: 180,
-                          mainAxisSpacing: 10,
-                          crossAxisSpacing: 10,
-                          childAspectRatio: 1.35,
-                        ),
-                    itemBuilder: (context, index) {
-                      final option = options[index];
-                      return _GifOptionTile(option: option);
-                    },
-                  ),
+                const Spacer(),
+                AppIconButton(
+                  icon: Icons.close,
+                  tooltip: 'Fechar',
+                  minSize: 26,
+                  iconSize: 14,
+                  onPressed: widget.onClose,
                 ),
               ],
             ),
-          ),
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 34,
+              child: TextField(
+                controller: _searchController,
+                autofocus: true,
+                cursorColor: AppTokens.borderFocus,
+                textAlignVertical: TextAlignVertical.center,
+                style: const TextStyle(
+                  fontFamily: 'Geist',
+                  fontSize: 13,
+                  color: AppTokens.textPrimary,
+                ),
+                decoration: InputDecoration(
+                  hintText: widget.repository.searchHint,
+                  prefixIcon: const Icon(Icons.search, size: 15),
+                  prefixIconConstraints: const BoxConstraints(
+                    minWidth: 30,
+                    minHeight: 30,
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                  isDense: true,
+                  filled: true,
+                  fillColor: AppTokens.surface1,
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(AppRadius.sm),
+                    borderSide: const BorderSide(
+                      color: AppTokens.borderHairline,
+                    ),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(AppRadius.sm),
+                    borderSide: const BorderSide(color: AppTokens.borderFocus),
+                  ),
+                ),
+                onChanged: _onSearchChanged,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Expanded(child: _body()),
+          ],
         ),
       ),
     );
   }
+
+  Widget _body() {
+    if (_loading) {
+      return const Center(
+        child: SizedBox(
+          width: 18,
+          height: 18,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      );
+    }
+    final error = _error;
+    if (error != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Text(
+            error,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontFamily: 'Geist',
+              fontSize: 12.5,
+              height: 1.35,
+              color: AppTokens.textMuted,
+            ),
+          ),
+        ),
+      );
+    }
+    if (_items.isEmpty) {
+      return const Center(
+        child: Text(
+          'Nenhum GIF encontrado',
+          style: TextStyle(
+            fontFamily: 'Geist',
+            fontSize: 13,
+            color: AppTokens.textMuted,
+          ),
+        ),
+      );
+    }
+    return GridView.builder(
+      padding: EdgeInsets.zero,
+      itemCount: _items.length,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        mainAxisSpacing: 6,
+        crossAxisSpacing: 6,
+        childAspectRatio: 1.45,
+      ),
+      itemBuilder: (context, index) {
+        return _GifTile(gif: _items[index], onSelected: widget.onSelected);
+      },
+    );
+  }
 }
 
-class _GifOptionTile extends StatefulWidget {
-  const _GifOptionTile({required this.option});
+class _GifTile extends StatefulWidget {
+  const _GifTile({required this.gif, required this.onSelected});
 
-  final _GifOption option;
+  final GifResult gif;
+  final ValueChanged<GifResult> onSelected;
 
   @override
-  State<_GifOptionTile> createState() => _GifOptionTileState();
+  State<_GifTile> createState() => _GifTileState();
 }
 
-class _GifOptionTileState extends State<_GifOptionTile> {
+class _GifTileState extends State<_GifTile> {
   bool _hovered = false;
 
   @override
   Widget build(BuildContext context) {
     return Tooltip(
-      message: widget.option.title,
+      message: widget.gif.title,
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
         onEnter: (_) => setState(() => _hovered = true),
         onExit: (_) => setState(() => _hovered = false),
         child: GestureDetector(
-          onTap: () => Navigator.of(context).pop(widget.option.url),
+          onTap: () => widget.onSelected(widget.gif),
           behavior: HitTestBehavior.opaque,
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 120),
             decoration: BoxDecoration(
               color: AppTokens.surface1,
-              borderRadius: BorderRadius.circular(AppRadius.md),
+              borderRadius: BorderRadius.circular(AppRadius.sm),
               border: Border.all(
                 color: _hovered
                     ? AppTokens.borderFocus
-                    : AppTokens.borderSubtle,
+                    : AppTokens.borderHairline,
                 width: _hovered ? 1.2 : 1,
               ),
             ),
@@ -1664,12 +1795,13 @@ class _GifOptionTileState extends State<_GifOptionTile> {
               fit: StackFit.expand,
               children: [
                 Image.network(
-                  widget.option.url,
+                  widget.gif.previewUrl,
                   fit: BoxFit.cover,
                   gaplessPlayback: true,
                   errorBuilder: (_, _, _) => const Center(
                     child: Icon(
                       Icons.broken_image_outlined,
+                      size: 18,
                       color: AppTokens.textMuted,
                     ),
                   ),
@@ -1679,19 +1811,19 @@ class _GifOptionTileState extends State<_GifOptionTile> {
                   right: 0,
                   bottom: 0,
                   child: DecoratedBox(
-                    decoration: const BoxDecoration(color: Color(0xCC000000)),
+                    decoration: const BoxDecoration(color: Color(0xB0000000)),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 5,
+                        horizontal: 6,
+                        vertical: 4,
                       ),
                       child: Text(
-                        widget.option.title,
+                        widget.gif.title,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           fontFamily: 'Geist',
-                          fontSize: 12,
+                          fontSize: 11,
                           fontWeight: FontWeight.w600,
                           color: AppTokens.textPrimary,
                         ),
@@ -1705,33 +1837,6 @@ class _GifOptionTileState extends State<_GifOptionTile> {
         ),
       ),
     );
-  }
-}
-
-class _GifOption {
-  const _GifOption({required this.title, required this.url});
-
-  final String title;
-  final String url;
-}
-
-class _EmojiOption {
-  const _EmojiOption({
-    required this.value,
-    required this.label,
-    this.aliases = const [],
-  });
-
-  final String value;
-  final String label;
-  final List<String> aliases;
-
-  bool matches(String query) {
-    if (query.isEmpty) return true;
-    final normalized = query.replaceAll(':', '');
-    return value.contains(query) ||
-        label.toLowerCase().contains(normalized) ||
-        aliases.any((alias) => alias.contains(normalized));
   }
 }
 
@@ -1774,69 +1879,3 @@ List<String> _quickReactionEmojisFor(
 }
 
 const _defaultQuickReactionEmojis = ['✅', '👍', '❤️'];
-
-const _emojiOptions = [
-  _EmojiOption(value: '😀', label: 'Sorriso', aliases: ['grinning', 'smile']),
-  _EmojiOption(value: '😄', label: 'Feliz', aliases: ['happy', 'laugh']),
-  _EmojiOption(value: '😂', label: 'Rindo', aliases: ['joy', 'lol']),
-  _EmojiOption(value: '😊', label: 'Fofo', aliases: ['blush']),
-  _EmojiOption(value: '😍', label: 'Amei', aliases: ['heart eyes', 'love']),
-  _EmojiOption(value: '😮', label: 'Surpreso', aliases: ['surprised', 'wow']),
-  _EmojiOption(value: '😢', label: 'Triste', aliases: ['sad', 'cry']),
-  _EmojiOption(value: '😡', label: 'Bravo', aliases: ['angry']),
-  _EmojiOption(value: '👍', label: 'Joinha', aliases: ['thumbsup', 'like']),
-  _EmojiOption(value: '👎', label: 'Negativo', aliases: ['thumbsdown']),
-  _EmojiOption(value: '👏', label: 'Palmas', aliases: ['clap']),
-  _EmojiOption(value: '🙏', label: 'Obrigado', aliases: ['pray', 'thanks']),
-  _EmojiOption(value: '🔥', label: 'Fogo', aliases: ['fire']),
-  _EmojiOption(value: '🎉', label: 'Festa', aliases: ['party']),
-  _EmojiOption(value: '✅', label: 'Confirmado', aliases: ['check', 'ok']),
-  _EmojiOption(value: '❤️', label: 'Coração', aliases: ['heart', 'love']),
-  _EmojiOption(value: '💯', label: 'Cem', aliases: ['100', 'perfect']),
-  _EmojiOption(value: '🚀', label: 'Foguete', aliases: ['rocket', 'ship']),
-  _EmojiOption(value: '👀', label: 'Olhos', aliases: ['eyes']),
-  _EmojiOption(value: '✨', label: 'Brilho', aliases: ['sparkles']),
-  _EmojiOption(value: '🤝', label: 'Acordo', aliases: ['handshake']),
-  _EmojiOption(value: '🫡', label: 'Salute', aliases: ['sir', 'ok']),
-  _EmojiOption(value: '😎', label: 'Legal', aliases: ['cool']),
-  _EmojiOption(value: '🤔', label: 'Pensando', aliases: ['thinking']),
-];
-
-const _gifOptions = [
-  _GifOption(
-    title: 'Nice',
-    url: 'https://media.giphy.com/media/111ebonMs90YLu/giphy.gif',
-  ),
-  _GifOption(
-    title: 'Celebrando',
-    url: 'https://media.giphy.com/media/3oz8xAFtqoOUUrsh7W/giphy.gif',
-  ),
-  _GifOption(
-    title: 'Aprovado',
-    url: 'https://media.giphy.com/media/l0HlBO7eyXzSZkJri/giphy.gif',
-  ),
-  _GifOption(
-    title: 'Opa',
-    url: 'https://media.giphy.com/media/xT9IgG50Fb7Mi0prBC/giphy.gif',
-  ),
-  _GifOption(
-    title: 'Trabalho',
-    url: 'https://media.giphy.com/media/13HgwGsXF0aiGY/giphy.gif',
-  ),
-  _GifOption(
-    title: 'Foco',
-    url: 'https://media.giphy.com/media/26tn33aiTi1jkl6H6/giphy.gif',
-  ),
-  _GifOption(
-    title: 'Perfeito',
-    url: 'https://media.giphy.com/media/26u4lOMA8JKSnL9Uk/giphy.gif',
-  ),
-  _GifOption(
-    title: 'Obrigado',
-    url: 'https://media.giphy.com/media/3oEdva9BUHPIs2SkGk/giphy.gif',
-  ),
-  _GifOption(
-    title: 'Ship it',
-    url: 'https://media.giphy.com/media/5GoVLqeAOo6PK/giphy.gif',
-  ),
-];

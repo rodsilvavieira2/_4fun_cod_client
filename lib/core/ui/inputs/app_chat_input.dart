@@ -25,6 +25,7 @@ class AppChatInput extends StatefulWidget {
     this.sendTooltip = 'Enviar mensagem',
     this.sendActiveColor = AppTokens.accentVercel,
     this.leadingActions = const [],
+    this.trailingActions = const [],
     this.topPanel,
     this.canSendEmpty = false,
   });
@@ -43,6 +44,7 @@ class AppChatInput extends StatefulWidget {
   final String sendTooltip;
   final Color sendActiveColor;
   final List<Widget> leadingActions;
+  final List<Widget> trailingActions;
   final Widget? topPanel;
   final bool canSendEmpty;
 
@@ -215,7 +217,17 @@ class _AppChatInputState extends State<AppChatInput> {
                         onChanged: (_) => setState(() {}),
                       ),
                     ),
-                    const SizedBox(width: 8),
+                    if (widget.trailingActions.isNotEmpty) ...[
+                      const SizedBox(width: 6),
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: widget.trailingActions,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(width: 6),
                     Padding(
                       padding: const EdgeInsets.only(bottom: 4),
                       child: AppIconButton(

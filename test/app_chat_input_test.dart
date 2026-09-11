@@ -68,4 +68,30 @@ void main() {
       isA<InputBorder>().having((b) => b.borderSide.width, 'largura', 0.0),
     );
   });
+
+  testWidgets('trailingActions ficam à direita do campo e antes do envio', (
+    tester,
+  ) async {
+    final controller = TextEditingController();
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AppChatInput(
+            controller: controller,
+            trailingActions: const [Text('Ação direita')],
+            onSend: (_) {},
+          ),
+        ),
+      ),
+    );
+
+    final fieldRect = tester.getRect(find.byType(TextField));
+    final actionRect = tester.getRect(find.text('Ação direita'));
+    final sendRect = tester.getRect(find.byIcon(Icons.arrow_upward));
+
+    expect(actionRect.left, greaterThan(fieldRect.right));
+    expect(sendRect.left, greaterThan(actionRect.right));
+  });
 }
