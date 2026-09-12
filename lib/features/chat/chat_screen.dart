@@ -1698,7 +1698,7 @@ Future<GifResult?> _showGifPopup(
 }) {
   return _showAnchoredPopup<GifResult>(
     anchorContext: anchorContext,
-    preferredSize: const Size(340, 300),
+    preferredSize: const Size(520, 480),
     builder: (onSelected, onClose) => _GifPickerPopup(
       repository: repository,
       onSelected: onSelected,
@@ -2183,9 +2183,9 @@ class _GifPickerPopupState extends State<_GifPickerPopup> {
       itemCount: _items.length,
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 2,
-        mainAxisSpacing: 6,
-        crossAxisSpacing: 6,
-        childAspectRatio: 1.45,
+        mainAxisSpacing: 8,
+        crossAxisSpacing: 8,
+        childAspectRatio: 1.5,
       ),
       itemBuilder: (context, index) {
         return _GifTile(gif: _items[index], onSelected: widget.onSelected);

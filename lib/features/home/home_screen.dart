@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/ui/settings_modal.dart';
+import '../../core/ui/settings_section_layout.dart';
 import '../../core/ui/ui.dart';
 import '../../shared/models/servers.dart';
 import '../servers/server_rail.dart';
@@ -92,7 +93,7 @@ class _HomeNavigation extends StatelessWidget {
         children: [
           Container(
             height: AppLayout.headerHeight,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 14),
             decoration: const BoxDecoration(
               border: Border(
                 bottom: BorderSide(color: AppTokens.borderHairline, width: 1),
@@ -100,22 +101,23 @@ class _HomeNavigation extends StatelessWidget {
             ),
             child: const Row(
               children: [
-                AppLogo(size: 28),
+                AppLogo(size: 24),
                 SizedBox(width: 10),
                 Text(
                   '4FunCode',
                   style: TextStyle(
                     fontFamily: 'Geist',
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w600,
                     color: AppTokens.textPrimary,
-                    letterSpacing: -0.3,
+                    letterSpacing: 0,
                   ),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
+          const _HomeNavGroupLabel('Principal'),
           const _HomeNavItem(
             icon: Icons.people_alt_outlined,
             label: 'Início',
@@ -126,36 +128,34 @@ class _HomeNavigation extends StatelessWidget {
             label: 'Criar ou entrar',
             onTap: () => showServerEntryDialog(context),
           ),
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 22, 16, 8),
-            child: Text(
-              'COMUNIDADES',
-              style: TextStyle(
-                fontFamily: 'Geist Mono',
-                fontSize: 10.5,
-                fontWeight: FontWeight.w600,
-                color: AppTokens.textMuted,
-                letterSpacing: 0.8,
-              ),
-            ),
-          ),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16),
-            child: Text(
-              'Escolha um servidor no rail ou veja todos no painel principal.',
-              style: TextStyle(
-                fontFamily: 'Geist',
-                fontSize: 12.5,
-                height: 1.45,
-                color: AppTokens.textMuted,
-              ),
-            ),
-          ),
           const Spacer(),
           // Reserva sob o card flutuante (mesmo valor do servidor sem voz):
           // o conteúdo nunca fica escondido atrás do overlay.
           const SizedBox(height: 96),
         ],
+      ),
+    );
+  }
+}
+
+class _HomeNavGroupLabel extends StatelessWidget {
+  const _HomeNavGroupLabel(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 12, 4),
+      child: Text(
+        label,
+        style: const TextStyle(
+          fontFamily: 'Geist Mono',
+          fontSize: 10.5,
+          fontWeight: FontWeight.w600,
+          color: AppTokens.textMuted,
+          letterSpacing: 0,
+        ),
       ),
     );
   }
@@ -195,25 +195,43 @@ class _HomeNavItemState extends State<_HomeNavItem> {
         onTap: widget.onTap,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 120),
-          height: 42,
-          margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-          padding: const EdgeInsets.symmetric(horizontal: 12),
+          height: 30,
+          margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
+          padding: const EdgeInsets.symmetric(horizontal: 7),
           decoration: BoxDecoration(
             color: widget.selected
-                ? AppTokens.activeOverlay
+                ? AppTokens.surface2
                 : (_hovered ? AppTokens.hoverOverlay : Colors.transparent),
             borderRadius: AppRadius.brSm,
+            border: Border.all(
+              color: widget.selected
+                  ? AppTokens.borderSubtle
+                  : Colors.transparent,
+              width: 1,
+            ),
           ),
           child: Row(
             children: [
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 120),
+                width: 2,
+                height: 14,
+                decoration: BoxDecoration(
+                  color: widget.selected
+                      ? AppTokens.accentVercel
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(AppRadius.full),
+                ),
+              ),
+              const SizedBox(width: 7),
               Icon(
                 widget.icon,
-                size: 20,
+                size: 14.5,
                 color: highlighted
                     ? AppTokens.textPrimary
                     : AppTokens.textSecondary,
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 7),
               Expanded(
                 child: Text(
                   widget.label,
@@ -221,13 +239,14 @@ class _HomeNavItemState extends State<_HomeNavItem> {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontFamily: 'Geist',
-                    fontSize: 14,
+                    fontSize: 13,
                     fontWeight: widget.selected
                         ? FontWeight.w600
-                        : FontWeight.w500,
+                        : FontWeight.w400,
                     color: highlighted
                         ? AppTokens.textPrimary
                         : AppTokens.textSecondary,
+                    letterSpacing: 0,
                   ),
                 ),
               ),
@@ -345,42 +364,64 @@ class _EmptyHome extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 440),
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
+      child: SettingsStack(
+        maxWidth: 640,
+        children: [
+          SettingsGroup(
+            title: 'Comunidades',
             children: [
-              const AppLogo(size: 64),
-              const SizedBox(height: 22),
-              Text(
-                'Crie seu primeiro servidor',
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.headlineSmall,
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Reúna sua galera em canais de texto, voz, câmera e compartilhamento de tela.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontFamily: 'Geist',
-                  fontSize: 13.5,
-                  height: 1.5,
-                  color: AppTokens.textMuted,
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+                child: Row(
+                  children: [
+                    const AppLogo(size: 32),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Crie seu primeiro servidor',
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontFamily: 'Geist',
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: AppTokens.textPrimary,
+                              letterSpacing: 0,
+                            ),
+                          ),
+                          SizedBox(height: 2),
+                          Text(
+                            'Canais de texto, voz, câmera e tela.',
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontFamily: 'Geist',
+                              fontSize: 12,
+                              height: 1.25,
+                              color: AppTokens.textMuted,
+                              letterSpacing: 0,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    AppButton(
+                      label: 'Criar ou entrar',
+                      icon: Icons.add,
+                      size: AppButtonSize.sm,
+                      onPressed: () => showServerEntryDialog(context),
+                    ),
+                  ],
                 ),
-              ),
-              const SizedBox(height: 24),
-              AppButton(
-                label: 'Criar ou entrar',
-                icon: Icons.add,
-                size: AppButtonSize.lg,
-                onPressed: () => showServerEntryDialog(context),
               ),
             ],
           ),
-        ),
+        ],
       ),
     );
   }
@@ -393,37 +434,40 @@ class _ServerOverview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final columns = constraints.maxWidth >= 1120
-            ? 3
-            : (constraints.maxWidth >= 720 ? 2 : 1);
-        return GridView.builder(
-          padding: const EdgeInsets.all(24),
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: columns,
-            mainAxisSpacing: 12,
-            crossAxisSpacing: 12,
-            childAspectRatio: columns == 1 ? 3.5 : 2.5,
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
+      child: SettingsStack(
+        maxWidth: 640,
+        children: [
+          SettingsGroup(
+            title: 'Comunidades',
+            trailing: AppButton(
+              label: 'Criar ou entrar',
+              icon: Icons.add,
+              size: AppButtonSize.sm,
+              variant: AppButtonVariant.ghost,
+              onPressed: () => showServerEntryDialog(context),
+            ),
+            children: [
+              for (final server in servers) _ServerRow(server: server),
+            ],
           ),
-          itemCount: servers.length,
-          itemBuilder: (context, index) => _ServerCard(server: servers[index]),
-        );
-      },
+        ],
+      ),
     );
   }
 }
 
-class _ServerCard extends StatefulWidget {
-  const _ServerCard({required this.server});
+class _ServerRow extends StatefulWidget {
+  const _ServerRow({required this.server});
 
   final Server server;
 
   @override
-  State<_ServerCard> createState() => _ServerCardState();
+  State<_ServerRow> createState() => _ServerRowState();
 }
 
-class _ServerCardState extends State<_ServerCard> {
+class _ServerRowState extends State<_ServerRow> {
   bool _hovered = false;
 
   @override
@@ -436,24 +480,17 @@ class _ServerCardState extends State<_ServerCard> {
       child: GestureDetector(
         onTap: () => context.go('/servers/${server.id}'),
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: _hovered ? AppTokens.surface2 : AppTokens.surface1,
-            borderRadius: AppRadius.brLg,
-            border: Border.all(
-              color: _hovered
-                  ? AppTokens.borderStrong
-                  : AppTokens.borderHairline,
-            ),
-          ),
+          duration: const Duration(milliseconds: 120),
+          constraints: const BoxConstraints(minHeight: 54),
+          padding: const EdgeInsets.fromLTRB(12, 8, 10, 8),
+          color: _hovered ? AppTokens.hoverOverlay : Colors.transparent,
           child: Row(
             children: [
-              _ServerAvatar(server: server),
-              const SizedBox(width: 14),
+              _ServerAvatar(server: server, size: 32),
+              const SizedBox(width: 10),
               Expanded(
                 child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
@@ -462,34 +499,33 @@ class _ServerCardState extends State<_ServerCard> {
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         fontFamily: 'Geist',
-                        fontSize: 15,
+                        fontSize: 13,
                         fontWeight: FontWeight.w600,
                         color: AppTokens.textPrimary,
+                        letterSpacing: 0,
                       ),
                     ),
-                    const SizedBox(height: 5),
+                    const SizedBox(height: 2),
                     Text(
                       '${server.channels.length} ${server.channels.length == 1 ? 'canal' : 'canais'}',
                       style: const TextStyle(
                         fontFamily: 'Geist',
-                        fontSize: 12.5,
+                        fontSize: 12,
                         color: AppTokens.textMuted,
+                        letterSpacing: 0,
                       ),
                     ),
                   ],
                 ),
               ),
-              AnimatedSlide(
-                duration: const Duration(milliseconds: 150),
-                offset: _hovered ? Offset.zero : const Offset(-0.2, 0),
-                child: AnimatedOpacity(
-                  duration: const Duration(milliseconds: 150),
-                  opacity: _hovered ? 1 : 0.55,
-                  child: const Icon(
-                    Icons.arrow_forward,
-                    size: 18,
-                    color: AppTokens.textSecondary,
-                  ),
+              const SizedBox(width: 12),
+              AnimatedOpacity(
+                duration: const Duration(milliseconds: 120),
+                opacity: _hovered ? 1 : 0.55,
+                child: const Icon(
+                  Icons.chevron_right,
+                  size: 18,
+                  color: AppTokens.textSecondary,
                 ),
               ),
             ],
@@ -501,41 +537,37 @@ class _ServerCardState extends State<_ServerCard> {
 }
 
 class _ServerAvatar extends StatelessWidget {
-  const _ServerAvatar({required this.server});
+  const _ServerAvatar({required this.server, this.size = 32});
 
   final Server server;
+  final double size;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 48,
-      height: 48,
+      width: size,
+      height: size,
       alignment: Alignment.center,
       clipBehavior: Clip.antiAlias,
       decoration: const BoxDecoration(
         color: AppTokens.surface3,
-        borderRadius: AppRadius.brLg,
+        borderRadius: AppRadius.brSm,
       ),
-      child: server.iconUrl == null
-          ? Text(
-              server.name.isEmpty ? '?' : server.name[0].toUpperCase(),
-              style: const TextStyle(
-                fontFamily: 'Geist',
-                fontSize: 17,
-                fontWeight: FontWeight.w700,
-                color: AppTokens.textPrimary,
-              ),
-            )
-          : Image.network(
-              server.iconUrl!,
-              width: 48,
-              height: 48,
-              fit: BoxFit.cover,
-              errorBuilder: (_, _, _) => const Icon(
-                Icons.groups_2_outlined,
-                color: AppTokens.textSecondary,
-              ),
-            ),
+      child: AppFileImage(
+        path: server.iconUrl,
+        width: size,
+        height: size,
+        fallback: Text(
+          server.name.isEmpty ? '?' : server.name[0].toUpperCase(),
+          style: TextStyle(
+            fontFamily: 'Geist',
+            fontSize: size <= 32 ? 13 : 17,
+            fontWeight: FontWeight.w700,
+            color: AppTokens.textPrimary,
+            letterSpacing: 0,
+          ),
+        ),
+      ),
     );
   }
 }
