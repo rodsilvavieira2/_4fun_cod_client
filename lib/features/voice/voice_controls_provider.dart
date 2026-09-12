@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../core/logging/app_logger.dart';
 import '../../core/rtc/rtc_providers.dart';
 import 'push_to_talk.dart';
 import 'push_to_talk_input.dart';
@@ -70,6 +71,14 @@ class VoiceControlsState {
 
 const Object _unset = Object();
 
+String _describePushToTalkBinding(PushToTalkBinding? binding) {
+  if (binding == null) return 'nenhum';
+  return '${binding.kind.name}:${binding.displayLabel} '
+      'usage=${binding.physicalKeyUsage ?? '-'} '
+      'mouse=${binding.mouseButton ?? '-'} '
+      'ctrl=${binding.control} alt=${binding.alt} shift=${binding.shift}';
+}
+
 /// Persiste o mute manual, ensurdecer e Push to Talk. PTT é uma porta extra:
 /// ele nunca desfaz mute/ensurdecer e só abre o microfone enquanto pressionado.
 class VoiceControlsController extends Notifier<VoiceControlsState> {
@@ -90,6 +99,7 @@ class VoiceControlsController extends Notifier<VoiceControlsState> {
   @override
   VoiceControlsState build() {
     _inputService = ref.read(pushToTalkInputServiceProvider);
+    _logPtt('controller inicializado');
     ref.onDispose(() {
       _disposed = true;
       _releaseTimer?.cancel();
@@ -101,30 +111,80 @@ class VoiceControlsController extends Notifier<VoiceControlsState> {
 
   Future<void> ensureInitialized() => _initialization ??= _initialize();
 
+  void _logPtt(String message) {
+    if (_disposed) return;
+    try {
+      ref.read(appLoggerProvider).d(message, tag: 'ptt');
+    } catch (_) {
+      // O log é diagnóstico; nunca deve interferir no fluxo de voz.
+    }
+  }
+
+  void _warnPtt(String message) {
+    if (_disposed) return;
+    try {
+      ref.read(appLoggerProvider).w(message, tag: 'ptt');
+    } catch (_) {}
+  }
+
+  void _errorPtt(String message, Object error, StackTrace stackTrace) {
+    if (_disposed) return;
+    try {
+      ref
+          .read(appLoggerProvider)
+          .e(message, error: error, stackTrace: stackTrace, tag: 'ptt');
+    } catch (_) {}
+  }
+
   Future<void> _initialize() async {
     try {
+      _logPtt('initialize: lendo preferências salvas');
       final preferences = await SharedPreferences.getInstance();
       final binding = _decodeBinding(preferences.getString(_pttBindingKey));
       final wasEnabled = preferences.getBool(_pttEnabledKey) ?? false;
+      final pushToTalkEnabled = wasEnabled && binding != null;
+      final restoredMuted = preferences.getBool(_mutedKey) ?? false;
+      final restoredDeafened = preferences.getBool(_deafenedKey) ?? false;
       final delay = (preferences.getInt(_pttReleaseDelayKey) ?? 20).clamp(
         0,
         2000,
       );
       if (_disposed) return;
       _preferences = preferences;
+      _logPtt(
+        'initialize: restoredMuted=$restoredMuted '
+        'restoredDeafened=$restoredDeafened wasPttEnabled=$wasEnabled '
+        'effectivePttEnabled=$pushToTalkEnabled delayMs=$delay '
+        'binding=${_describePushToTalkBinding(binding)}',
+      );
+      if (wasEnabled && binding == null) {
+        _warnPtt(
+          'initialize: PTT estava ativo, mas o binding salvo é inválido',
+        );
+      }
       state = state.copyWith(
-        isMuted: preferences.getBool(_mutedKey) ?? false,
-        isDeafened: preferences.getBool(_deafenedKey) ?? false,
-        isPushToTalkEnabled: wasEnabled && binding != null,
+        isMuted: pushToTalkEnabled ? false : restoredMuted,
+        isDeafened: restoredDeafened,
+        isPushToTalkEnabled: pushToTalkEnabled,
         pushToTalkBinding: binding,
         pushToTalkReleaseDelayMs: delay,
         errorMessage: wasEnabled && binding == null
             ? 'Push to Talk precisa de um atalho configurado.'
             : null,
       );
+      if (pushToTalkEnabled && restoredMuted) {
+        _logPtt('initialize: limpando mute manual antigo para PTT restaurado');
+        await preferences.setBool(_mutedKey, false);
+      }
       if (state.isPushToTalkEnabled) await _registerPushToTalk(binding!);
       await _applyToRtc();
-    } catch (_) {
+      _logPtt('initialize: concluído');
+    } catch (error, stackTrace) {
+      _errorPtt(
+        'initialize: falha ao restaurar controles de voz',
+        error,
+        stackTrace,
+      );
       if (!_disposed) {
         state = state.copyWith(
           errorMessage: 'Não foi possível restaurar os controles de voz.',
@@ -139,21 +199,33 @@ class VoiceControlsController extends Notifier<VoiceControlsState> {
       return PushToTalkBinding.fromJson(
         jsonDecode(encoded) as Map<String, dynamic>,
       );
-    } catch (_) {
+    } catch (error) {
+      _warnPtt('decode binding: JSON inválido (${error.runtimeType})');
       return null;
     }
   }
 
   Future<bool> toggleMicrophone() async {
     await ensureInitialized();
-    if (state.isApplying || state.isDeafened) return false;
+    if (state.isApplying || state.isDeafened) {
+      _logPtt(
+        'toggle mic ignorado: applying=${state.isApplying} '
+        'deafened=${state.isDeafened}',
+      );
+      return false;
+    }
+    _logPtt('toggle mic: próximo muted=${!state.isMuted}');
     return _change(isMuted: !state.isMuted, isDeafened: state.isDeafened);
   }
 
   Future<bool> toggleDeafen() async {
     await ensureInitialized();
-    if (state.isApplying) return false;
+    if (state.isApplying) {
+      _logPtt('toggle deafen ignorado: applying=true');
+      return false;
+    }
     if (!state.isDeafened) _cancelPress();
+    _logPtt('toggle deafen: próximo deafened=${!state.isDeafened}');
     return _change(isMuted: state.isMuted, isDeafened: !state.isDeafened);
   }
 
@@ -162,16 +234,24 @@ class VoiceControlsController extends Notifier<VoiceControlsState> {
     required bool isDeafened,
   }) async {
     final previous = state;
+    _logPtt('change voice: muted=$isMuted deafened=$isDeafened');
     state = previous.copyWith(isApplying: true, errorMessage: null);
     try {
       await _applyToRtc(isMuted: isMuted, isDeafened: isDeafened);
-    } catch (_) {
+    } catch (error, stackTrace) {
+      _errorPtt('change voice: aplicação no RTC falhou', error, stackTrace);
       try {
         await _applyToRtc(
           isMuted: previous.isMuted,
           isDeafened: previous.isDeafened,
         );
-      } catch (_) {}
+      } catch (rollbackError, rollbackStackTrace) {
+        _errorPtt(
+          'change voice: rollback no RTC também falhou',
+          rollbackError,
+          rollbackStackTrace,
+        );
+      }
       if (!_disposed) {
         state = previous.copyWith(
           isApplying: false,
@@ -191,6 +271,7 @@ class VoiceControlsController extends Notifier<VoiceControlsState> {
         errorMessage: null,
       );
     }
+    _logPtt('change voice: concluído');
     return true;
   }
 
@@ -203,7 +284,13 @@ class VoiceControlsController extends Notifier<VoiceControlsState> {
     try {
       await preferences.setBool(_mutedKey, isMuted);
       await preferences.setBool(_deafenedKey, isDeafened);
-    } catch (_) {
+      _logPtt('save manual: muted=$isMuted deafened=$isDeafened');
+    } catch (error, stackTrace) {
+      _errorPtt(
+        'save manual: falha ao persistir preferências',
+        error,
+        stackTrace,
+      );
       if (!_disposed) {
         state = state.copyWith(
           errorMessage: 'Não foi possível salvar os controles de voz.',
@@ -214,9 +301,15 @@ class VoiceControlsController extends Notifier<VoiceControlsState> {
 
   Future<bool> setPushToTalkEnabled(bool enabled) async {
     await ensureInitialized();
+    _logPtt(
+      'set enabled: requested=$enabled current=${state.isPushToTalkEnabled} '
+      'registered=${state.isPushToTalkRegistered} '
+      'binding=${_describePushToTalkBinding(state.pushToTalkBinding)}',
+    );
     if (!enabled) {
       _enableAfterRecording = false;
       await resetPushToTalkPress();
+      _logPtt('set enabled: removendo configuração nativa');
       await _inputService.configure(null);
       state = state.copyWith(
         isPushToTalkEnabled: false,
@@ -226,26 +319,43 @@ class VoiceControlsController extends Notifier<VoiceControlsState> {
       );
       await _savePushToTalk();
       await _applyToRtc();
+      _logPtt('set enabled: PTT desativado');
       return true;
     }
     if (state.pushToTalkBinding == null) {
       _enableAfterRecording = true;
+      _logPtt(
+        'set enabled: sem binding, iniciando gravação e ativando ao capturar',
+      );
       startPushToTalkRecording();
       return false;
     }
     state = state.copyWith(
+      isMuted: false,
       isPushToTalkEnabled: true,
       isPushToTalkPressed: false,
       errorMessage: null,
     );
-    if (!await _registerPushToTalk(state.pushToTalkBinding!)) return false;
+    await _saveManual(isMuted: false, isDeafened: state.isDeafened);
+    if (!await _registerPushToTalk(state.pushToTalkBinding!)) {
+      _warnPtt(
+        'set enabled: registro global falhou; fallback em foco segue disponível',
+      );
+      return false;
+    }
     await _savePushToTalk();
     await _applyToRtc();
+    _logPtt('set enabled: PTT ativo');
     return true;
   }
 
-  void startPushToTalkRecording() {
+  void startPushToTalkRecording({bool enableAfterCapture = false}) {
+    _logPtt(
+      'recording: iniciar enableAfterCapture=$enableAfterCapture '
+      'wasPressed=${state.isPushToTalkPressed}',
+    );
     _cancelPress();
+    if (enableAfterCapture) _enableAfterRecording = true;
     _chordRecorder.reset();
     state = state.copyWith(
       isRecordingPushToTalk: true,
@@ -256,6 +366,7 @@ class VoiceControlsController extends Notifier<VoiceControlsState> {
   }
 
   void cancelPushToTalkRecording() {
+    _logPtt('recording: cancelar');
     _enableAfterRecording = false;
     _chordRecorder.reset();
     state = state.copyWith(isRecordingPushToTalk: false);
@@ -306,14 +417,27 @@ class VoiceControlsController extends Notifier<VoiceControlsState> {
             shift: snapshot.shift,
             meta: snapshot.meta,
           );
+    _logPtt(
+      'recording key: event=${event is KeyDownEvent ? 'down' : 'up'} '
+      'label=${key.label.isEmpty ? '<empty>' : key.label} usage=${key.usage} '
+      'ctrl=${snapshot.control} alt=${snapshot.alt} '
+      'shift=${snapshot.shift} meta=${snapshot.meta} '
+      'outcome=${outcome.runtimeType}',
+    );
     switch (outcome) {
       case PushToTalkCaptureReady(:final binding):
+        _logPtt(
+          'recording key: binding pronto ${_describePushToTalkBinding(binding)}',
+        );
         await _setPushToTalkBinding(binding);
       case PushToTalkCaptureCancelled():
+        _logPtt('recording key: cancelado');
         cancelPushToTalkRecording();
       case PushToTalkCaptureClearRequested():
+        _logPtt('recording key: limpar binding solicitado');
         await clearPushToTalkBinding();
       case PushToTalkCaptureRejected(:final message):
+        _warnPtt('recording key: rejeitado "$message"');
         if (!_disposed) state = state.copyWith(errorMessage: message);
       case PushToTalkCapturePending():
       case PushToTalkCaptureIgnored():
@@ -333,29 +457,45 @@ class VoiceControlsController extends Notifier<VoiceControlsState> {
       alt: alt,
       shift: shift,
     );
+    _logPtt(
+      'recording mouse: buttons=$buttons ctrl=$control alt=$alt shift=$shift '
+      'binding=${_describePushToTalkBinding(binding)}',
+    );
     if (binding != null) await _setPushToTalkBinding(binding);
   }
 
   Future<void> _setPushToTalkBinding(PushToTalkBinding binding) async {
     await ensureInitialized();
+    _logPtt('set binding: ${_describePushToTalkBinding(binding)}');
     await resetPushToTalkPress();
     final shouldEnable = _enableAfterRecording || state.isPushToTalkEnabled;
     _enableAfterRecording = false;
+    _logPtt('set binding: limpando configuração nativa anterior');
     await _inputService.configure(null);
     state = state.copyWith(
       pushToTalkBinding: binding,
       isRecordingPushToTalk: false,
       isPushToTalkEnabled: shouldEnable,
       isPushToTalkRegistered: false,
+      isMuted: shouldEnable ? false : null,
       errorMessage: null,
     );
-    if (shouldEnable && !await _registerPushToTalk(binding)) return;
+    if (shouldEnable) {
+      _logPtt('set binding: ativação solicitada, limpando mute manual');
+      await _saveManual(isMuted: false, isDeafened: state.isDeafened);
+    }
+    if (shouldEnable && !await _registerPushToTalk(binding)) {
+      _warnPtt('set binding: registro global falhou após captura');
+      return;
+    }
     await _savePushToTalk();
     await _applyToRtc();
+    _logPtt('set binding: concluído shouldEnable=$shouldEnable');
   }
 
   Future<void> clearPushToTalkBinding() async {
     await ensureInitialized();
+    _logPtt('clear binding: removendo PTT');
     _enableAfterRecording = false;
     await resetPushToTalkPress();
     await _inputService.configure(null);
@@ -372,30 +512,62 @@ class VoiceControlsController extends Notifier<VoiceControlsState> {
 
   Future<void> setPushToTalkReleaseDelay(int value) async {
     await ensureInitialized();
-    state = state.copyWith(pushToTalkReleaseDelayMs: value.clamp(0, 2000));
+    final clamped = value.clamp(0, 2000);
+    _logPtt('release delay: requested=$value applied=$clamped');
+    state = state.copyWith(pushToTalkReleaseDelayMs: clamped);
     await _savePushToTalk();
   }
 
-  Future<void> setPushToTalkPressed(bool pressed) async {
-    if (!state.isPushToTalkEnabled || !state.isPushToTalkRegistered) return;
+  Future<void> setPushToTalkPressed(
+    bool pressed, {
+    String source = 'unknown',
+  }) async {
+    final binding = state.pushToTalkBinding;
+    if (!state.isPushToTalkEnabled || binding == null) {
+      _logPtt(
+        'press: ignored source=$source pressed=$pressed '
+        'enabled=${state.isPushToTalkEnabled} binding=${binding != null}',
+      );
+      return;
+    }
     if (pressed) {
       _cancelPress();
-      if (state.isPushToTalkPressed) return;
+      if (state.isPushToTalkPressed) {
+        _logPtt(
+          'press: ignored source=$source pressed=true reason=already_pressed',
+        );
+        return;
+      }
+      _logPtt(
+        'press: source=$source pressed=true registered=${state.isPushToTalkRegistered} '
+        'binding=${_describePushToTalkBinding(binding)}',
+      );
       state = state.copyWith(isPushToTalkPressed: true, errorMessage: null);
       await _applyToRtc();
       return;
     }
-    if (!state.isPushToTalkPressed) return;
+    if (!state.isPushToTalkPressed) {
+      _logPtt(
+        'press: ignored source=$source pressed=false reason=already_released',
+      );
+      return;
+    }
     _releaseTimer?.cancel();
     if (state.pushToTalkReleaseDelayMs == 0) {
+      _logPtt('press: source=$source pressed=false applying immediate release');
       state = state.copyWith(isPushToTalkPressed: false);
       await _applyToRtc();
       return;
     }
+    _logPtt(
+      'press: source=$source pressed=false scheduling release '
+      'delayMs=${state.pushToTalkReleaseDelayMs}',
+    );
     _releaseTimer = Timer(
       Duration(milliseconds: state.pushToTalkReleaseDelayMs),
       () {
         if (_disposed || !state.isPushToTalkEnabled) return;
+        _logPtt('press: release timer fired');
         state = state.copyWith(isPushToTalkPressed: false);
         unawaited(_applyToRtc());
       },
@@ -405,6 +577,7 @@ class VoiceControlsController extends Notifier<VoiceControlsState> {
   Future<void> resetPushToTalkPress() async {
     _cancelPress();
     if (!state.isPushToTalkPressed) return;
+    _logPtt('press: reset forced');
     state = state.copyWith(isPushToTalkPressed: false);
     await _applyToRtc();
   }
@@ -415,6 +588,7 @@ class VoiceControlsController extends Notifier<VoiceControlsState> {
   /// possa ser registrada novamente quando a permissão for corrigida.
   Future<void> handlePushToTalkRegistrationFailure() async {
     await ensureInitialized();
+    _warnPtt('native failure: runner informou falha/recusa no atalho global');
     _cancelPress();
     state = state.copyWith(
       isPushToTalkPressed: false,
@@ -427,15 +601,37 @@ class VoiceControlsController extends Notifier<VoiceControlsState> {
   }
 
   void _cancelPress() {
+    if (_releaseTimer != null) {
+      _logPtt('press: cancelando release timer pendente');
+    }
     _releaseTimer?.cancel();
     _releaseTimer = null;
   }
 
   Future<bool> _registerPushToTalk(PushToTalkBinding binding) async {
+    _logPtt('register: iniciando ${_describePushToTalkBinding(binding)}');
     state = state.copyWith(isPushToTalkRegistered: false);
-    final result = await _inputService.configure(binding);
+    final PushToTalkConfigResult result;
+    try {
+      result = await _inputService.configure(binding);
+    } catch (error, stackTrace) {
+      _errorPtt('register: configure nativo lançou exceção', error, stackTrace);
+      if (!_disposed) {
+        state = state.copyWith(
+          isPushToTalkRegistered: false,
+          errorMessage:
+              'Não foi possível registrar o atalho global. O microfone permaneceu fechado.',
+        );
+      }
+      await _savePushToTalk();
+      await _applyToRtc();
+      return false;
+    }
     if (_disposed) return false;
     if (!result.isOk) {
+      _warnPtt(
+        'register: falhou error=${result.error} message=${result.message ?? '-'}',
+      );
       state = state.copyWith(
         isPushToTalkRegistered: false,
         errorMessage: switch (result.error) {
@@ -454,6 +650,7 @@ class VoiceControlsController extends Notifier<VoiceControlsState> {
       await _applyToRtc();
       return false;
     }
+    _logPtt('register: sucesso');
     state = state.copyWith(isPushToTalkRegistered: true, errorMessage: null);
     return true;
   }
@@ -476,7 +673,14 @@ class VoiceControlsController extends Notifier<VoiceControlsState> {
           jsonEncode(binding.toJson()),
         );
       }
-    } catch (_) {
+      _logPtt(
+        'save ptt: enabled=${state.isPushToTalkEnabled} '
+        'registered=${state.isPushToTalkRegistered} '
+        'delayMs=${state.pushToTalkReleaseDelayMs} '
+        'binding=${_describePushToTalkBinding(binding)}',
+      );
+    } catch (error, stackTrace) {
+      _errorPtt('save ptt: falha ao persistir PTT', error, stackTrace);
       if (!_disposed) {
         state = state.copyWith(
           errorMessage: 'Não foi possível salvar o Push to Talk.',
@@ -492,17 +696,32 @@ class VoiceControlsController extends Notifier<VoiceControlsState> {
         !muted &&
         !deafened &&
         (!state.isPushToTalkEnabled || state.isPushToTalkPressed);
+    _logPtt(
+      'rtc apply: muted=$muted deafened=$deafened '
+      'pttEnabled=${state.isPushToTalkEnabled} '
+      'pttPressed=${state.isPushToTalkPressed} '
+      'registered=${state.isPushToTalkRegistered} '
+      'microphoneEnabled=$microphoneEnabled',
+    );
     final rtc = ref.read(rtcServiceProvider);
-    if (deafened) {
-      await rtc.disableMicrophone();
-      await rtc.setRemoteAudioEnabled(false);
-      return;
-    }
-    await rtc.setRemoteAudioEnabled(true);
-    if (microphoneEnabled) {
-      await rtc.enableMicrophone();
-    } else {
-      await rtc.disableMicrophone();
+    try {
+      if (deafened) {
+        _logPtt('rtc apply: deafen ativo, desligando mic e áudio remoto');
+        await rtc.disableMicrophone();
+        await rtc.setRemoteAudioEnabled(false);
+        return;
+      }
+      await rtc.setRemoteAudioEnabled(true);
+      if (microphoneEnabled) {
+        _logPtt('rtc apply: habilitando microfone');
+        await rtc.enableMicrophone();
+      } else {
+        _logPtt('rtc apply: desabilitando microfone');
+        await rtc.disableMicrophone();
+      }
+    } catch (error, stackTrace) {
+      _errorPtt('rtc apply: falha na chamada RTC', error, stackTrace);
+      rethrow;
     }
   }
 }

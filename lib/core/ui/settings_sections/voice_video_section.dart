@@ -399,7 +399,7 @@ class _PushToTalkSettings extends ConsumerWidget {
         ? 'Aguardando entrada…'
         : binding?.displayLabel ?? 'Nenhum atalho definido';
     final statusLabel = state.isPushToTalkEnabled
-        ? (state.isPushToTalkRegistered ? 'Ativo' : 'Aguardando registro')
+        ? (state.isPushToTalkRegistered ? 'Ativo' : 'Somente em foco')
         : 'Desativado';
 
     return Column(
@@ -438,7 +438,9 @@ class _PushToTalkSettings extends ConsumerWidget {
                         : AppButtonVariant.secondary,
                     onPressed: state.isRecordingPushToTalk
                         ? controller.cancelPushToTalkRecording
-                        : controller.startPushToTalkRecording,
+                        : () => controller.startPushToTalkRecording(
+                            enableAfterCapture: true,
+                          ),
                   ),
                   if (binding != null) ...[
                     const SizedBox(width: 4),
@@ -483,7 +485,7 @@ class _PushToTalkSettings extends ConsumerWidget {
           const SizedBox(height: 8),
           const SettingsNotice(
             message:
-                'O atalho global não está disponível; o microfone permanece fechado.',
+                'O atalho global não está disponível; com o app em foco, o Push to Talk ainda funciona.',
             tone: SettingsNoticeTone.warning,
           ),
         ],

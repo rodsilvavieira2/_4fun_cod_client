@@ -25,7 +25,8 @@ bool FlutterWindow::OnCreate() {
     return false;
   }
   RegisterPlugins(flutter_controller_->engine());
-  push_to_talk_input_ = CreatePushToTalkInput(flutter_controller_->engine());
+  push_to_talk_input_ =
+      CreatePushToTalkInput(flutter_controller_->engine(), GetHandle());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
@@ -53,6 +54,11 @@ LRESULT
 FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               WPARAM const wparam,
                               LPARAM const lparam) noexcept {
+  if (push_to_talk_input_ &&
+      push_to_talk_input_->HandleWindowMessage(message, wparam, lparam)) {
+    return 0;
+  }
+
   // Give Flutter, including plugins, an opportunity to handle window messages.
   if (flutter_controller_) {
     std::optional<LRESULT> result =

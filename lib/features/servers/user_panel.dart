@@ -174,9 +174,10 @@ class UserPanel extends ConsumerWidget {
                           ? 'Desative o ensurdecer para usar o microfone'
                           : (controls.isPushToTalkEnabled &&
                                     !controls.isPushToTalkPressed &&
-                                    !controls.isMuted &&
-                                    controls.isPushToTalkRegistered
-                                ? 'Push to Talk ativo: segure ${controls.pushToTalkBinding?.displayLabel ?? 'o atalho'} para transmitir'
+                                    !controls.isMuted
+                                ? (controls.isPushToTalkRegistered
+                                      ? 'Push to Talk ativo: segure ${controls.pushToTalkBinding?.displayLabel ?? 'o atalho'} para transmitir'
+                                      : 'Push to Talk ativo em foco: segure ${controls.pushToTalkBinding?.displayLabel ?? 'o atalho'} para transmitir')
                                 : (controls.isMuted
                                       ? 'Ativar microfone'
                                       : 'Desativar microfone')),

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -133,6 +135,36 @@ void main() {
       },
     );
 
+    test('PTT restaurado limpa mute manual antigo', () async {
+      final binding = PushToTalkBinding.keyboard(
+        physicalKeyUsage: PhysicalKeyboardKey.keyK.usbHidUsage,
+        label: 'K',
+      );
+      SharedPreferences.setMockInitialValues({
+        'voice.microphone_muted': true,
+        'voice.push_to_talk.enabled': true,
+        'voice.push_to_talk.binding': jsonEncode(binding.toJson()),
+      });
+      container.dispose();
+      rtc = _FakeRtcService();
+      container = ProviderContainer(
+        overrides: [
+          rtcServiceProvider.overrideWithValue(rtc),
+          pushToTalkInputServiceProvider.overrideWithValue(input),
+        ],
+      );
+
+      await start(clearCalls: false);
+
+      final state = container.read(voiceControlsProvider);
+      final preferences = await SharedPreferences.getInstance();
+      expect(state.isMuted, isFalse);
+      expect(state.isPushToTalkEnabled, isTrue);
+      expect(state.isMicrophoneEnabled, isFalse);
+      expect(preferences.getBool('voice.microphone_muted'), isFalse);
+      expect(rtc.calls, ['remote:true', 'mic:off']);
+    });
+
     test('falha ao ensurdecer restaura a preferência anterior', () async {
       await start();
       rtc.failRemoteAudioTimes = 1;
@@ -182,6 +214,21 @@ void main() {
       expect(rtc.calls, ['remote:true', 'mic:on', 'remote:true', 'mic:off']);
     });
 
+    test('gravar atalho pela configuração já ativa o modo PTT', () async {
+      await start();
+      final controls = container.read(voiceControlsProvider.notifier);
+
+      controls.startPushToTalkRecording(enableAfterCapture: true);
+      await controls.recordPushToTalkMouse(4);
+
+      final state = container.read(voiceControlsProvider);
+      expect(state.isRecordingPushToTalk, isFalse);
+      expect(state.pushToTalkBinding?.mouseButton, 4);
+      expect(state.isPushToTalkEnabled, isTrue);
+      expect(state.isPushToTalkRegistered, isTrue);
+      expect(input.configured.last, state.pushToTalkBinding);
+    });
+
     test('mute manual vence PTT pressionado', () async {
       await start();
       final controls = container.read(voiceControlsProvider.notifier);
@@ -195,6 +242,37 @@ void main() {
       expect(state.isPushToTalkPressed, isTrue);
       expect(state.isMuted, isTrue);
       expect(state.isMicrophoneEnabled, isFalse);
+    });
+
+    test('fallback focado do PTT funciona mesmo sem registro global', () async {
+      await start();
+      final controls = container.read(voiceControlsProvider.notifier);
+      await controls.recordPushToTalkMouse(4);
+      input.result = const PushToTalkConfigResult.failed(
+        PushToTalkConfigError.registrationFailed,
+      );
+
+      expect(await controls.setPushToTalkEnabled(true), isFalse);
+      expect(container.read(voiceControlsProvider).isPushToTalkEnabled, isTrue);
+      expect(
+        container.read(voiceControlsProvider).isPushToTalkRegistered,
+        isFalse,
+      );
+
+      rtc.calls.clear();
+      await controls.setPushToTalkReleaseDelay(0);
+      await controls.setPushToTalkPressed(true);
+
+      expect(container.read(voiceControlsProvider).isPushToTalkPressed, true);
+      expect(container.read(voiceControlsProvider).isMicrophoneEnabled, true);
+      expect(rtc.calls, ['remote:true', 'mic:on']);
+
+      await controls.setPushToTalkPressed(false);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(container.read(voiceControlsProvider).isPushToTalkPressed, false);
+      expect(container.read(voiceControlsProvider).isMicrophoneEnabled, false);
+      expect(rtc.calls, ['remote:true', 'mic:on', 'remote:true', 'mic:off']);
     });
 
     test('Ctrl+Alt+Del rejeita com mensagem e mantém gravando', () async {

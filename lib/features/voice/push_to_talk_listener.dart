@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/logging/app_logger.dart';
 import 'push_to_talk.dart';
 import 'push_to_talk_input.dart';
 import 'voice_controls_provider.dart';
@@ -23,21 +24,46 @@ class _PushToTalkListenerState extends ConsumerState<PushToTalkListener>
     with WidgetsBindingObserver {
   StreamSubscription<PushToTalkInputEvent>? _nativeEvents;
 
+  void _logPtt(String message) {
+    try {
+      ref.read(appLoggerProvider).d('listener: $message', tag: 'ptt');
+    } catch (_) {
+      debugPrint('[ptt] listener: $message');
+    }
+  }
+
+  static String _keyEventName(KeyEvent event) {
+    if (event is KeyDownEvent) return 'down';
+    if (event is KeyUpEvent) return 'up';
+    if (event is KeyRepeatEvent) return 'repeat';
+    return event.runtimeType.toString();
+  }
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     HardwareKeyboard.instance.addHandler(_onKeyEvent);
+    _logPtt('ativo para eventos nativos e fallback focado');
     _nativeEvents = ref.read(pushToTalkInputServiceProvider).events.listen((
       event,
     ) {
       final controls = ref.read(voiceControlsProvider.notifier);
-      if (ref.read(voiceControlsProvider).isRecordingPushToTalk) return;
+      final state = ref.read(voiceControlsProvider);
+      _logPtt(
+        'evento nativo=${event.name} recording=${state.isRecordingPushToTalk} '
+        'enabled=${state.isPushToTalkEnabled} '
+        'registered=${state.isPushToTalkRegistered}',
+      );
+      if (state.isRecordingPushToTalk) {
+        _logPtt('evento nativo ignorado durante gravação de atalho');
+        return;
+      }
       switch (event) {
         case PushToTalkInputEvent.pressed:
-          unawaited(controls.setPushToTalkPressed(true));
+          unawaited(controls.setPushToTalkPressed(true, source: 'native'));
         case PushToTalkInputEvent.released:
-          unawaited(controls.setPushToTalkPressed(false));
+          unawaited(controls.setPushToTalkPressed(false, source: 'native'));
         case PushToTalkInputEvent.failed:
           unawaited(controls.handlePushToTalkRegistrationFailure());
       }
@@ -46,6 +72,7 @@ class _PushToTalkListenerState extends ConsumerState<PushToTalkListener>
 
   @override
   void dispose() {
+    _logPtt('dispose: removendo listeners');
     WidgetsBinding.instance.removeObserver(this);
     HardwareKeyboard.instance.removeHandler(_onKeyEvent);
     _nativeEvents?.cancel();
@@ -57,8 +84,11 @@ class _PushToTalkListenerState extends ConsumerState<PushToTalkListener>
     // O browser pode perder o KeyUp quando a aba muda. Desktop recebe a
     // liberação pelo listener nativo e não deve ser fechado ao perder foco.
     if (kIsWeb && state != AppLifecycleState.resumed) {
+      _logPtt('lifecycle web=$state: liberando PTT por segurança');
       unawaited(
-        ref.read(voiceControlsProvider.notifier).setPushToTalkPressed(false),
+        ref
+            .read(voiceControlsProvider.notifier)
+            .setPushToTalkPressed(false, source: 'lifecycle'),
       );
     }
   }
@@ -71,6 +101,11 @@ class _PushToTalkListenerState extends ConsumerState<PushToTalkListener>
       // em qualquer ordem e confirma ao soltar. Esc cancela e
       // Backspace/Delete isolado limpa — tudo dentro do recorder.
       if (event is KeyDownEvent || event is KeyUpEvent) {
+        _logPtt(
+          'tecla para gravação event=${_keyEventName(event)} '
+          'label=${event.logicalKey.keyLabel} '
+          'usage=${event.physicalKey.usbHidUsage}',
+        );
         unawaited(controls.recordPushToTalkKey(event));
       }
       return true;
@@ -84,10 +119,14 @@ class _PushToTalkListenerState extends ConsumerState<PushToTalkListener>
     // Mesmo no desktop, manter o fallback focado ativo. Alguns ambientes
     // registram o atalho global com sucesso, mas o hook/portal não entrega os
     // eventos; quando a janela está focada, isso ainda deve abrir o microfone.
+    _logPtt(
+      'fallback teclado matched event=${_keyEventName(event)} '
+      'binding=${binding.displayLabel} registered=${state.isPushToTalkRegistered}',
+    );
     if (event is KeyDownEvent) {
-      unawaited(controls.setPushToTalkPressed(true));
+      unawaited(controls.setPushToTalkPressed(true, source: 'focused-key'));
     } else if (event is KeyUpEvent) {
-      unawaited(controls.setPushToTalkPressed(false));
+      unawaited(controls.setPushToTalkPressed(false, source: 'focused-key'));
     }
     // No fallback em foco, não inserir a tecla do PTT no campo de chat.
     return true;
@@ -98,6 +137,11 @@ class _PushToTalkListenerState extends ConsumerState<PushToTalkListener>
     final state = ref.read(voiceControlsProvider);
     if (state.isRecordingPushToTalk) {
       final keyboard = HardwareKeyboard.instance;
+      _logPtt(
+        'mouse para gravação buttons=${event.buttons} '
+        'ctrl=${keyboard.isControlPressed} alt=${keyboard.isAltPressed} '
+        'shift=${keyboard.isShiftPressed}',
+      );
       unawaited(
         controls.recordPushToTalkMouse(
           event.buttons,
@@ -112,7 +156,11 @@ class _PushToTalkListenerState extends ConsumerState<PushToTalkListener>
     if (state.isPushToTalkEnabled &&
         binding != null &&
         binding.matchesPointer(event)) {
-      unawaited(controls.setPushToTalkPressed(true));
+      _logPtt(
+        'fallback mouse matched buttons=${event.buttons} '
+        'binding=${binding.displayLabel}',
+      );
+      unawaited(controls.setPushToTalkPressed(true, source: 'focused-pointer'));
     }
   }
 
@@ -122,8 +170,14 @@ class _PushToTalkListenerState extends ConsumerState<PushToTalkListener>
     if (state.isPushToTalkEnabled &&
         binding != null &&
         binding.mouseButton != null) {
+      _logPtt(
+        'fallback mouse release buttons=${event.buttons} '
+        'binding=${binding.displayLabel}',
+      );
       unawaited(
-        ref.read(voiceControlsProvider.notifier).setPushToTalkPressed(false),
+        ref
+            .read(voiceControlsProvider.notifier)
+            .setPushToTalkPressed(false, source: 'focused-pointer'),
       );
     }
   }

@@ -9,10 +9,13 @@
 #include <windows.h>
 
 #include <cstdint>
+#include <atomic>
+#include <chrono>
 #include <functional>
 #include <memory>
 #include <optional>
 #include <string>
+#include <thread>
 #include <variant>
 
 namespace push_to_talk_detail {
@@ -120,6 +123,15 @@ inline std::optional<int64_t> value_int(const EncodableMap& map,
   return std::nullopt;
 }
 
+inline std::string bool_label(bool value) {
+  return value ? "true" : "false";
+}
+
+inline void Log(const std::string& message) {
+  const std::string line = "[ptt/windows] " + message + "\n";
+  OutputDebugStringA(line.c_str());
+}
+
 }  // namespace push_to_talk_detail
 
 // Substituto de flutter::StreamHandlerFunctions (removido do embedder):
@@ -155,8 +167,11 @@ class PushToTalkStreamHandler
 
 class PushToTalkInput {
  public:
-  explicit PushToTalkInput(flutter::BinaryMessenger* messenger) {
-    instance_ = this;
+  explicit PushToTalkInput(flutter::BinaryMessenger* messenger, HWND window)
+      : window_(window) {
+    push_to_talk_detail::Log(
+        "construct window=" +
+        std::to_string(reinterpret_cast<uintptr_t>(window_)));
     methods_ = std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
         messenger, "fourfun_cod/push_to_talk",
         &flutter::StandardMethodCodec::GetInstance());
@@ -170,26 +185,41 @@ class PushToTalkInput {
     events_->SetStreamHandler(
         std::make_unique<PushToTalkStreamHandler>(
             [this](std::unique_ptr<flutter::EventSink<flutter::EncodableValue>>&& sink) {
+              push_to_talk_detail::Log("event channel listen");
               sink_ = std::move(sink);
             },
-            [this]() { sink_.reset(); }));
+            [this]() {
+              push_to_talk_detail::Log("event channel cancel");
+              sink_.reset();
+            }));
   }
 
   ~PushToTalkInput() {
+    push_to_talk_detail::Log("destruct");
     Unregister();
-    if (instance_ == this) instance_ = nullptr;
+  }
+
+  bool HandleWindowMessage(UINT const message, WPARAM const wparam,
+                           LPARAM const) {
+    if (message != kPttEventMessage) return false;
+    push_to_talk_detail::Log(
+        std::string("window message event=") +
+        (wparam == 1 ? "pressed" : "released"));
+    Emit(wparam == 1 ? "pressed" : "released");
+    return true;
   }
 
  private:
+  static constexpr UINT kPttEventMessage = WM_APP + 0x046;
+
   using EncodableMap = flutter::EncodableMap;
   using EncodableValue = flutter::EncodableValue;
   using MethodCall = flutter::MethodCall<flutter::EncodableValue>;
   using MethodResult = flutter::MethodResult<flutter::EncodableValue>;
 
-  // Estado do chord observado via eventos KeyDown/KeyUp (nunca via polling).
-  // Ativa somente com o chord COMPLETO pressionado e libera ao soltar
-  // QUALQUER membro — sem PTT travado e sem reter eventos de outros apps
-  // (o hook sempre repassa via CallNextHookEx).
+  // Estado do chord observado por polling global. Ativa somente com o chord
+  // COMPLETO pressionado e libera ao soltar qualquer membro, sem consumir
+  // atalhos de outros aplicativos.
   struct Chord {
     int trigger_vk = 0;    // 0 = sem tecla-gatilho (só-modificadores/mouse).
     int mouse_button = 0;  // 0 = teclado; senão 4/8/16 (middle/back/forward).
@@ -210,41 +240,58 @@ class PushToTalkInput {
       return (ctrl_down == need_ctrl) && (alt_down == need_alt) &&
              (shift_down == need_shift);
     }
-    bool Engaged() const { return MainSatisfied() && ModifiersExact(); }
+    bool Engaged() const {
+      return MainSatisfied() && ModifiersExact() && !meta_down;
+    }
+    bool meta_down = false;
   };
 
   void HandleMethodCall(
       const MethodCall& call,
       std::unique_ptr<MethodResult> result) {
     if (call.method_name() != "configure") {
+      push_to_talk_detail::Log("method not implemented: " + call.method_name());
       result->NotImplemented();
       return;
     }
+    push_to_talk_detail::Log("configure received; clearing previous binding");
     Unregister();
     if (!call.arguments() || std::holds_alternative<std::monostate>(*call.arguments())) {
+      push_to_talk_detail::Log("configure null: listener disabled");
       result->Success(EncodableValue(true));
       return;
     }
     if (!std::holds_alternative<EncodableMap>(*call.arguments())) {
+      push_to_talk_detail::Log("configure error: invalid arguments");
       result->Error("unsupported_key", "Argumentos inválidos para o atalho.");
       return;
     }
     const auto& map = std::get<EncodableMap>(*call.arguments());
     const auto kind = push_to_talk_detail::value_string(map, "kind");
     if (!kind) {
+      push_to_talk_detail::Log("configure error: missing kind");
       result->Error("unsupported_key", "Tipo de atalho desconhecido.");
       return;
     }
     chord_.need_ctrl = push_to_talk_detail::value_bool(map, "control");
     chord_.need_alt = push_to_talk_detail::value_bool(map, "alt");
     chord_.need_shift = push_to_talk_detail::value_bool(map, "shift");
+    push_to_talk_detail::Log(
+        "configure kind=" + *kind +
+        " ctrl=" + push_to_talk_detail::bool_label(chord_.need_ctrl) +
+        " alt=" + push_to_talk_detail::bool_label(chord_.need_alt) +
+        " shift=" + push_to_talk_detail::bool_label(chord_.need_shift));
     if (*kind == "keyboard") {
       const auto physical_key_usage =
           push_to_talk_detail::value_int(map, "physicalKeyUsage");
       if (physical_key_usage) {
         chord_.trigger_vk = push_to_talk_detail::virtual_key_for_hid_usage(
             static_cast<uint32_t>(*physical_key_usage));
+        push_to_talk_detail::Log(
+            "keyboard usage=" + std::to_string(*physical_key_usage) +
+            " vk=" + std::to_string(chord_.trigger_vk));
         if (chord_.trigger_vk == 0) {
+          push_to_talk_detail::Log("keyboard rejected: unsupported vk");
           ResetChord();
           result->Error("unsupported_key",
                         "Tecla não suportada como atalho global no Windows.");
@@ -252,50 +299,48 @@ class PushToTalkInput {
         }
       } else if (!chord_.need_ctrl && !chord_.need_alt) {
         // Só-modificadores exige Ctrl e/ou Alt (Shift sozinho não vale).
+        push_to_talk_detail::Log("keyboard rejected: modifier-only without ctrl/alt");
         ResetChord();
         result->Error("unsupported_key",
                       "Atalho só de modificadores inválido no Windows.");
         return;
       }
-      keyboard_hook_ = SetWindowsHookEx(WH_KEYBOARD_LL, KeyboardHook,
-                                        GetModuleHandle(nullptr), 0);
-      if (!keyboard_hook_) {
+      if (!StartPolling()) {
+        push_to_talk_detail::Log("keyboard rejected: polling failed");
         ResetChord();
         result->Error("register_failed",
-                      "Não foi possível instalar o hook de teclado.");
+                      "Não foi possível iniciar a escuta global de teclado.");
         return;
       }
+      push_to_talk_detail::Log("keyboard configured: " + ChordSummary());
       result->Success(EncodableValue(true));
       return;
     }
     if (*kind == "mouse") {
       const auto button = push_to_talk_detail::value_int(map, "mouseButton");
       chord_.mouse_button = button ? static_cast<int>(*button) : 0;
+      push_to_talk_detail::Log(
+          "mouse button=" + std::to_string(chord_.mouse_button));
       if (chord_.mouse_button != 4 && chord_.mouse_button != 8 &&
           chord_.mouse_button != 16) {
+        push_to_talk_detail::Log("mouse rejected: unsupported button");
         ResetChord();
         result->Error("unsupported_key",
                       "Botão do mouse não suportado como atalho.");
         return;
       }
-      mouse_hook_ =
-          SetWindowsHookEx(WH_MOUSE_LL, MouseHook, GetModuleHandle(nullptr), 0);
-      // Mouse com modificadores também observa o teclado para rastrear
-      // Ctrl/Alt/Shift via eventos (sem polling).
-      if (mouse_hook_ && (chord_.need_ctrl || chord_.need_alt || chord_.need_shift)) {
-        keyboard_hook_ = SetWindowsHookEx(WH_KEYBOARD_LL, KeyboardHook,
-                                          GetModuleHandle(nullptr), 0);
-      }
-      if (!mouse_hook_ || ((chord_.need_ctrl || chord_.need_alt || chord_.need_shift) &&
-                            !keyboard_hook_)) {
+      if (!StartPolling()) {
+        push_to_talk_detail::Log("mouse rejected: polling failed");
         Unregister();
         result->Error("register_failed",
-                      "Não foi possível instalar o hook de mouse/teclado.");
+                      "Não foi possível iniciar a escuta global de mouse.");
         return;
       }
+      push_to_talk_detail::Log("mouse configured: " + ChordSummary());
       result->Success(EncodableValue(true));
       return;
     }
+    push_to_talk_detail::Log("configure rejected: unknown kind=" + *kind);
     ResetChord();
     result->Error("unsupported_key", "Tipo de atalho desconhecido.");
   }
@@ -303,99 +348,138 @@ class PushToTalkInput {
   void ResetChord() { chord_ = Chord(); }
 
   void Unregister() {
-    if (keyboard_hook_) UnhookWindowsHookEx(keyboard_hook_);
-    if (mouse_hook_) UnhookWindowsHookEx(mouse_hook_);
-    keyboard_hook_ = nullptr;
-    mouse_hook_ = nullptr;
-    if (chord_.active) Emit("released");
+    if (poll_running_.load() || poll_thread_.joinable() || chord_.active ||
+        chord_.trigger_vk != 0 || chord_.mouse_button != 0) {
+      push_to_talk_detail::Log("unregister: " + ChordSummary());
+    }
+    StopPolling();
+    if (chord_.active) QueueEmit(false);
     ResetChord();
   }
 
-  void OnKeyboardVk(int vk, bool down) {
-    if (push_to_talk_detail::IsControlVk(vk)) {
-      chord_.ctrl_down = down;
-    } else if (push_to_talk_detail::IsAltVk(vk)) {
-      chord_.alt_down = down;
-    } else if (push_to_talk_detail::IsShiftVk(vk)) {
-      chord_.shift_down = down;
-    } else if (vk == chord_.trigger_vk && chord_.trigger_vk != 0) {
-      chord_.main_down = down;
-    } else {
-      return;  // Tecla fora do chord: ignora sem bloquear.
+  bool StartPolling() {
+    if (window_ == nullptr) {
+      push_to_talk_detail::Log("start polling failed: window is null");
+      return false;
     }
-    EvaluateChord();
+    if (poll_running_.load()) {
+      push_to_talk_detail::Log("start polling skipped: already running");
+      return true;
+    }
+    try {
+      poll_running_.store(true);
+      poll_thread_ = std::thread([this]() { PollLoop(); });
+      push_to_talk_detail::Log("start polling ok");
+      return true;
+    } catch (...) {
+      poll_running_.store(false);
+      push_to_talk_detail::Log("start polling threw");
+      return false;
+    }
   }
 
-  void OnMouseButton(bool down) {
-    chord_.main_down = down;
-    EvaluateChord();
+  void StopPolling() {
+    if (!poll_running_.load() && !poll_thread_.joinable()) return;
+    push_to_talk_detail::Log("stop polling requested");
+    poll_running_.store(false);
+    if (poll_thread_.joinable()) poll_thread_.join();
+    push_to_talk_detail::Log("stop polling completed");
   }
 
-  void EvaluateChord() {
-    const bool engaged = chord_.Engaged();
-    if (engaged && !chord_.active) {
-      chord_.active = true;
-      Emit("pressed");
-    } else if (!engaged && chord_.active) {
-      chord_.active = false;
-      Emit("released");
+  void PollLoop() {
+    push_to_talk_detail::Log("poll loop started");
+    while (poll_running_.load()) {
+      UpdatePolledChordState();
+      const bool engaged = chord_.Engaged();
+      if (engaged != chord_.active) {
+        chord_.active = engaged;
+        push_to_talk_detail::Log(
+            std::string("poll state changed event=") +
+            (engaged ? "pressed " : "released ") + ChordSummary());
+        QueueEmit(engaged);
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
+    push_to_talk_detail::Log("poll loop stopped");
+  }
+
+  static bool IsKeyDown(int vk) {
+    return (GetAsyncKeyState(vk) & 0x8000) != 0;
+  }
+
+  static int mouse_button_vk(int button) {
+    switch (button) {
+      case 4:
+        return VK_MBUTTON;
+      case 8:
+        return VK_XBUTTON1;
+      case 16:
+        return VK_XBUTTON2;
+      default:
+        return 0;
+    }
+  }
+
+  void UpdatePolledChordState() {
+    chord_.ctrl_down = IsKeyDown(VK_LCONTROL) || IsKeyDown(VK_RCONTROL);
+    chord_.alt_down = IsKeyDown(VK_LMENU) || IsKeyDown(VK_RMENU);
+    chord_.shift_down = IsKeyDown(VK_LSHIFT) || IsKeyDown(VK_RSHIFT);
+    chord_.meta_down = IsKeyDown(VK_LWIN) || IsKeyDown(VK_RWIN);
+    if (chord_.trigger_vk != 0) {
+      chord_.main_down = IsKeyDown(chord_.trigger_vk);
+      return;
+    }
+    const int mouse_vk = mouse_button_vk(chord_.mouse_button);
+    if (mouse_vk != 0) {
+      chord_.main_down = IsKeyDown(mouse_vk);
+    }
+  }
+
+  void QueueEmit(bool pressed) {
+    if (window_) {
+      push_to_talk_detail::Log(
+          std::string("queue emit ") + (pressed ? "pressed" : "released"));
+      PostMessage(window_, kPttEventMessage, pressed ? 1 : 0, 0);
+      return;
+    }
+    push_to_talk_detail::Log("queue emit dropped: window is null");
   }
 
   void Emit(const char* state) {
-    if (!sink_) return;
+    if (!sink_) {
+      push_to_talk_detail::Log(std::string("emit dropped no sink state=") + state);
+      return;
+    }
     EncodableMap event;
     event[EncodableValue("state")] = EncodableValue(state);
     sink_->Success(EncodableValue(event));
+    push_to_talk_detail::Log(std::string("emit sent state=") + state);
   }
 
-  static LRESULT CALLBACK KeyboardHook(int code, WPARAM message, LPARAM data) {
-    if (code == HC_ACTION && instance_) {
-      const auto* info = reinterpret_cast<KBDLLHOOKSTRUCT*>(data);
-      if (message == WM_KEYDOWN || message == WM_SYSKEYDOWN) {
-        instance_->OnKeyboardVk(static_cast<int>(info->vkCode), true);
-      } else if (message == WM_KEYUP || message == WM_SYSKEYUP) {
-        instance_->OnKeyboardVk(static_cast<int>(info->vkCode), false);
-      }
-    }
-    // Nunca consome: atalhos de outros aplicativos passam intactos.
-    // (Ctrl+Alt+Del sequer chega ao hook — é sequência de atenção segura do
-    // SO — por isso a captura no Dart a rejeita com mensagem específica.)
-    return CallNextHookEx(nullptr, code, message, data);
+  std::string ChordSummary() const {
+    return "vk=" + std::to_string(chord_.trigger_vk) +
+           " mouse=" + std::to_string(chord_.mouse_button) +
+           " need_ctrl=" + push_to_talk_detail::bool_label(chord_.need_ctrl) +
+           " need_alt=" + push_to_talk_detail::bool_label(chord_.need_alt) +
+           " need_shift=" + push_to_talk_detail::bool_label(chord_.need_shift) +
+           " down_ctrl=" + push_to_talk_detail::bool_label(chord_.ctrl_down) +
+           " down_alt=" + push_to_talk_detail::bool_label(chord_.alt_down) +
+           " down_shift=" + push_to_talk_detail::bool_label(chord_.shift_down) +
+           " down_meta=" + push_to_talk_detail::bool_label(chord_.meta_down) +
+           " main=" + push_to_talk_detail::bool_label(chord_.main_down) +
+           " active=" + push_to_talk_detail::bool_label(chord_.active);
   }
 
-  static LRESULT CALLBACK MouseHook(int code, WPARAM message, LPARAM data) {
-    if (code == HC_ACTION && instance_) {
-      const int button = instance_->chord_.mouse_button;
-      const auto* info = reinterpret_cast<MSLLHOOKSTRUCT*>(data);
-      const int xbutton = HIWORD(info->mouseData);
-      const bool down =
-          (button == 4 && message == WM_MBUTTONDOWN) ||
-          (button == 8 && message == WM_XBUTTONDOWN && xbutton == XBUTTON1) ||
-          (button == 16 && message == WM_XBUTTONDOWN && xbutton == XBUTTON2);
-      const bool up =
-          (button == 4 && message == WM_MBUTTONUP) ||
-          (button == 8 && message == WM_XBUTTONUP && xbutton == XBUTTON1) ||
-          (button == 16 && message == WM_XBUTTONUP && xbutton == XBUTTON2);
-      if (down) {
-        instance_->OnMouseButton(true);
-      } else if (up) {
-        instance_->OnMouseButton(false);
-      }
-    }
-    return CallNextHookEx(nullptr, code, message, data);
-  }
-
-  static PushToTalkInput* instance_;
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> methods_;
   std::unique_ptr<flutter::EventChannel<flutter::EncodableValue>> events_;
   std::unique_ptr<flutter::EventSink<flutter::EncodableValue>> sink_;
-  HHOOK keyboard_hook_ = nullptr;
-  HHOOK mouse_hook_ = nullptr;
+  HWND window_ = nullptr;
+  std::atomic_bool poll_running_{false};
+  std::thread poll_thread_;
   Chord chord_;
 };
 
 std::unique_ptr<PushToTalkInput> CreatePushToTalkInput(
-    flutter::FlutterEngine* engine);
+    flutter::FlutterEngine* engine, HWND window);
 
 #endif  // RUNNER_PUSH_TO_TALK_INPUT_H_

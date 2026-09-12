@@ -1,10 +1,23 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/native/native_media_backend.dart';
 import 'push_to_talk.dart';
+
+void _logPttBackend(String message) {
+  debugPrint('[ptt/backend] $message');
+}
+
+String _describePushToTalkBinding(PushToTalkBinding? binding) {
+  if (binding == null) return 'nenhum';
+  return '${binding.kind.name}:${binding.displayLabel} '
+      'usage=${binding.physicalKeyUsage ?? '-'} '
+      'mouse=${binding.mouseButton ?? '-'} '
+      'ctrl=${binding.control} alt=${binding.alt} shift=${binding.shift}';
+}
 
 abstract interface class PushToTalkBackend {
   Stream<PushToTalkInputEvent> get events;
@@ -36,7 +49,9 @@ abstract class _MethodChannelPushToTalkBackend implements PushToTalkBackend {
   Stream<PushToTalkInputEvent> get events =>
       _events.receiveBroadcastStream().map((event) {
         final value = Map<Object?, Object?>.from(event as Map);
-        return switch (value['state']) {
+        final state = value['state'];
+        _logPttBackend('$runtimeType event recebido state=$state');
+        return switch (state) {
           'pressed' => PushToTalkInputEvent.pressed,
           'released' => PushToTalkInputEvent.released,
           _ => PushToTalkInputEvent.failed,
@@ -45,21 +60,30 @@ abstract class _MethodChannelPushToTalkBackend implements PushToTalkBackend {
 
   @override
   Future<PushToTalkConfigResult> configure(PushToTalkBinding? binding) async {
+    _logPttBackend(
+      '$runtimeType configure: binding=${_describePushToTalkBinding(binding)}',
+    );
     try {
       final ok =
           await _methods.invokeMethod<bool>('configure', binding?.toJson()) ??
           false;
+      _logPttBackend('$runtimeType configure: resultado ok=$ok');
       return ok
           ? const PushToTalkConfigResult.ok()
           : const PushToTalkConfigResult.failed(
               PushToTalkConfigError.registrationFailed,
             );
     } on MissingPluginException {
+      _logPttBackend('$runtimeType configure: MissingPluginException');
       return const PushToTalkConfigResult.failed(
         PushToTalkConfigError.registrationFailed,
         'Backend de atalho global indisponível nesta plataforma.',
       );
     } on PlatformException catch (e) {
+      _logPttBackend(
+        '$runtimeType configure: PlatformException code=${e.code} '
+        'message=${e.message ?? '-'}',
+      );
       return PushToTalkConfigResult.failed(switch (e.code) {
         'unsupported_key' => PushToTalkConfigError.unsupportedKey,
         'conflict' => PushToTalkConfigError.conflicting,
@@ -86,6 +110,10 @@ class LinuxPushToTalkBackend extends _MethodChannelPushToTalkBackend {
       final which = mouseWithMods
           ? 'Botões do mouse com modificadores não são suportados no Linux'
           : 'Atalhos só de modificadores (Ctrl/Alt isolados) não são suportados no Linux';
+      _logPttBackend(
+        'LinuxPushToTalkBackend configure: recusado localmente '
+        'binding=${_describePushToTalkBinding(binding)} reason=$which',
+      );
       return Future.value(
         PushToTalkConfigResult.failed(
           PushToTalkConfigError.unsupportedKey,
