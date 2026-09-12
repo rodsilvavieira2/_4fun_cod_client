@@ -5,12 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/api/api_client.dart';
-import '../../core/api/api_exception.dart';
 import '../../core/auth/auth_controller.dart';
 import '../../core/auth/auth_state.dart';
 import '../../core/storage/image_selection.dart';
-import '../../core/storage/uploads_client.dart';
 import '../../core/ui/ui.dart';
 import '../../shared/models/message.dart';
 import '../../shared/models/servers.dart';
@@ -625,9 +622,7 @@ class _MessageTileState extends State<_MessageTile> {
         message.attachments.isNotEmpty) {
       final count = message.attachments.length;
       final images = count == 1 ? '1 imagem' : '$count imagens';
-      return message.content.isEmpty
-          ? images
-          : '${message.content} ($images)';
+      return message.content.isEmpty ? images : '${message.content} ($images)';
     }
     return message.content;
   }
@@ -1076,20 +1071,6 @@ class _ReactionSummary {
 /// Os bytes vivem só aqui: o `POST /uploads` roda no pick e o slot guarda o
 /// `uploadId` (PENDING no servidor). Campos mutáveis para atualizar cada slot
 /// sem reindexar a lista durante os `POST`s em paralelo.
-class _ComposerAttachment {
-  _ComposerAttachment({
-    required this.bytes,
-    required this.fileName,
-    required this.contentType,
-  });
-
-  final Uint8List bytes;
-  final String fileName;
-  final String contentType;
-  String? uploadId;
-  String? error;
-}
-
 class _ChatComposer extends ConsumerStatefulWidget {
   const _ChatComposer({
     required this.serverId,
@@ -1122,17 +1103,9 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
   ActiveMention? _activeMention;
   int _selectedMentionIndex = 0;
 
-  /// Slots de imagem (uploads-primeiro, spec-chat-imagens): o `POST /uploads`
-  /// roda no pick; o `POST /messages` referencia os `uploadIds` prontos.
-  List<_ComposerAttachment> _attachments = [];
-
-  bool get _hasUploading =>
-      _attachments.any((a) => a.uploadId == null && a.error == null);
-
-  List<String> get _readyUploadIds => [
-    for (final a in _attachments)
-      if (a.uploadId != null) a.uploadId!,
-  ];
+  /// Slots de imagem (upload-no-enviar): só bytes locais; o `POST /uploads`
+  /// roda em [ChatController.sendImageMessage] ao apertar enviar.
+  List<ChatImageSlot> _attachments = [];
 
   @override
   void initState() {
@@ -1295,36 +1268,55 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
 
   Future<void> _handleSend(String content) async {
     final hasGif = _gifUrl != null;
-    final ready = _readyUploadIds;
-    if ((content.isEmpty && !hasGif && ready.isEmpty) ||
-        _sending ||
-        _hasUploading) {
-      return;
-    }
+    final slots = _attachments;
+    if ((content.isEmpty && !hasGif && slots.isEmpty) || _sending) return;
+    final controller = ref.read(
+      chatControllerProvider((
+        serverId: widget.serverId,
+        channelId: widget.channelId,
+      )).notifier,
+    );
     setState(() => _sending = true);
     try {
-      await ref
-          .read(
-            chatControllerProvider((
-              serverId: widget.serverId,
-              channelId: widget.channelId,
-            )).notifier,
-          )
-          .send(
-            content,
-            kind: hasGif
-                ? ChatMessageKind.gif
-                : (ready.isNotEmpty
-                      ? ChatMessageKind.image
-                      : ChatMessageKind.text),
-            gifUrl: _gifUrl,
+      if (slots.isNotEmpty) {
+        // Upload-no-enviar: bolha otimista "enviando" + uploads + mensagem.
+        // Limpa o composer já (os slots vivem na cópia local para restore).
+        final auth = ref.read(authControllerProvider).valueOrNull;
+        final user = auth is Authenticated ? auth.user : null;
+        if (user == null) throw StateError('no-auth');
+        setState(() {
+          _attachments = [];
+          _controller.clear();
+        });
+        widget.onCancelReply();
+        try {
+          await controller.sendImageMessage(
+            content: content,
+            slots: slots,
+            author: user,
             replyToId: widget.replyTo?.id,
-            uploadIds: ready.isEmpty ? null : ready,
           );
+        } catch (_) {
+          // Tudo-ou-nada: bolha removida, draft restaurado para reenvio.
+          if (!mounted) return;
+          setState(() => _attachments = slots);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Falha ao enviar as imagens. Tente de novo.'),
+            ),
+          );
+        }
+        return;
+      }
+      await controller.send(
+        content,
+        kind: hasGif ? ChatMessageKind.gif : ChatMessageKind.text,
+        gifUrl: _gifUrl,
+        replyToId: widget.replyTo?.id,
+      );
       if (!mounted) return;
       _controller.clear();
       _clearGif();
-      _clearAttachments();
       widget.onCancelReply();
     } catch (_) {
       if (!mounted) return;
@@ -1336,13 +1328,8 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
     }
   }
 
-  void _clearAttachments() {
-    if (_attachments.isEmpty) return;
-    setState(() => _attachments = []);
-  }
-
-  /// Pick multiplo (file_selector, linux/windows) + `POST /uploads` imediato
-  /// em paralelo. Falha de um slot não bloqueia os outros (parcial).
+  /// Pick multiplo (file_selector, linux/windows): só bytes locais + preview.
+  /// Nenhum `POST /uploads` aqui — o upload roda ao apertar enviar.
   Future<void> _pickImages() async {
     if (_sending || _gifUrl != null) return;
     final files = await openFiles(acceptedTypeGroups: const [imageTypeGroup]);
@@ -1362,7 +1349,7 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
         continue;
       }
       slots.add(
-        _ComposerAttachment(
+        ChatImageSlot(
           bytes: bytes,
           fileName: file.name,
           contentType: contentType,
@@ -1370,40 +1357,6 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
       );
     }
     setState(() => _attachments = slots);
-    await _enqueuePending();
-  }
-
-  /// Enfileira os slots pendentes (`message-attachment` do canal atual).
-  Future<void> _enqueuePending() async {
-    final pending = [
-      for (final a in _attachments)
-        if (a.uploadId == null && a.error == null) a,
-    ];
-    if (pending.isEmpty || !mounted) return;
-    setState(() {}); // mostra os spinners
-    final dio = ref.read(apiClientProvider);
-    await Future.wait(
-      pending.map((slot) async {
-        try {
-          final uploadId = await startImageUpload(
-            dio,
-            bytes: slot.bytes,
-            fileName: slot.fileName,
-            contentType: slot.contentType,
-            kind: 'message-attachment',
-            channelId: widget.channelId,
-          );
-          if (!mounted) return;
-          setState(() => slot.uploadId = uploadId);
-        } on ApiException catch (e) {
-          if (!mounted) return;
-          setState(() => slot.error = e.message);
-        } catch (_) {
-          if (!mounted) return;
-          setState(() => slot.error = 'Falha ao enviar. Tente de novo.');
-        }
-      }),
-    );
   }
 
   void _showPickError(String message) {
@@ -1417,9 +1370,9 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
   Widget build(BuildContext context) {
     return AppChatInput(
       controller: _controller,
-      enabled: !_sending && !_hasUploading,
+      enabled: !_sending,
       hintText: 'Mensagem em #${widget.channelName}',
-      canSendEmpty: _gifUrl != null || _readyUploadIds.isNotEmpty,
+      canSendEmpty: _gifUrl != null || _attachments.isNotEmpty,
       trailingActions: [
         AppIconButton(
           icon: Icons.image_outlined,
@@ -1505,10 +1458,6 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
                     onRemove: (slot) => setState(
                       () => _attachments = [..._attachments]..remove(slot),
                     ),
-                    onRetry: (slot) {
-                      setState(() => slot.error = null);
-                      _enqueuePending();
-                    },
                   ),
                 ],
               ],
@@ -1636,18 +1585,16 @@ class _ComposerGifPanel extends StatelessWidget {
   }
 }
 
-/// Preview dos slots de imagem do composer (spec-chat-imagens): miniatura
-/// local, spinner durante o `POST /uploads`, erro inline com retry/remove.
+/// Preview dos slots de imagem do composer (upload-no-enviar): só miniatura
+/// local + remover. Nenhum upload acontece antes de apertar enviar.
 class _ComposerAttachmentsPanel extends StatelessWidget {
   const _ComposerAttachmentsPanel({
     required this.attachments,
     required this.onRemove,
-    required this.onRetry,
   });
 
-  final List<_ComposerAttachment> attachments;
-  final ValueChanged<_ComposerAttachment> onRemove;
-  final ValueChanged<_ComposerAttachment> onRetry;
+  final List<ChatImageSlot> attachments;
+  final ValueChanged<ChatImageSlot> onRemove;
 
   @override
   Widget build(BuildContext context) {
@@ -1677,36 +1624,6 @@ class _ComposerAttachmentsPanel extends StatelessWidget {
                       child: Image.memory(slot.bytes, fit: BoxFit.cover),
                     ),
                   ),
-                  if (slot.uploadId == null && slot.error == null)
-                    const DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: Color(0x88000000),
-                      ),
-                      child: Center(
-                        child: SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        ),
-                      ),
-                    ),
-                  if (slot.error != null)
-                    DecoratedBox(
-                      decoration: const BoxDecoration(
-                        color: Color(0xAA000000),
-                      ),
-                      child: Center(
-                        child: IconButton(
-                          icon: const Icon(
-                            Icons.refresh,
-                            color: Colors.white,
-                            size: 20,
-                          ),
-                          tooltip: 'Tentar de novo',
-                          onPressed: () => onRetry(slot),
-                        ),
-                      ),
-                    ),
                   Positioned(
                     top: 0,
                     right: 0,

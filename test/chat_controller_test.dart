@@ -748,6 +748,104 @@ void main() {
       expect(occupants()['c2'], {'u3'});
     });
   });
+
+  group('ChatController optimistic (upload-no-enviar)', () {
+    late ProviderContainer container;
+    late FakeServersRepository repo;
+    late FakeSocketService socket;
+
+    setUp(() {
+      repo = FakeServersRepository();
+      socket = FakeSocketService();
+      container = ProviderContainer(
+        overrides: [
+          serversRepositoryProvider.overrideWithValue(repo),
+          socketServiceProvider.overrideWithValue(socket),
+        ],
+      );
+    });
+
+    tearDown(() => container.dispose());
+
+    Future<ChatController> buildOptimisticChat() async {
+      final sub = container.listen(chatControllerProvider(_arg), (_, _) {});
+      addTearDown(sub.close);
+      final notifier = container.read(chatControllerProvider(_arg).notifier);
+      await container.read(chatControllerProvider(_arg).future);
+      return notifier;
+    }
+
+    List<String> optimisticIds() =>
+        container
+            .read(chatControllerProvider(_arg))
+            .valueOrNull
+            ?.messages
+            .map((m) => m.id)
+            .toList() ??
+        const [];
+
+    ChatMessage optimisticMsg(String tempId) => ChatMessage(
+      id: tempId,
+      channelId: 'c1',
+      content: '',
+      kind: ChatMessageKind.image,
+      author: const User(id: 'u1', name: 'Ana', username: 'ana'),
+      createdAt: DateTime(2026, 9, 12, 12, 0, 1),
+      attachments: [
+        MessageAttachment(
+          id: '$tempId-att-0',
+          uploadId: '$tempId-up-0',
+          url: null,
+          width: null,
+          height: null,
+          status: 'UPLOADING',
+          createdAt: DateTime(2026, 9, 12, 12, 0, 1),
+        ),
+      ],
+    );
+
+    test(
+      'add insere a bolha; confirm troca pela real (sem duplicar)',
+      () async {
+        repo.onFetchMessages = (channelId, {limit = 50, before}) =>
+            const MessagePage(messages: []);
+        final chat = await buildOptimisticChat();
+
+        chat.addOptimistic(optimisticMsg('local-1'));
+        expect(optimisticIds(), ['local-1']);
+
+        chat.confirmOptimistic('local-1', _msg('m1', 'c1', 'foto'));
+        expect(optimisticIds(), ['m1']);
+      },
+    );
+
+    test('confirm com WS adiantado só remove a temporária', () async {
+      repo.onFetchMessages = (channelId, {limit = 50, before}) =>
+          const MessagePage(messages: []);
+      final chat = await buildOptimisticChat();
+      final real = _msg('m1', 'c1', 'foto');
+
+      chat.addOptimistic(optimisticMsg('local-1'));
+      // WS chegou antes da resposta REST:
+      socket.push(MessageCreatedEvent(channelId: 'c1', message: real));
+      await pumpEventQueue();
+      // ordenado por (createdAt, id): a real (época 0) vem antes da temporária
+      expect(optimisticIds(), ['m1', 'local-1']);
+
+      chat.confirmOptimistic('local-1', real);
+      expect(optimisticIds(), ['m1']);
+    });
+
+    test('removeOptimistic descarta a bolha na falha', () async {
+      repo.onFetchMessages = (channelId, {limit = 50, before}) =>
+          const MessagePage(messages: []);
+      final chat = await buildOptimisticChat();
+
+      chat.addOptimistic(optimisticMsg('local-1'));
+      chat.removeOptimistic('local-1');
+      expect(optimisticIds(), isEmpty);
+    });
+  });
 }
 
 ServerDetail _serverDetail() => ServerDetail(

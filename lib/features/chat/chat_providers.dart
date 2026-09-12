@@ -1,12 +1,31 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/api/api_client.dart';
+import '../../core/storage/uploads_client.dart';
 import '../../core/websocket/realtime_event.dart';
 import '../../core/websocket/socket_service.dart';
 import '../../shared/models/message.dart';
+import '../../shared/models/user.dart';
 import '../servers/servers_providers.dart';
 import 'chat_grouping.dart';
+
+/// Slot de imagem a enviar (upload-no-enviar): os bytes vivem SÓ no composer
+/// até o usuário apertar enviar. O `POST /uploads` roda dentro de
+/// [ChatController.sendImageMessage], nunca no pick.
+class ChatImageSlot {
+  ChatImageSlot({
+    required this.bytes,
+    required this.fileName,
+    required this.contentType,
+  });
+
+  final Uint8List bytes;
+  final String fileName;
+  final String contentType;
+}
 
 /// Estado do chat de um canal: mensagens carregadas (mais antigas primeiro)
 /// + paginação. `firstMessageId` é o cursor do `loadMore` (mensagem mais
@@ -157,6 +176,111 @@ class ChatController
     if (current == null) return;
     _applyEvent(
       MessageCreatedEvent(channelId: arg.channelId, message: message),
+    );
+  }
+
+  /// Envio de imagens (upload-no-enviar): insere a bolha otimista
+  /// (anexos `UPLOADING` com spinner), sobe os `POST /uploads` em paralelo
+  /// e então `POST /messages`. Tudo-ou-nada: qualquer falha remove a bolha
+  /// e relança — a screen restaura os slots no composer para reenvio.
+  /// A confirmação é idempotente nos dois sentidos da corrida
+  /// (resposta REST × evento `message.created` do WS).
+  Future<void> sendImageMessage({
+    required String content,
+    required List<ChatImageSlot> slots,
+    required User author,
+    String? replyToId,
+  }) async {
+    final now = DateTime.now();
+    final tempId = 'local-${now.microsecondsSinceEpoch}';
+    final optimistic = ChatMessage(
+      id: tempId,
+      channelId: arg.channelId,
+      content: content,
+      kind: ChatMessageKind.image,
+      author: author,
+      createdAt: now,
+      attachments: [
+        for (var i = 0; i < slots.length; i++)
+          MessageAttachment(
+            id: '$tempId-att-$i',
+            uploadId: '$tempId-up-$i',
+            url: null,
+            width: null,
+            height: null,
+            status: 'UPLOADING',
+            createdAt: now,
+          ),
+      ],
+    );
+    addOptimistic(optimistic);
+    try {
+      final dio = ref.read(apiClientProvider);
+      final uploadIds = await Future.wait(
+        slots.map(
+          (slot) => startImageUpload(
+            dio,
+            bytes: slot.bytes,
+            fileName: slot.fileName,
+            contentType: slot.contentType,
+            kind: 'message-attachment',
+            channelId: arg.channelId,
+          ),
+        ),
+      );
+      final message = await ref
+          .read(serversRepositoryProvider)
+          .sendMessage(
+            arg.channelId,
+            content,
+            kind: ChatMessageKind.image,
+            replyToId: replyToId,
+            uploadIds: uploadIds,
+          );
+      if (_disposed) return;
+      confirmOptimistic(tempId, message);
+    } catch (_) {
+      if (!_disposed) removeOptimistic(tempId);
+      rethrow;
+    }
+  }
+
+  /// Insere a mensagem otimista (bolha "enviando" do remetente).
+  void addOptimistic(ChatMessage message) {
+    final current = state.valueOrNull;
+    if (current == null || _disposed) return;
+    if (current.messages.any((m) => m.id == message.id)) return;
+    final merged = [...current.messages, message]..sort(ChatGrouping.compare);
+    state = AsyncData(current.copyWith(messages: merged));
+  }
+
+  /// Troca a bolha otimista pela mensagem real (201). Se o evento
+  /// `message.created` já inseriu a real, só remove a temporária.
+  void confirmOptimistic(String tempId, ChatMessage real) {
+    final current = state.valueOrNull;
+    if (current == null || _disposed) return;
+    final withoutTemp = [
+      for (final m in current.messages)
+        if (m.id != tempId) m,
+    ];
+    final alreadyThere = withoutTemp.any((m) => m.id == real.id);
+    final merged = alreadyThere
+        ? withoutTemp
+        : ([...withoutTemp, real]..sort(ChatGrouping.compare));
+    state = AsyncData(current.copyWith(messages: merged));
+  }
+
+  /// Remove a bolha otimista (falha no envio; a screen restaura o draft).
+  void removeOptimistic(String tempId) {
+    final current = state.valueOrNull;
+    if (current == null || _disposed) return;
+    state = AsyncData(
+      current.copyWith(
+        messages: [
+          for (final m in current.messages)
+            if (m.id != tempId) m,
+        ],
+      ),
     );
   }
 
