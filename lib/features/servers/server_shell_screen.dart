@@ -617,7 +617,6 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
                       key: ValueKey(channel.id),
                       serverId: widget.serverId,
                       channelId: channel.id,
-                      channelName: channel.name,
                     ),
                   },
           ),

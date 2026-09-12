@@ -5,6 +5,7 @@ import '../../core/rtc/rtc_providers.dart';
 import '../../core/rtc/rtc_service.dart';
 import '../../core/rtc/rtc_video_view.dart';
 import '../../core/ui/ds_tokens.dart';
+import '../../core/ui/overlay_icon_button.dart';
 import '../../core/ui/participant_volume_popover.dart';
 import 'voice_providers.dart';
 
@@ -39,6 +40,9 @@ class VoiceVideoTile extends ConsumerStatefulWidget {
     required this.role,
     required this.source,
     this.onTap,
+    this.qualityLabel,
+    this.onExpand,
+    this.isFullscreen = false,
   });
 
   /// Identificação do canal (chave do [voiceControllerProvider]).
@@ -53,6 +57,18 @@ class VoiceVideoTile extends ConsumerStatefulWidget {
   /// Ação de toque: grid/miniatura → destaque, destaque → grid. A screen
   /// decide quem pode (tile sem câmera não vira spotlight — toque ignorado).
   final VoidCallback? onTap;
+
+  /// Rótulo da qualidade transmitida pelo LOCAL (ex.: `1080p60`); nulo
+  /// quando desconhecido. Só renderiza no tile de tela do participante
+  /// local — remoto exibe só o badge LIVE (fallback honesto, sem chutar).
+  final String? qualityLabel;
+
+  /// Ação de expandir do overlay de transmissão (top-right). Grid → vira
+  /// spotlight; spotlight → takeover fullscreen. Nulo = sem botão.
+  final VoidCallback? onExpand;
+
+  /// Troca o ícone do botão expandir (fullscreen ↔ fullscreen_exit).
+  final bool isFullscreen;
 
   @override
   ConsumerState<VoiceVideoTile> createState() => _VoiceVideoTileState();
@@ -144,6 +160,15 @@ class _VoiceVideoTileState extends ConsumerState<VoiceVideoTile> {
                 source: widget.source,
                 isLocal: isLocal,
                 showAvatar: hasVideo,
+              ),
+            // Transmissão de tela (grid/spotlight): badge LIVE + qualidade
+            // no top-left e expandir no top-right — sempre visível, como no
+            // Discord. Nome do transmissor continua no badge inferior.
+            if (widget.source == VoiceVideoSource.screen && !isMiniature)
+              _TransmitTopOverlay(
+                qualityLabel: isLocal ? widget.qualityLabel : null,
+                isFullscreen: widget.isFullscreen,
+                onExpand: widget.onExpand,
               ),
             // Active speaker: borda de 2px em primary (miniatura não tem).
             if (participant.isSpeaking && !isMiniature)
@@ -264,6 +289,88 @@ class _TileOverlay extends StatelessWidget {
               ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Overlay superior do tile de TRANSMISSÃO (só screen, grid/spotlight):
+/// badge qualidade + LIVE no top-left, expandir no top-right. Sempre
+/// visível (fora do auto-hide do palco) — espelha o Discord.
+class _TransmitTopOverlay extends StatelessWidget {
+  const _TransmitTopOverlay({
+    required this.qualityLabel,
+    required this.isFullscreen,
+    required this.onExpand,
+  });
+
+  /// Qualidade conhecida do transmissor local; nulo no remoto (só LIVE).
+  final String? qualityLabel;
+  final bool isFullscreen;
+  final VoidCallback? onExpand;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Positioned(
+      left: 8,
+      right: 8,
+      top: 8,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          IgnorePointer(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.72),
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(color: AppTokens.borderSubtle),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (qualityLabel != null) ...[
+                    Text(
+                      qualityLabel!,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: AppTokens.textSecondary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppTokens.accentDanger,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      'LIVE',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const Spacer(),
+          if (onExpand != null)
+            OverlayIconButton(
+              icon: isFullscreen ? Icons.fullscreen_exit : Icons.fullscreen,
+              tooltip: isFullscreen
+                  ? 'Sair do fullscreen'
+                  : 'Expandir transmissão',
+              onPressed: onExpand,
+            ),
+        ],
       ),
     );
   }

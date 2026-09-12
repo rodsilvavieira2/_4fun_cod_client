@@ -24,12 +24,10 @@ class VoiceScreen extends ConsumerWidget {
     super.key,
     required this.serverId,
     required this.channelId,
-    required this.channelName,
   });
 
   final String serverId;
   final String channelId;
-  final String channelName;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -76,6 +74,8 @@ class VoiceScreen extends ConsumerWidget {
                   state: state,
                   notifier: notifier,
                   arg: arg,
+                  transmitQuality: null,
+                  onToggleFullscreen: null,
                 ),
               ),
             ],
@@ -90,7 +90,6 @@ class VoiceScreen extends ConsumerWidget {
       state: state,
       notifier: notifier,
       arg: arg,
-      channelName: channelName,
       onToggleScreenShare: () => _toggleScreenShare(context, ref),
       onToggleFullscreen: () => _toggleFullscreen(context, ref, arg),
       onLeave: () => _leave(ref, arg),
@@ -153,7 +152,6 @@ class VoiceScreen extends ConsumerWidget {
           fullscreenDialog: true,
           builder: (_) => _FullscreenTakeover(
             arg: arg,
-            channelName: channelName,
             onToggleScreenShare: () => _toggleScreenShare(context, ref),
             onLeave: () {
               navigator.pop();
@@ -212,7 +210,6 @@ class _ConnectedStage extends ConsumerStatefulWidget {
     required this.state,
     required this.notifier,
     required this.arg,
-    required this.channelName,
     required this.onToggleScreenShare,
     required this.onToggleFullscreen,
     required this.onLeave,
@@ -221,7 +218,6 @@ class _ConnectedStage extends ConsumerStatefulWidget {
   final VoiceState state;
   final VoiceController notifier;
   final ({String serverId, String channelId}) arg;
-  final String channelName;
   final VoidCallback onToggleScreenShare;
   final VoidCallback onToggleFullscreen;
   final VoidCallback onLeave;
@@ -287,30 +283,15 @@ class _ConnectedStageState extends ConsumerState<_ConnectedStage> {
                   state: state,
                   notifier: notifier,
                   arg: widget.arg,
+                  transmitQuality: _transmitQualityLabel(state),
+                  onToggleFullscreen: widget.onToggleFullscreen,
                 ),
               ),
             ],
           ),
-          // Header LIVE (só no hover): canal + contagem + fullscreen.
-          Positioned(
-            left: 12,
-            right: 12,
-            top: 12,
-            child: AnimatedOpacity(
-              duration: const Duration(milliseconds: 200),
-              opacity: _controlsVisible ? 1 : 0,
-              child: IgnorePointer(
-                ignoring: !_controlsVisible,
-                child: _StageHeader(
-                  channelName: widget.channelName,
-                  participantCount: state.participants.length,
-                  qualityLabel: _transmitQualityLabel(state),
-                  isFullscreen: state.isFullscreen,
-                  onToggleFullscreen: widget.onToggleFullscreen,
-                ),
-              ),
-            ),
-          ),
+          // Dock inferior (auto-hide): header antigo removido — LIVE +
+          // qualidade + expandir agora moram no overlay de cada tile de
+          // transmissão (sempre visível).
           Positioned(
             left: 16,
             right: 16,
@@ -332,91 +313,6 @@ class _ConnectedStageState extends ConsumerState<_ConnectedStage> {
   }
 }
 
-/// Header flutuante do palco: qualidade/fps + badge LIVE + canal + contagem,
-/// fullscreen à direita. Visível só no hover (controlado pelo
-/// [_ConnectedStage]).
-class _StageHeader extends StatelessWidget {
-  const _StageHeader({
-    required this.channelName,
-    required this.participantCount,
-    required this.qualityLabel,
-    required this.isFullscreen,
-    required this.onToggleFullscreen,
-  });
-
-  final String channelName;
-  final int participantCount;
-
-  /// Rótulo da qualidade transmitida (ex.: `1080p60`); nulo quando não há
-  /// share de tela ativo. Renderiza à esquerda do badge LIVE.
-  final String? qualityLabel;
-  final bool isFullscreen;
-  final VoidCallback onToggleFullscreen;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Row(
-      children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: 0.72),
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: AppTokens.borderSubtle),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (qualityLabel != null) ...[
-                Text(
-                  qualityLabel!,
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: AppTokens.textSecondary,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(width: 8),
-              ],
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: AppTokens.accentDanger,
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text(
-                  'LIVE',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Flexible(
-                child: Text(
-                  '$channelName • $participantCount',
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        const Spacer(),
-        _HeaderIconButton(
-          icon: isFullscreen ? Icons.fullscreen_exit : Icons.fullscreen,
-          tooltip: isFullscreen ? 'Sair do fullscreen' : 'Entrar em fullscreen',
-          onPressed: onToggleFullscreen,
-        ),
-      ],
-    );
-  }
-}
-
 /// Takeover imersivo da área streamada: ocupa a janela toda do app (NÃO é
 /// fullscreen do SO — a janela do usuário fica intacta). Reusa o
 /// [_ConnectedStage] inteiro (auto-hide, dock, filmstrip oculta via
@@ -425,13 +321,11 @@ class _StageHeader extends StatelessWidget {
 class _FullscreenTakeover extends ConsumerWidget {
   const _FullscreenTakeover({
     required this.arg,
-    required this.channelName,
     required this.onToggleScreenShare,
     required this.onLeave,
   });
 
   final ({String serverId, String channelId}) arg;
-  final String channelName;
   final VoidCallback onToggleScreenShare;
   final VoidCallback onLeave;
 
@@ -452,39 +346,10 @@ class _FullscreenTakeover extends ConsumerWidget {
         state: state,
         notifier: notifier,
         arg: arg,
-        channelName: channelName,
         onToggleScreenShare: onToggleScreenShare,
         onToggleFullscreen: () => Navigator.of(context).pop(),
         onLeave: onLeave,
       ),
-    );
-  }
-}
-
-/// Botão circular compacto do header flutuante (40px, mesmo dock).
-class _HeaderIconButton extends StatelessWidget {
-  const _HeaderIconButton({
-    required this.icon,
-    required this.tooltip,
-    required this.onPressed,
-  });
-
-  final IconData icon;
-  final String tooltip;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return IconButton(
-      onPressed: onPressed,
-      tooltip: tooltip,
-      style: IconButton.styleFrom(
-        minimumSize: const Size.square(40),
-        backgroundColor: Colors.black.withValues(alpha: 0.72),
-        foregroundColor: AppTokens.textPrimary,
-        side: const BorderSide(color: AppTokens.borderSubtle),
-      ),
-      icon: Icon(icon, size: 20),
     );
   }
 }
@@ -575,11 +440,20 @@ class _ParticipantsPanel extends StatelessWidget {
     required this.state,
     required this.notifier,
     required this.arg,
+    required this.transmitQuality,
+    required this.onToggleFullscreen,
   });
 
   final VoiceState state;
   final VoiceController notifier;
   final ({String serverId, String channelId}) arg;
+
+  /// Qualidade do Go Live local (nulo quando o local não transmite ou é
+  /// desconhecida). Cada tile de tela exibe só se for do local.
+  final String? transmitQuality;
+
+  /// Expansão do tile em destaque (takeover fullscreen). Nulo fora do palco.
+  final VoidCallback? onToggleFullscreen;
 
   @override
   Widget build(BuildContext context) {
@@ -628,12 +502,23 @@ class _ParticipantsPanel extends StatelessWidget {
         if (state.spotlightParticipantId == null) {
           return ColoredBox(
             color: Colors.black,
-            child: _VideoGrid(state: state, notifier: notifier, arg: arg),
+            child: _VideoGrid(
+              state: state,
+              notifier: notifier,
+              arg: arg,
+              transmitQuality: transmitQuality,
+            ),
           );
         }
         return ColoredBox(
           color: Colors.black,
-          child: _SpotlightLayout(state: state, notifier: notifier, arg: arg),
+          child: _SpotlightLayout(
+            state: state,
+            notifier: notifier,
+            arg: arg,
+            transmitQuality: transmitQuality,
+            onToggleFullscreen: onToggleFullscreen,
+          ),
         );
     }
   }
@@ -783,11 +668,15 @@ class _VideoGrid extends StatelessWidget {
     required this.state,
     required this.notifier,
     required this.arg,
+    required this.transmitQuality,
   });
 
   final VoiceState state;
   final VoiceController notifier;
   final ({String serverId, String channelId}) arg;
+
+  /// Qualidade do Go Live local (cada tile de tela exibe só se for local).
+  final String? transmitQuality;
 
   @override
   Widget build(BuildContext context) {
@@ -850,6 +739,18 @@ class _VideoGrid extends StatelessWidget {
                                 item.participant.id,
                                 source: _spotlightSource(item.source),
                               ),
+                        // Overlay de transmissão: cada tile de tela tem o
+                        // seu (LIVE + qualidade local); expandir = destacar.
+                        qualityLabel: item.source == VoiceVideoSource.screen
+                            ? transmitQuality
+                            : null,
+                        onExpand: item.source == VoiceVideoSource.screen
+                            ? () => notifier.toggleSpotlight(
+                                item.participant.id,
+                                source: VoiceSpotlightSource.screen,
+                              )
+                            : null,
+                        isFullscreen: state.isFullscreen,
                       ),
                     ),
                 ],
@@ -917,11 +818,19 @@ class _SpotlightLayout extends StatelessWidget {
     required this.state,
     required this.notifier,
     required this.arg,
+    required this.transmitQuality,
+    required this.onToggleFullscreen,
   });
 
   final VoiceState state;
   final VoiceController notifier;
   final ({String serverId, String channelId}) arg;
+
+  /// Qualidade do Go Live local (o tile de tela exibe só se for local).
+  final String? transmitQuality;
+
+  /// Expansão do tile em destaque (takeover fullscreen).
+  final VoidCallback? onToggleFullscreen;
 
   /// Altura da faixa de miniaturas (wireframe B).
   static const double filmstripHeight = 120;
@@ -948,7 +857,12 @@ class _SpotlightLayout extends StatelessWidget {
       }
     }
     if (focused == null) {
-      return _VideoGrid(state: state, notifier: notifier, arg: arg);
+      return _VideoGrid(
+        state: state,
+        notifier: notifier,
+        arg: arg,
+        transmitQuality: transmitQuality,
+      );
     }
     final selected = focused;
     final others = [
@@ -976,6 +890,15 @@ class _SpotlightLayout extends StatelessWidget {
                 selected.participant.id,
                 source: _spotlightSource(selected.source),
               ),
+              // Destaque de tela: overlay com LIVE + qualidade local;
+              // expandir abre o takeover fullscreen.
+              qualityLabel: selected.source == VoiceVideoSource.screen
+                  ? transmitQuality
+                  : null,
+              onExpand: selected.source == VoiceVideoSource.screen
+                  ? onToggleFullscreen
+                  : null,
+              isFullscreen: state.isFullscreen,
             ),
           ),
         ),
