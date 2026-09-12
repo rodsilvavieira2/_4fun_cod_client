@@ -268,6 +268,7 @@ class ServersRepository {
     ChatMessageKind kind = ChatMessageKind.text,
     String? gifUrl,
     String? replyToId,
+    List<String>? uploadIds,
   }) async {
     try {
       final response = await _dio.post(
@@ -277,6 +278,7 @@ class ServersRepository {
           'kind': kind.apiValue,
           'gifUrl': ?gifUrl,
           'replyToId': ?replyToId,
+          'uploadIds': ?uploadIds,
         },
       );
       return ChatMessage.fromJson(response.data as Map<String, dynamic>);
@@ -296,6 +298,37 @@ class ServersRepository {
         data: {'emoji': emoji},
       );
       return ChatMessage.fromJson(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      throw ApiException.fromDio(e);
+    }
+  }
+
+  /// Retry parcial de anexo FAILED (spec-chat-imagens): novo `POST /uploads`
+  /// + `PATCH /messages/:id/attachments { uploadIds }` → mensagem atualizada.
+  ///
+  /// Usado quando o `POST /uploads` do composer falhou ANTES do envio (bytes
+  /// ainda em mãos). Após o envio, o retry usa [retryUpload] (staging no R2).
+  Future<ChatMessage> addMessageAttachments(
+    String messageId,
+    List<String> uploadIds,
+  ) async {
+    try {
+      final response = await _dio.patch(
+        '/messages/$messageId/attachments',
+        data: {'uploadIds': uploadIds},
+      );
+      return ChatMessage.fromJson(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      throw ApiException.fromDio(e);
+    }
+  }
+
+  /// Retry de anexo FAILED já vinculado (spec-chat-imagens):
+  /// `POST /uploads/:id/retry` re-enfileira o staging no R2; a imagem chega
+  /// via `message.updated` (sem PATCH — o anexo já existe na mensagem).
+  Future<void> retryUpload(String uploadId) async {
+    try {
+      await _dio.post('/uploads/$uploadId/retry');
     } on DioException catch (e) {
       throw ApiException.fromDio(e);
     }

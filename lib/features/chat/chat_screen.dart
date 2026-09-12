@@ -1,11 +1,16 @@
 import 'dart:async';
 
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/api/api_client.dart';
+import '../../core/api/api_exception.dart';
 import '../../core/auth/auth_controller.dart';
 import '../../core/auth/auth_state.dart';
+import '../../core/storage/image_selection.dart';
+import '../../core/storage/uploads_client.dart';
 import '../../core/ui/ui.dart';
 import '../../shared/models/message.dart';
 import '../../shared/models/servers.dart';
@@ -65,6 +70,27 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     }
   }
 
+  /// Retry de anexo FAILED já vinculado: `POST /uploads/:id/retry`; a imagem
+  /// chega via `message.updated` (sem estado local — o grid já mostra spinner
+  /// enquanto o upload não está READY).
+  Future<void> _retryAttachment(String uploadId) async {
+    try {
+      await ref
+          .read(
+            chatControllerProvider((
+              serverId: widget.serverId,
+              channelId: widget.channelId,
+            )).notifier,
+          )
+          .retryAttachmentUpload(uploadId);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Não foi possível tentar de novo.')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final chat = ref.watch(
@@ -105,6 +131,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               members: members,
               onReply: _startReply,
               onReact: _toggleReaction,
+              onRetryAttachment: _retryAttachment,
               onLoadMore: () => ref
                   .read(
                     chatControllerProvider((
@@ -168,6 +195,7 @@ class _MessageList extends StatefulWidget {
     required this.onLoadMore,
     required this.onReply,
     required this.onReact,
+    required this.onRetryAttachment,
     this.members = const [],
     this.myUserId,
   });
@@ -179,6 +207,7 @@ class _MessageList extends StatefulWidget {
   final VoidCallback onLoadMore;
   final ValueChanged<ChatMessage> onReply;
   final Future<void> Function(ChatMessage message, String emoji) onReact;
+  final ValueChanged<String> onRetryAttachment;
 
   @override
   State<_MessageList> createState() => _MessageListState();
@@ -317,6 +346,7 @@ class _MessageListState extends State<_MessageList> {
               quickReactionEmojis: quickReactionEmojis,
               onReply: widget.onReply,
               onReact: widget.onReact,
+              onRetryAttachment: widget.onRetryAttachment,
             ),
           ],
         );
@@ -376,6 +406,7 @@ class _MessageTile extends StatefulWidget {
     required this.quickReactionEmojis,
     required this.onReply,
     required this.onReact,
+    required this.onRetryAttachment,
     this.myUserId,
   });
 
@@ -386,6 +417,7 @@ class _MessageTile extends StatefulWidget {
   final List<String> quickReactionEmojis;
   final ValueChanged<ChatMessage> onReply;
   final Future<void> Function(ChatMessage message, String emoji) onReact;
+  final ValueChanged<String> onRetryAttachment;
 
   @override
   State<_MessageTile> createState() => _MessageTileState();
@@ -518,6 +550,24 @@ class _MessageTileState extends State<_MessageTile> {
                             if (widget.message.kind == ChatMessageKind.gif &&
                                 widget.message.gifUrl != null)
                               _GifEmbed(url: widget.message.gifUrl!),
+                            if (widget.message.attachments.isNotEmpty)
+                              Padding(
+                                padding: EdgeInsets.only(
+                                  top:
+                                      widget.message.content.isNotEmpty ||
+                                          (widget.message.kind ==
+                                                  ChatMessageKind.gif &&
+                                              widget.message.gifUrl != null)
+                                      ? 6
+                                      : 0,
+                                ),
+                                child: MessageImageGrid(
+                                  attachments: widget.message.attachments,
+                                  onRetry: widget.onRetryAttachment,
+                                  onOpen: (url) =>
+                                      showImageLightbox(context, url),
+                                ),
+                              ),
                             if (summaries.isNotEmpty) ...[
                               const SizedBox(height: 7),
                               Wrap(
@@ -570,6 +620,14 @@ class _MessageTileState extends State<_MessageTile> {
   String _semanticContent(ChatMessage message) {
     if (message.kind == ChatMessageKind.gif) {
       return message.content.isEmpty ? 'GIF' : '${message.content} GIF';
+    }
+    if (message.kind == ChatMessageKind.image ||
+        message.attachments.isNotEmpty) {
+      final count = message.attachments.length;
+      final images = count == 1 ? '1 imagem' : '$count imagens';
+      return message.content.isEmpty
+          ? images
+          : '${message.content} ($images)';
     }
     return message.content;
   }
@@ -1013,6 +1071,25 @@ class _ReactionSummary {
   }
 }
 
+/// Slot de imagem do composer (uploads-primeiro, spec-chat-imagens).
+///
+/// Os bytes vivem só aqui: o `POST /uploads` roda no pick e o slot guarda o
+/// `uploadId` (PENDING no servidor). Campos mutáveis para atualizar cada slot
+/// sem reindexar a lista durante os `POST`s em paralelo.
+class _ComposerAttachment {
+  _ComposerAttachment({
+    required this.bytes,
+    required this.fileName,
+    required this.contentType,
+  });
+
+  final Uint8List bytes;
+  final String fileName;
+  final String contentType;
+  String? uploadId;
+  String? error;
+}
+
 class _ChatComposer extends ConsumerStatefulWidget {
   const _ChatComposer({
     required this.serverId,
@@ -1044,6 +1121,18 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
   String? _gifUrl;
   ActiveMention? _activeMention;
   int _selectedMentionIndex = 0;
+
+  /// Slots de imagem (uploads-primeiro, spec-chat-imagens): o `POST /uploads`
+  /// roda no pick; o `POST /messages` referencia os `uploadIds` prontos.
+  List<_ComposerAttachment> _attachments = [];
+
+  bool get _hasUploading =>
+      _attachments.any((a) => a.uploadId == null && a.error == null);
+
+  List<String> get _readyUploadIds => [
+    for (final a in _attachments)
+      if (a.uploadId != null) a.uploadId!,
+  ];
 
   @override
   void initState() {
@@ -1206,7 +1295,12 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
 
   Future<void> _handleSend(String content) async {
     final hasGif = _gifUrl != null;
-    if ((content.isEmpty && !hasGif) || _sending) return;
+    final ready = _readyUploadIds;
+    if ((content.isEmpty && !hasGif && ready.isEmpty) ||
+        _sending ||
+        _hasUploading) {
+      return;
+    }
     setState(() => _sending = true);
     try {
       await ref
@@ -1218,13 +1312,19 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
           )
           .send(
             content,
-            kind: hasGif ? ChatMessageKind.gif : ChatMessageKind.text,
+            kind: hasGif
+                ? ChatMessageKind.gif
+                : (ready.isNotEmpty
+                      ? ChatMessageKind.image
+                      : ChatMessageKind.text),
             gifUrl: _gifUrl,
             replyToId: widget.replyTo?.id,
+            uploadIds: ready.isEmpty ? null : ready,
           );
       if (!mounted) return;
       _controller.clear();
       _clearGif();
+      _clearAttachments();
       widget.onCancelReply();
     } catch (_) {
       if (!mounted) return;
@@ -1236,14 +1336,99 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
     }
   }
 
+  void _clearAttachments() {
+    if (_attachments.isEmpty) return;
+    setState(() => _attachments = []);
+  }
+
+  /// Pick multiplo (file_selector, linux/windows) + `POST /uploads` imediato
+  /// em paralelo. Falha de um slot não bloqueia os outros (parcial).
+  Future<void> _pickImages() async {
+    if (_sending || _gifUrl != null) return;
+    final files = await openFiles(acceptedTypeGroups: const [imageTypeGroup]);
+    if (files.isEmpty || !mounted) return;
+    final slots = [..._attachments];
+    for (final file in files) {
+      if (slots.length >= kMaxChatAttachments) break;
+      final contentType = contentTypeForFileName(file.name);
+      if (contentType == null) {
+        _showPickError('Formato não suportado: ${file.name}');
+        continue;
+      }
+      final bytes = await file.readAsBytes();
+      if (!mounted) return;
+      if (bytes.length > maxImageBytes) {
+        _showPickError('${file.name}: máximo de 5 MB.');
+        continue;
+      }
+      slots.add(
+        _ComposerAttachment(
+          bytes: bytes,
+          fileName: file.name,
+          contentType: contentType,
+        ),
+      );
+    }
+    setState(() => _attachments = slots);
+    await _enqueuePending();
+  }
+
+  /// Enfileira os slots pendentes (`message-attachment` do canal atual).
+  Future<void> _enqueuePending() async {
+    final pending = [
+      for (final a in _attachments)
+        if (a.uploadId == null && a.error == null) a,
+    ];
+    if (pending.isEmpty || !mounted) return;
+    setState(() {}); // mostra os spinners
+    final dio = ref.read(apiClientProvider);
+    await Future.wait(
+      pending.map((slot) async {
+        try {
+          final uploadId = await startImageUpload(
+            dio,
+            bytes: slot.bytes,
+            fileName: slot.fileName,
+            contentType: slot.contentType,
+            kind: 'message-attachment',
+            channelId: widget.channelId,
+          );
+          if (!mounted) return;
+          setState(() => slot.uploadId = uploadId);
+        } on ApiException catch (e) {
+          if (!mounted) return;
+          setState(() => slot.error = e.message);
+        } catch (_) {
+          if (!mounted) return;
+          setState(() => slot.error = 'Falha ao enviar. Tente de novo.');
+        }
+      }),
+    );
+  }
+
+  void _showPickError(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
   @override
   Widget build(BuildContext context) {
     return AppChatInput(
       controller: _controller,
-      enabled: !_sending,
+      enabled: !_sending && !_hasUploading,
       hintText: 'Mensagem em #${widget.channelName}',
-      canSendEmpty: _gifUrl != null,
+      canSendEmpty: _gifUrl != null || _readyUploadIds.isNotEmpty,
       trailingActions: [
+        AppIconButton(
+          icon: Icons.image_outlined,
+          tooltip: 'Anexar imagens',
+          minSize: 30,
+          iconSize: 18,
+          onPressed: _sending || _gifUrl != null ? null : _pickImages,
+        ),
+        const SizedBox(width: 2),
         Builder(
           builder: (anchorContext) => AppIconButton(
             icon: Icons.add_reaction_outlined,
@@ -1260,7 +1445,9 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
             tooltip: 'Inserir GIF',
             minSize: 30,
             iconSize: 18,
-            onPressed: _sending ? null : () => _pickGif(anchorContext),
+            onPressed: _sending || _attachments.isNotEmpty
+                ? null
+                : () => _pickGif(anchorContext),
           ),
         ),
       ],
@@ -1275,7 +1462,10 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
     final gifUrl = _gifUrl;
     final mentionOptions = _currentMentionOptions();
     final showMentions = _activeMention != null;
-    if (!showMentions && replyTo == null && gifUrl == null) return null;
+    final hasAttachments = _attachments.isNotEmpty;
+    if (!showMentions && replyTo == null && gifUrl == null && !hasAttachments) {
+      return null;
+    }
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -1285,9 +1475,10 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
             selectedIndex: _selectedMentionIndex,
             onSelected: _insertMention,
           ),
-          if (replyTo != null || gifUrl != null) const SizedBox(height: 8),
+          if (replyTo != null || gifUrl != null || hasAttachments)
+            const SizedBox(height: 8),
         ],
-        if (replyTo != null || gifUrl != null)
+        if (replyTo != null || gifUrl != null || hasAttachments)
           DecoratedBox(
             decoration: BoxDecoration(
               color: AppTokens.surface1,
@@ -1302,10 +1493,24 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
                     message: replyTo,
                     onCancel: widget.onCancelReply,
                   ),
-                if (replyTo != null && gifUrl != null)
+                if (replyTo != null && (gifUrl != null || hasAttachments))
                   const Divider(height: 1, color: AppTokens.borderHairline),
                 if (gifUrl != null)
                   _ComposerGifPanel(url: gifUrl, onCancel: _clearGif),
+                if (gifUrl == null && hasAttachments) ...[
+                  if (replyTo != null)
+                    const Divider(height: 1, color: AppTokens.borderHairline),
+                  _ComposerAttachmentsPanel(
+                    attachments: _attachments,
+                    onRemove: (slot) => setState(
+                      () => _attachments = [..._attachments]..remove(slot),
+                    ),
+                    onRetry: (slot) {
+                      setState(() => slot.error = null);
+                      _enqueuePending();
+                    },
+                  ),
+                ],
               ],
             ),
           ),
@@ -1425,6 +1630,107 @@ class _ComposerGifPanel extends StatelessWidget {
             iconSize: 15,
             onPressed: onCancel,
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Preview dos slots de imagem do composer (spec-chat-imagens): miniatura
+/// local, spinner durante o `POST /uploads`, erro inline com retry/remove.
+class _ComposerAttachmentsPanel extends StatelessWidget {
+  const _ComposerAttachmentsPanel({
+    required this.attachments,
+    required this.onRemove,
+    required this.onRetry,
+  });
+
+  final List<_ComposerAttachment> attachments;
+  final ValueChanged<_ComposerAttachment> onRemove;
+  final ValueChanged<_ComposerAttachment> onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          for (final slot in attachments)
+            SizedBox(
+              width: 86,
+              height: 86,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(AppRadius.sm),
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: AppTokens.surface2,
+                        border: Border.all(
+                          color: AppTokens.borderSubtle,
+                          width: 1,
+                        ),
+                      ),
+                      child: Image.memory(slot.bytes, fit: BoxFit.cover),
+                    ),
+                  ),
+                  if (slot.uploadId == null && slot.error == null)
+                    const DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: Color(0x88000000),
+                      ),
+                      child: Center(
+                        child: SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      ),
+                    ),
+                  if (slot.error != null)
+                    DecoratedBox(
+                      decoration: const BoxDecoration(
+                        color: Color(0xAA000000),
+                      ),
+                      child: Center(
+                        child: IconButton(
+                          icon: const Icon(
+                            Icons.refresh,
+                            color: Colors.white,
+                            size: 20,
+                          ),
+                          tooltip: 'Tentar de novo',
+                          onPressed: () => onRetry(slot),
+                        ),
+                      ),
+                    ),
+                  Positioned(
+                    top: 0,
+                    right: 0,
+                    child: GestureDetector(
+                      onTap: () => onRemove(slot),
+                      child: const DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: Color(0xAA000000),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Padding(
+                          padding: EdgeInsets.all(2),
+                          child: Icon(
+                            Icons.close,
+                            color: Colors.white,
+                            size: 14,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
         ],
       ),
     );

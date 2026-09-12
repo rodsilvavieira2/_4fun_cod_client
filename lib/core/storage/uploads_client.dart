@@ -16,6 +16,32 @@ Future<String> enqueueImageUpload(
   String? serverId,
   String? channelId,
 }) async {
+  final uploadId = await startImageUpload(
+    dio,
+    bytes: bytes,
+    fileName: fileName,
+    contentType: contentType,
+    kind: kind,
+    serverId: serverId,
+    channelId: channelId,
+  );
+  return waitForUploadReady(dio, uploadId);
+}
+
+/// Enfileira o upload e retorna o `uploadId` IMEDIATAMENTE (estado PENDING),
+/// sem aguardar o processamento.
+///
+/// Usado pelo chat (spec-chat-imagens): a mensagem referencia os uploads
+/// por id e o `message.updated` preenche as imagens quando ficam READY.
+Future<String> startImageUpload(
+  Dio dio, {
+  required List<int> bytes,
+  required String fileName,
+  required String contentType,
+  required String kind,
+  String? serverId,
+  String? channelId,
+}) async {
   try {
     final formData = FormData.fromMap({
       'kind': kind,
@@ -29,7 +55,7 @@ Future<String> enqueueImageUpload(
     });
     final response = await dio.post('/uploads', data: formData);
     final data = response.data as Map<String, dynamic>;
-    return await waitForUploadReady(dio, data['uploadId'] as String);
+    return data['uploadId'] as String;
   } on ApiException {
     rethrow;
   } on DioException catch (e) {

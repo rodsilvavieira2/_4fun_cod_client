@@ -2,11 +2,13 @@ import 'user.dart';
 
 enum ChatMessageKind {
   text,
-  gif;
+  gif,
+  image;
 
   static ChatMessageKind fromApi(Object? value) {
     return switch (value) {
       'GIF' => ChatMessageKind.gif,
+      'IMAGE' => ChatMessageKind.image,
       _ => ChatMessageKind.text,
     };
   }
@@ -14,7 +16,58 @@ enum ChatMessageKind {
   String get apiValue => switch (this) {
     ChatMessageKind.text => 'TEXT',
     ChatMessageKind.gif => 'GIF',
+    ChatMessageKind.image => 'IMAGE',
   };
+}
+
+/// Anexo de imagem de uma mensagem (`MessageAttachment` do Prisma).
+///
+/// `url` é nulo enquanto o upload está PENDING/PROCESSING; `status` resolve
+/// do `upload` aninhado (READY/FAILED) para o retry parcial por anexo.
+class MessageAttachment {
+  const MessageAttachment({
+    required this.id,
+    required this.uploadId,
+    required this.url,
+    required this.width,
+    required this.height,
+    required this.status,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String uploadId;
+  final String? url;
+  final int? width;
+  final int? height;
+
+  /// `READY` | `PENDING` | `PROCESSING` | `FAILED` (default PENDING).
+  final String status;
+  final DateTime createdAt;
+
+  /// Aspect ratio real (width/height) ou 1 enquanto sem dimensões.
+  double get aspectRatio {
+    if (width == null || height == null || height == 0) return 1;
+    return width! / height!;
+  }
+
+  factory MessageAttachment.fromJson(Map<String, dynamic> json) {
+    final upload = json['upload'] as Map<String, dynamic>?;
+    return MessageAttachment(
+      id: json['id'] as String,
+      uploadId: json['uploadId'] as String,
+      url:
+          (json['url'] as String?) ??
+          (upload?['finalUrl'] as String?) ??
+          (upload?['final_url'] as String?),
+      width: (json['width'] as num?)?.toInt(),
+      height: (json['height'] as num?)?.toInt(),
+      status: (upload?['status'] as String?) ?? 'PENDING',
+      createdAt:
+          DateTime.tryParse(json['createdAt'] as String? ?? '') ??
+          DateTime.fromMillisecondsSinceEpoch(0),
+    );
+  }
 }
 
 class MessageReplyPreview {
@@ -102,6 +155,7 @@ class ChatMessage {
     this.replyTo,
     this.reactions = const [],
     this.mentions = const [],
+    this.attachments = const [],
     this.updatedAt,
   });
 
@@ -125,6 +179,9 @@ class ChatMessage {
     mentions: (json['mentions'] as List<dynamic>? ?? const [])
         .map((e) => MessageMention.fromJson(e as Map<String, dynamic>))
         .toList(),
+    attachments: (json['attachments'] as List<dynamic>? ?? const [])
+        .map((e) => MessageAttachment.fromJson(e as Map<String, dynamic>))
+        .toList(),
   );
 
   final String id;
@@ -135,6 +192,7 @@ class ChatMessage {
   final MessageReplyPreview? replyTo;
   final List<MessageReaction> reactions;
   final List<MessageMention> mentions;
+  final List<MessageAttachment> attachments;
   final User author;
   final DateTime createdAt;
 

@@ -69,6 +69,7 @@ class FakeServersRepository implements ServersRepository {
     ChatMessageKind kind = ChatMessageKind.text,
     String? gifUrl,
     String? replyToId,
+    List<String>? uploadIds,
   }) async {
     sentContents.add(content);
     return _msg(

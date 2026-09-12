@@ -140,6 +140,7 @@ class ChatController
     ChatMessageKind kind = ChatMessageKind.text,
     String? gifUrl,
     String? replyToId,
+    List<String>? uploadIds,
   }) async {
     final message = await ref
         .read(serversRepositoryProvider)
@@ -149,6 +150,7 @@ class ChatController
           kind: kind,
           gifUrl: gifUrl,
           replyToId: replyToId,
+          uploadIds: uploadIds,
         );
     if (_disposed) return;
     final current = state.valueOrNull;
@@ -166,6 +168,28 @@ class ChatController
     _applyEvent(
       MessageUpdatedEvent(channelId: arg.channelId, message: message),
     );
+  }
+
+  /// Retry parcial de anexo FAILED (spec-chat-imagens): apos novo
+  /// `POST /uploads`, vincula via PATCH e aplica `message.updated` local.
+  Future<void> retryAttachments(
+    String messageId,
+    List<String> uploadIds,
+  ) async {
+    final message = await ref
+        .read(serversRepositoryProvider)
+        .addMessageAttachments(messageId, uploadIds);
+    if (_disposed) return;
+    _applyEvent(
+      MessageUpdatedEvent(channelId: arg.channelId, message: message),
+    );
+  }
+
+  /// Retry de anexo FAILED já vinculado (spec-chat-imagens):
+  /// `POST /uploads/:id/retry` re-enfileira o staging; a imagem chega via
+  /// `message.updated` (sem mudança local imediata).
+  Future<void> retryAttachmentUpload(String uploadId) async {
+    await ref.read(serversRepositoryProvider).retryUpload(uploadId);
   }
 
   /// Carrega a página anterior (`before=<firstMessageId>`), insere no topo

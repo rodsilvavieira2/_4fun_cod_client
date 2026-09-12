@@ -10,6 +10,7 @@ export 'inputs/app_chat_input.dart';
 export 'inputs/app_text_field.dart';
 export 'invite_dialog.dart';
 export 'menus/app_menu.dart';
+export 'message_image_grid.dart';
 export 'overlay_icon_button.dart';
 export 'overlays/app_modal_window.dart';
 export 'presence_dot.dart';
