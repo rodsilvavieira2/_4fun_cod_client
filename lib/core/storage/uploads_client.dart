@@ -59,7 +59,8 @@ Future<String> waitForUploadReady(
           return data['finalUrl'] as String;
         case 'FAILED':
           throw ApiException(
-            message: (data['error'] as String?) ?? 'Falha ao processar a imagem.',
+            message:
+                (data['error'] as String?) ?? 'Falha ao processar a imagem.',
           );
       }
     } on ApiException {

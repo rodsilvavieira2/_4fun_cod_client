@@ -191,7 +191,12 @@ class _ProfileSummary extends StatelessWidget {
 }
 
 class _Avatar extends StatelessWidget {
-  const _Avatar({super.key, required this.user, required this.size, this.previewBytes});
+  const _Avatar({
+    super.key,
+    required this.user,
+    required this.size,
+    this.previewBytes,
+  });
 
   final User user;
   final double size;
