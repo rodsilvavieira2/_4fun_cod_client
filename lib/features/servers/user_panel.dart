@@ -437,8 +437,11 @@ class _VoiceConnectionPanel extends StatelessWidget {
                 tooltip: 'Sair do canal de voz',
                 color: AppTokens.accentDanger,
                 onPressed: onLeave,
-                minSize: 28,
-                iconSize: 17,
+                // Botão de encerrar 21% maior que o padrão (28/17): 10% + 10%
+                // compostos, arredondado para inteiro (fração gerava offsets
+                // fracionários e ruído de ponto flutuante no layout).
+                minSize: 34,
+                iconSize: 21,
               ),
             ],
           ),

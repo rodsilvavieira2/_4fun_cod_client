@@ -226,7 +226,8 @@ class _HomeNavItemState extends State<_HomeNavItem> {
               const SizedBox(width: 7),
               Icon(
                 widget.icon,
-                size: 14.5,
+                // Ícones da sidebar 20% maiores (14.5 → 17.4).
+                size: 17.4,
                 color: highlighted
                     ? AppTokens.textPrimary
                     : AppTokens.textSecondary,

@@ -3,7 +3,6 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:window_manager/window_manager.dart';
 
 import '../../core/rtc/rtc_providers.dart';
 import '../../core/rtc/rtc_service.dart';
@@ -11,6 +10,7 @@ import '../../core/rtc/rtc_video_view.dart';
 import '../../core/telemetry/telemetry_service.dart';
 import '../../core/ui/ui.dart';
 import 'go_live_modal.dart';
+import 'voice_fullscreen_window.dart';
 import 'voice_providers.dart';
 import 'voice_video_tile.dart';
 
@@ -103,7 +103,7 @@ class VoiceScreen extends ConsumerWidget {
     ({String serverId, String channelId}) arg,
   ) async {
     try {
-      await WindowManager.instance.setFullScreen(false);
+      await exitVoiceFullscreenWindow(session: null);
     } catch (error, stack) {
       // Sem janela (testes): o estado cobre a UI.
       debugPrint('[fullscreen] exit failed: $error');
@@ -127,18 +127,19 @@ class VoiceScreen extends ConsumerWidget {
     final notifier = ref.read(voiceControllerProvider(arg).notifier);
     final navigator = Navigator.of(context);
     final telemetry = ref.read(telemetryServiceProvider);
+    VoiceFullscreenWindowSession? fullscreenSession;
     notifier.setFullscreen(true);
     try {
-      final wasMaximized = await WindowManager.instance.isMaximized();
-      await WindowManager.instance.setFullScreen(true);
-      final isFullScreen = await WindowManager.instance.isFullScreen();
+      fullscreenSession = await enterVoiceFullscreenWindow();
       debugPrint(
-        '[fullscreen] enter: wasMaximized=$wasMaximized isFullScreen=$isFullScreen',
+        '[fullscreen] enter: wasMaximized=${fullscreenSession.wasMaximized} '
+        'isFullScreen=${fullscreenSession.confirmedFullScreen}',
       );
-      if (!isFullScreen) {
+      if (!fullscreenSession.confirmedFullScreen) {
         telemetry.reportError(
           'voice fullscreen enter',
-          'setFullScreen(true) no-op (isFullScreen=false, wasMaximized=$wasMaximized)',
+          'setFullScreen(true) no-op '
+              '(isFullScreen=false, wasMaximized=${fullscreenSession.wasMaximized})',
         );
       }
     } catch (error, stack) {
@@ -162,8 +163,9 @@ class VoiceScreen extends ConsumerWidget {
       );
     } finally {
       try {
-        await WindowManager.instance.setFullScreen(false);
-        final isFullScreen = await WindowManager.instance.isFullScreen();
+        final isFullScreen = await exitVoiceFullscreenWindow(
+          session: fullscreenSession,
+        );
         debugPrint('[fullscreen] exit: isFullScreen=$isFullScreen');
       } catch (error, stack) {
         // Janela já fechada/indisponível: nada a devolver.
