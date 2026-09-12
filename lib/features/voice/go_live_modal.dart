@@ -308,18 +308,76 @@ class _AudioToggleRow extends StatelessWidget {
       child: InkWell(
         mouseCursor: SystemMouseCursors.click,
         onTap: () => onChanged(!value),
-        child: SettingsRow(
-          icon: Icons.volume_up_outlined,
-          title: 'Incluir áudio do sistema',
-          subtitle: 'Transmite todo o áudio do sistema.',
-          trailing: SettingsSwitch(value: value, onChanged: onChanged),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 56),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Container(
+                  width: 28,
+                  height: 28,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: AppTokens.surface2,
+                    borderRadius: BorderRadius.circular(AppRadius.sm),
+                    border: Border.all(
+                      color: AppTokens.borderHairline,
+                      width: 1,
+                    ),
+                  ),
+                  child: const Icon(
+                    Icons.volume_up_outlined,
+                    size: 15,
+                    color: AppTokens.textSecondary,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                const Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Incluir áudio do sistema',
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontFamily: 'Geist',
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: AppTokens.textPrimary,
+                          letterSpacing: 0,
+                        ),
+                      ),
+                      SizedBox(height: 2),
+                      Text(
+                        'Transmite todo o áudio do sistema.',
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 2,
+                        style: TextStyle(
+                          fontFamily: 'Geist',
+                          fontSize: 12,
+                          height: 1.25,
+                          color: AppTokens.textMuted,
+                          letterSpacing: 0,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 16),
+                SettingsSwitch(value: value, onChanged: onChanged),
+              ],
+            ),
+          ),
         ),
       ),
     );
   }
 }
 
-/// Qualidades como linhas do settings: seleção escura, trilho azul e check.
+/// Qualidades como radios compactos dentro do layout de settings.
 class _QualityPanel extends StatelessWidget {
   const _QualityPanel({required this.quality, required this.onChanged});
 
@@ -329,29 +387,38 @@ class _QualityPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final values = GoLiveQuality.values;
-    return SettingsGroup(
-      title: 'Escolha a qualidade da transmissão.',
-      children: [
-        for (final value in values)
-          _QualityRow(
-            title: _qualityTitle(value),
-            spec: _qualitySpec(value),
-            selected: quality == value,
-            onTap: () => onChanged(value),
-          ),
-      ],
+    return RadioGroup<GoLiveQuality>(
+      groupValue: quality,
+      onChanged: (value) {
+        if (value != null) onChanged(value);
+      },
+      child: SettingsGroup(
+        title: 'Escolha a qualidade da transmissão.',
+        children: [
+          for (final value in values)
+            _QualityRow(
+              value: value,
+              title: _qualityTitle(value),
+              spec: _qualitySpec(value),
+              selected: quality == value,
+              onTap: () => onChanged(value),
+            ),
+        ],
+      ),
     );
   }
 }
 
 class _QualityRow extends StatelessWidget {
   const _QualityRow({
+    required this.value,
     required this.title,
     required this.spec,
     required this.selected,
     required this.onTap,
   });
 
+  final GoLiveQuality value;
   final String title;
   final String spec;
   final bool selected;
@@ -374,13 +441,25 @@ class _QualityRow extends StatelessWidget {
           color: selected ? AppTokens.surface2 : Colors.transparent,
           child: Row(
             children: [
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 120),
-                width: 2,
-                height: 18,
-                decoration: BoxDecoration(
-                  color: selected ? AppTokens.accentVercel : Colors.transparent,
-                  borderRadius: BorderRadius.circular(AppRadius.full),
+              SizedBox(
+                width: 22,
+                height: 22,
+                child: Radio<GoLiveQuality>(
+                  value: value,
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  visualDensity: VisualDensity.compact,
+                  splashRadius: 16,
+                  fillColor: WidgetStateProperty.resolveWith((states) {
+                    if (states.contains(WidgetState.selected)) {
+                      return AppTokens.accentVercel;
+                    }
+                    if (states.contains(WidgetState.hovered) ||
+                        states.contains(WidgetState.focused)) {
+                      return AppTokens.textSecondary;
+                    }
+                    return AppTokens.textMuted;
+                  }),
+                  overlayColor: WidgetStateProperty.all(AppTokens.hoverOverlay),
                 ),
               ),
               const SizedBox(width: 10),
