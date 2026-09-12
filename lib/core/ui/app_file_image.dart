@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/api_client.dart';
 import '../config/app_config.dart';
+import '../logging/app_logger.dart';
 
 /// Resolve um path de arquivo do servidor (`/api/v1/files/...`, como vem em
 /// `User.avatarUrl` / `Server.iconUrl`) para URL absoluta.
@@ -21,9 +22,7 @@ String resolveFileUrl(String restBase, String path) {
     return path;
   }
   final base = Uri.parse(restBase);
-  if (base.path.isNotEmpty &&
-      base.path != '/' &&
-      path.startsWith(base.path)) {
+  if (base.path.isNotEmpty && base.path != '/' && path.startsWith(base.path)) {
     return '${base.origin}$path';
   }
   final b = restBase.endsWith('/')
@@ -42,14 +41,31 @@ final fileImageBytesProvider = FutureProvider.family<Uint8List, String>((
   ref,
   url,
 ) async {
-  final res = await ref
-      .watch(apiClientProvider)
-      .get<List<int>>(url, options: Options(responseType: ResponseType.bytes));
-  final data = res.data;
-  if (data == null || data.isEmpty) {
-    throw StateError('Resposta vazia ao baixar imagem: $url');
+  final log = ref.watch(appLoggerProvider);
+  try {
+    final res = await ref
+        .watch(apiClientProvider)
+        .get<List<int>>(url, options: Options(responseType: ResponseType.bytes));
+    final data = res.data;
+    if (data == null || data.isEmpty) {
+      throw StateError('Resposta vazia ao baixar imagem: $url');
+    }
+    final bytes = Uint8List.fromList(data);
+    // DIAG temporário: confirma o que chegou antes do Image.memory.
+    final magic = bytes.length >= 4
+        ? bytes
+              .sublist(0, 4)
+              .map((b) => b.toRadixString(16).padLeft(2, '0'))
+              .join()
+        : 'curto';
+    log.d('DIAG fileImage OK url=$url bytes=${bytes.length} magic=$magic',
+        tag: 'file-image');
+    return bytes;
+  } catch (error, stackTrace) {
+    log.e('DIAG fileImage ERRO url=$url',
+        error: error, stackTrace: stackTrace, tag: 'file-image');
+    rethrow;
   }
-  return Uint8List.fromList(data);
 });
 
 /// Imagem hospedada no proxy de arquivos do servidor.
@@ -91,7 +107,16 @@ class AppFileImage extends ConsumerWidget {
             height: height,
             fit: fit,
             gaplessPlayback: true,
-            errorBuilder: (_, _, _) => fallback,
+            // DIAG temporário: falha de decode cai aqui (sem isso é silenciosa).
+            errorBuilder: (context, error, stackTrace) {
+              ref.read(appLoggerProvider).e(
+                    'DIAG fileImage DECODE url=$url bytes=${bytes.length}',
+                    error: error,
+                    stackTrace: stackTrace,
+                    tag: 'file-image',
+                  );
+              return fallback;
+            },
           ),
           loading: () => fallback,
           error: (_, _) => fallback,
