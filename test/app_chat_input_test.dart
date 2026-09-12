@@ -94,4 +94,40 @@ void main() {
     expect(actionRect.left, greaterThan(fieldRect.right));
     expect(sendRect.left, greaterThan(actionRect.right));
   });
+
+  testWidgets('onKeyEvent intercepta Enter antes do envio padrão', (
+    tester,
+  ) async {
+    final controller = TextEditingController(text: '@ana');
+    final sent = <String>[];
+    var intercepted = false;
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AppChatInput(
+            controller: controller,
+            onKeyEvent: (_, event) {
+              if (event is KeyDownEvent &&
+                  event.logicalKey == LogicalKeyboardKey.enter) {
+                intercepted = true;
+                return KeyEventResult.handled;
+              }
+              return KeyEventResult.ignored;
+            },
+            onSend: sent.add,
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byType(TextField));
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
+
+    expect(intercepted, isTrue);
+    expect(sent, isEmpty);
+  });
 }

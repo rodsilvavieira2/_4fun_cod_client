@@ -28,6 +28,7 @@ class AppChatInput extends StatefulWidget {
     this.trailingActions = const [],
     this.topPanel,
     this.canSendEmpty = false,
+    this.onKeyEvent,
   });
 
   /// Dono do texto continua sendo o chamador (ele lê via [onSend] e decide
@@ -47,6 +48,7 @@ class AppChatInput extends StatefulWidget {
   final List<Widget> trailingActions;
   final Widget? topPanel;
   final bool canSendEmpty;
+  final FocusOnKeyEventCallback? onKeyEvent;
 
   @override
   State<AppChatInput> createState() => _AppChatInputState();
@@ -73,6 +75,10 @@ class _AppChatInputState extends State<AppChatInput> {
   void _syncFocus() => setState(() => _focused = _focusNode.hasFocus);
 
   KeyEventResult _handleKey(FocusNode node, KeyEvent event) {
+    final externalResult = widget.onKeyEvent?.call(node, event);
+    if (externalResult != null && externalResult != KeyEventResult.ignored) {
+      return externalResult;
+    }
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
     final key = event.logicalKey;
     if (key != LogicalKeyboardKey.enter &&

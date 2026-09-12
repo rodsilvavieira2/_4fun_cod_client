@@ -76,6 +76,18 @@ class MessageReaction {
   final User? user;
 }
 
+class MessageMention {
+  const MessageMention({required this.userId, required this.user});
+
+  factory MessageMention.fromJson(Map<String, dynamic> json) => MessageMention(
+    userId: json['userId'] as String,
+    user: User.fromJson(json['user'] as Map<String, dynamic>),
+  );
+
+  final String userId;
+  final User user;
+}
+
 /// Mensagem de canal de texto — `GET/POST /channels/:id/messages` e evento
 /// `message.created`/`message.updated` do socket.
 class ChatMessage {
@@ -89,6 +101,7 @@ class ChatMessage {
     this.gifUrl,
     this.replyTo,
     this.reactions = const [],
+    this.mentions = const [],
     this.updatedAt,
   });
 
@@ -109,6 +122,9 @@ class ChatMessage {
     reactions: (json['reactions'] as List<dynamic>? ?? const [])
         .map((e) => MessageReaction.fromJson(e as Map<String, dynamic>))
         .toList(),
+    mentions: (json['mentions'] as List<dynamic>? ?? const [])
+        .map((e) => MessageMention.fromJson(e as Map<String, dynamic>))
+        .toList(),
   );
 
   final String id;
@@ -118,6 +134,7 @@ class ChatMessage {
   final String? gifUrl;
   final MessageReplyPreview? replyTo;
   final List<MessageReaction> reactions;
+  final List<MessageMention> mentions;
   final User author;
   final DateTime createdAt;
 

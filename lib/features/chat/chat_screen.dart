@@ -1,17 +1,21 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/auth/auth_controller.dart';
 import '../../core/auth/auth_state.dart';
 import '../../core/ui/ui.dart';
 import '../../shared/models/message.dart';
+import '../../shared/models/servers.dart';
 import '../../shared/models/user.dart';
+import '../servers/servers_providers.dart';
 import 'chat_grouping.dart';
 import 'chat_providers.dart';
 import 'emoji_catalog.dart';
 import 'gif_repository.dart';
+import 'mention_utils.dart';
 
 /// Chat de um canal de texto: fluxo contínuo estilo Discord, com ações no
 /// hover, replies, reações, emoji no composer e GIFs.
@@ -71,6 +75,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     );
     final auth = ref.watch(authControllerProvider).valueOrNull;
     final myUserId = auth is Authenticated ? auth.user.id : null;
+    final serverDetail = ref.watch(serverDetailProvider(widget.serverId));
+    final members = serverDetail.valueOrNull?.members ?? const <ServerMember>[];
+    final onlineUserIds = ref.watch(presenceProvider(widget.serverId));
 
     return Column(
       children: [
@@ -95,6 +102,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               state: state,
               channelName: widget.channelName,
               myUserId: myUserId,
+              members: members,
               onReply: _startReply,
               onReact: _toggleReaction,
               onLoadMore: () => ref
@@ -112,6 +120,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           serverId: widget.serverId,
           channelId: widget.channelId,
           channelName: widget.channelName,
+          members: members,
+          onlineUserIds: onlineUserIds,
           replyTo: _replyTo,
           onCancelReply: _clearReply,
         ),
@@ -158,12 +168,14 @@ class _MessageList extends StatefulWidget {
     required this.onLoadMore,
     required this.onReply,
     required this.onReact,
+    this.members = const [],
     this.myUserId,
   });
 
   final ChatState state;
   final String channelName;
   final String? myUserId;
+  final List<ServerMember> members;
   final VoidCallback onLoadMore;
   final ValueChanged<ChatMessage> onReply;
   final Future<void> Function(ChatMessage message, String emoji) onReact;
@@ -260,6 +272,7 @@ class _MessageListState extends State<_MessageList> {
       messages,
       widget.myUserId,
     );
+    final mentionTargets = _mentionTargetsFor(widget.members);
 
     return ListView.builder(
       controller: _scrollController,
@@ -300,6 +313,7 @@ class _MessageListState extends State<_MessageList> {
                 previous: previous,
               ),
               myUserId: widget.myUserId,
+              mentionTargets: mentionTargets,
               quickReactionEmojis: quickReactionEmojis,
               onReply: widget.onReply,
               onReact: widget.onReact,
@@ -358,6 +372,7 @@ class _MessageTile extends StatefulWidget {
   const _MessageTile({
     required this.message,
     required this.showHeader,
+    required this.mentionTargets,
     required this.quickReactionEmojis,
     required this.onReply,
     required this.onReact,
@@ -367,6 +382,7 @@ class _MessageTile extends StatefulWidget {
   final ChatMessage message;
   final bool showHeader;
   final String? myUserId;
+  final List<MentionTarget> mentionTargets;
   final List<String> quickReactionEmojis;
   final ValueChanged<ChatMessage> onReply;
   final Future<void> Function(ChatMessage message, String emoji) onReact;
@@ -388,6 +404,10 @@ class _MessageTileState extends State<_MessageTile> {
   @override
   Widget build(BuildContext context) {
     final author = widget.message.author;
+    final mentionTargets = _mergeMentionTargets(
+      widget.mentionTargets,
+      widget.message.mentions,
+    );
     final authorColorIndex = author.id.codeUnits.fold(0, (a, b) => a + b) % 4;
     final edited =
         widget.message.updatedAt != null &&
@@ -490,14 +510,9 @@ class _MessageTileState extends State<_MessageTile> {
                                       ? 8
                                       : 0,
                                 ),
-                                child: SelectableText(
-                                  widget.message.content,
-                                  style: const TextStyle(
-                                    fontFamily: 'Geist',
-                                    fontSize: 14.5,
-                                    height: 1.42,
-                                    color: AppTokens.textPrimary,
-                                  ),
+                                child: _MentionMessageText(
+                                  text: widget.message.content,
+                                  targets: mentionTargets,
                                 ),
                               ),
                             if (widget.message.kind == ChatMessageKind.gif &&
@@ -619,6 +634,46 @@ class _Avatar extends StatelessWidget {
         fontSize: 14,
         fontWeight: FontWeight.w700,
         color: AppTokens.textPrimary,
+      ),
+    );
+  }
+}
+
+class _MentionMessageText extends StatelessWidget {
+  const _MentionMessageText({required this.text, required this.targets});
+
+  final String text;
+  final List<MentionTarget> targets;
+
+  @override
+  Widget build(BuildContext context) {
+    const baseStyle = TextStyle(
+      fontFamily: 'Geist',
+      fontSize: 14.5,
+      height: 1.42,
+      color: AppTokens.textPrimary,
+    );
+    final parts = buildMentionTextParts(text, targets);
+    if (parts.length == 1 && !parts.first.isMention) {
+      return SelectableText(text, style: baseStyle);
+    }
+
+    return SelectableText.rich(
+      TextSpan(
+        style: baseStyle,
+        children: [
+          for (final part in parts)
+            TextSpan(
+              text: part.text,
+              style: part.isMention
+                  ? const TextStyle(
+                      color: Color(0xFF7AB7FF),
+                      fontWeight: FontWeight.w700,
+                      backgroundColor: Color(0x330070F3),
+                    )
+                  : null,
+            ),
+        ],
       ),
     );
   }
@@ -964,6 +1019,8 @@ class _ChatComposer extends ConsumerStatefulWidget {
     required this.serverId,
     required this.channelId,
     required this.channelName,
+    required this.members,
+    required this.onlineUserIds,
     required this.onCancelReply,
     this.replyTo,
   });
@@ -971,6 +1028,8 @@ class _ChatComposer extends ConsumerStatefulWidget {
   final String serverId;
   final String channelId;
   final String channelName;
+  final List<ServerMember> members;
+  final Set<String> onlineUserIds;
   final ChatMessage? replyTo;
   final VoidCallback onCancelReply;
 
@@ -979,14 +1038,110 @@ class _ChatComposer extends ConsumerStatefulWidget {
 }
 
 class _ChatComposerState extends ConsumerState<_ChatComposer> {
+  static const _mentionLimit = 8;
+
   final TextEditingController _controller = TextEditingController();
   bool _sending = false;
   String? _gifUrl;
+  ActiveMention? _activeMention;
+  int _selectedMentionIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.addListener(_syncMentionState);
+  }
 
   @override
   void dispose() {
+    _controller.removeListener(_syncMentionState);
     _controller.dispose();
     super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ChatComposer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.members != widget.members ||
+        oldWidget.onlineUserIds != widget.onlineUserIds) {
+      _clampSelectedMention();
+    }
+  }
+
+  void _syncMentionState() {
+    final next = findActiveMention(_controller.value);
+    if (next == _activeMention) {
+      _clampSelectedMention();
+      return;
+    }
+    setState(() {
+      _activeMention = next;
+      _selectedMentionIndex = 0;
+    });
+  }
+
+  List<_MentionOption> _currentMentionOptions() {
+    final active = _activeMention;
+    if (active == null) return const [];
+    final membersByUserId = {
+      for (final member in widget.members) member.userId: member,
+    };
+    return [
+      for (final target in rankMentionTargets(
+        _mentionTargetsFor(widget.members, onlineUserIds: widget.onlineUserIds),
+        active.query,
+        limit: _mentionLimit,
+      ))
+        if (membersByUserId[target.userId] != null)
+          _MentionOption(
+            target: target,
+            member: membersByUserId[target.userId]!,
+            online: widget.onlineUserIds.contains(target.userId),
+          ),
+    ];
+  }
+
+  void _clampSelectedMention() {
+    final options = _currentMentionOptions();
+    final maxIndex = options.isEmpty ? 0 : options.length - 1;
+    if (_selectedMentionIndex <= maxIndex) return;
+    setState(() => _selectedMentionIndex = maxIndex);
+  }
+
+  KeyEventResult _handleComposerKey(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent || _activeMention == null) {
+      return KeyEventResult.ignored;
+    }
+    final options = _currentMentionOptions();
+    final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.escape) {
+      setState(() {
+        _activeMention = null;
+        _selectedMentionIndex = 0;
+      });
+      return KeyEventResult.handled;
+    }
+    if (options.isEmpty) return KeyEventResult.ignored;
+    if (key == LogicalKeyboardKey.arrowDown) {
+      setState(() {
+        _selectedMentionIndex = (_selectedMentionIndex + 1) % options.length;
+      });
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.arrowUp) {
+      setState(() {
+        _selectedMentionIndex =
+            (_selectedMentionIndex - 1 + options.length) % options.length;
+      });
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.enter ||
+        key == LogicalKeyboardKey.numpadEnter ||
+        key == LogicalKeyboardKey.tab) {
+      _insertMention(options[_selectedMentionIndex].target);
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
   }
 
   void _insertText(String value) {
@@ -1003,6 +1158,29 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
       composing: TextRange.empty,
     );
     setState(() {});
+  }
+
+  void _insertMention(MentionTarget target) {
+    final active = _activeMention;
+    if (active == null) return;
+    final current = _controller.value;
+    if (active.start < 0 ||
+        active.end > current.text.length ||
+        active.start > active.end) {
+      return;
+    }
+    final replacement = '${target.mentionText} ';
+    _controller.value = current.copyWith(
+      text: current.text.replaceRange(active.start, active.end, replacement),
+      selection: TextSelection.collapsed(
+        offset: active.start + replacement.length,
+      ),
+      composing: TextRange.empty,
+    );
+    setState(() {
+      _activeMention = null;
+      _selectedMentionIndex = 0;
+    });
   }
 
   Future<void> _pickEmoji(BuildContext anchorContext) async {
@@ -1088,6 +1266,7 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
         ),
       ],
       topPanel: _composerPanel(),
+      onKeyEvent: _handleComposerKey,
       onSend: _handleSend,
     );
   }
@@ -1095,27 +1274,43 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
   Widget? _composerPanel() {
     final replyTo = widget.replyTo;
     final gifUrl = _gifUrl;
-    if (replyTo == null && gifUrl == null) return null;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: AppTokens.surface1,
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(color: AppTokens.borderHairline, width: 1),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (replyTo != null)
-            _ComposerReplyPanel(
-              message: replyTo,
-              onCancel: widget.onCancelReply,
-            ),
-          if (replyTo != null && gifUrl != null)
-            const Divider(height: 1, color: AppTokens.borderHairline),
-          if (gifUrl != null)
-            _ComposerGifPanel(url: gifUrl, onCancel: _clearGif),
+    final mentionOptions = _currentMentionOptions();
+    final showMentions = _activeMention != null;
+    if (!showMentions && replyTo == null && gifUrl == null) return null;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (showMentions) ...[
+          _MentionSuggestionsPanel(
+            options: mentionOptions,
+            selectedIndex: _selectedMentionIndex,
+            onSelected: _insertMention,
+          ),
+          if (replyTo != null || gifUrl != null) const SizedBox(height: 8),
         ],
-      ),
+        if (replyTo != null || gifUrl != null)
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: AppTokens.surface1,
+              borderRadius: BorderRadius.circular(AppRadius.md),
+              border: Border.all(color: AppTokens.borderHairline, width: 1),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (replyTo != null)
+                  _ComposerReplyPanel(
+                    message: replyTo,
+                    onCancel: widget.onCancelReply,
+                  ),
+                if (replyTo != null && gifUrl != null)
+                  const Divider(height: 1, color: AppTokens.borderHairline),
+                if (gifUrl != null)
+                  _ComposerGifPanel(url: gifUrl, onCancel: _clearGif),
+              ],
+            ),
+          ),
+      ],
     );
   }
 }
@@ -1232,6 +1427,252 @@ class _ComposerGifPanel extends StatelessWidget {
             onPressed: onCancel,
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _MentionOption {
+  const _MentionOption({
+    required this.target,
+    required this.member,
+    required this.online,
+  });
+
+  final MentionTarget target;
+  final ServerMember member;
+  final bool online;
+}
+
+class _MentionSuggestionsPanel extends StatelessWidget {
+  const _MentionSuggestionsPanel({
+    required this.options,
+    required this.selectedIndex,
+    required this.onSelected,
+  });
+
+  final List<_MentionOption> options;
+  final int selectedIndex;
+  final ValueChanged<MentionTarget> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final visibleRows = options.isEmpty ? 1 : options.length;
+    final maxHeight = 38.0 + visibleRows.clamp(1, 8).toDouble() * 42.0 + 8.0;
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxHeight: maxHeight),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: AppTokens.surface2,
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          border: Border.all(color: AppTokens.borderSubtle, width: 1),
+          boxShadow: AppShadows.popover,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(12, 10, 12, 7),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.alternate_email,
+                    size: 14,
+                    color: AppTokens.textMuted,
+                  ),
+                  SizedBox(width: 8),
+                  Text(
+                    'MEMBROS',
+                    style: TextStyle(
+                      fontFamily: 'Geist',
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      color: AppTokens.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1, color: AppTokens.borderHairline),
+            if (options.isEmpty)
+              const SizedBox(
+                height: 42,
+                child: Center(
+                  child: Text(
+                    'Nenhum membro encontrado',
+                    style: TextStyle(
+                      fontFamily: 'Geist',
+                      fontSize: 12.5,
+                      color: AppTokens.textMuted,
+                    ),
+                  ),
+                ),
+              )
+            else
+              Flexible(
+                child: ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(6, 4, 6, 6),
+                  shrinkWrap: true,
+                  itemExtent: 40,
+                  itemCount: options.length,
+                  itemBuilder: (context, index) {
+                    final option = options[index];
+                    return _MentionSuggestionRow(
+                      option: option,
+                      selected: index == selectedIndex,
+                      onSelected: () => onSelected(option.target),
+                    );
+                  },
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MentionSuggestionRow extends StatefulWidget {
+  const _MentionSuggestionRow({
+    required this.option,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  final _MentionOption option;
+  final bool selected;
+  final VoidCallback onSelected;
+
+  @override
+  State<_MentionSuggestionRow> createState() => _MentionSuggestionRowState();
+}
+
+class _MentionSuggestionRowState extends State<_MentionSuggestionRow> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final target = widget.option.target;
+    final active = widget.selected || _hovered;
+    return Tooltip(
+      message: target.mentionText,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() => _hovered = false),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: widget.onSelected,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 110),
+            height: 40,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            decoration: BoxDecoration(
+              color: active ? AppTokens.surface3 : Colors.transparent,
+              borderRadius: BorderRadius.circular(AppRadius.sm),
+            ),
+            child: Row(
+              children: [
+                _MentionAvatar(option: widget.option),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    target.label,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontFamily: 'Geist',
+                      fontSize: 13.5,
+                      fontWeight: active ? FontWeight.w700 : FontWeight.w600,
+                      color: active
+                          ? AppTokens.textPrimary
+                          : AppTokens.textSecondary,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  target.mentionText,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontFamily: 'Geist Mono',
+                    fontSize: 11,
+                    color: AppTokens.textMuted,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                ServerRoleBadge(
+                  role: widget.option.member.role,
+                  showLabel: false,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MentionAvatar extends StatelessWidget {
+  const _MentionAvatar({required this.option});
+
+  final _MentionOption option;
+
+  @override
+  Widget build(BuildContext context) {
+    final target = option.target;
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Container(
+          width: 28,
+          height: 28,
+          decoration: BoxDecoration(
+            color: AppTokens.surface1,
+            shape: BoxShape.circle,
+            border: Border.all(color: AppTokens.borderHairline, width: 1),
+          ),
+          alignment: Alignment.center,
+          clipBehavior: Clip.antiAlias,
+          child: target.avatarUrl != null
+              ? Image.network(
+                  target.avatarUrl!,
+                  width: 28,
+                  height: 28,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) => _MentionInitial(target: target),
+                )
+              : _MentionInitial(target: target),
+        ),
+        Positioned(
+          right: -2,
+          bottom: -2,
+          child: PresenceDot(
+            status: option.online
+                ? PresenceStatus.online
+                : PresenceStatus.offline,
+            size: 8,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _MentionInitial extends StatelessWidget {
+  const _MentionInitial({required this.target});
+
+  final MentionTarget target;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      target.label.isEmpty ? '?' : target.label[0].toUpperCase(),
+      style: const TextStyle(
+        fontFamily: 'Geist',
+        fontSize: 11.5,
+        fontWeight: FontWeight.w700,
+        color: AppTokens.textPrimary,
       ),
     );
   }
@@ -1838,6 +2279,53 @@ class _GifTileState extends State<_GifTile> {
       ),
     );
   }
+}
+
+List<MentionTarget> _mentionTargetsFor(
+  List<ServerMember> members, {
+  Set<String> onlineUserIds = const <String>{},
+}) {
+  final ordered = [...members]
+    ..sort((left, right) {
+      final leftOnline = onlineUserIds.contains(left.userId);
+      final rightOnline = onlineUserIds.contains(right.userId);
+      if (leftOnline != rightOnline) return leftOnline ? -1 : 1;
+      final byRole = left.role.index.compareTo(right.role.index);
+      if (byRole != 0) return byRole;
+      return left.user.username.compareTo(right.user.username);
+    });
+  return [
+    for (final member in ordered)
+      MentionTarget(
+        userId: member.userId,
+        name: member.user.name,
+        username: member.user.username,
+        avatarUrl: member.user.avatarUrl,
+      ),
+  ];
+}
+
+List<MentionTarget> _mergeMentionTargets(
+  List<MentionTarget> baseTargets,
+  List<MessageMention> mentions,
+) {
+  if (mentions.isEmpty) return baseTargets;
+  final byUsername = {
+    for (final target in baseTargets) target.username.toLowerCase(): target,
+  };
+  for (final mention in mentions) {
+    final user = mention.user;
+    byUsername.putIfAbsent(
+      user.username.toLowerCase(),
+      () => MentionTarget(
+        userId: user.id,
+        name: user.name,
+        username: user.username,
+        avatarUrl: user.avatarUrl,
+      ),
+    );
+  }
+  return byUsername.values.toList(growable: false);
 }
 
 List<String> _quickReactionEmojisFor(

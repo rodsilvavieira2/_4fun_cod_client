@@ -15,6 +15,7 @@ class _AuthenticatedController extends AuthController {
       name: 'Ana Silva',
       username: 'ana_silva',
       email: 'ana@example.com',
+      avatarUrl: 'https://example.com/avatar.png',
     ),
   );
 }
@@ -53,6 +54,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Editar perfil'), findsOneWidget);
     expect(find.text('Alterar avatar'), findsOneWidget);
+    expect(find.text('Remover'), findsOneWidget);
     await tester.tap(find.byTooltip('Fechar (ESC)'));
     await tester.pumpAndSettle();
 
@@ -67,5 +69,25 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Alterar senha'), findsNWidgets(2));
     expect(find.text('Confirmar nova senha'), findsOneWidget);
+  });
+
+  testWidgets('editor de perfil usa layout compacto', (tester) async {
+    await pumpAccountSection(tester);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Editar').first);
+    await tester.pumpAndSettle();
+
+    final dialog = find.byKey(const Key('profile-edit-dialog'));
+    final avatar = find.byKey(const Key('profile-edit-avatar'));
+    final avatarAction = find.byKey(const Key('profile-edit-avatar-action'));
+
+    expect(tester.getSize(dialog).width, lessThanOrEqualTo(420));
+    expect(tester.getSize(avatar), const Size.square(56));
+    expect(tester.getSize(avatarAction).width, lessThan(220));
+    expect(
+      (tester.getCenter(avatar).dy - tester.getCenter(avatarAction).dy).abs(),
+      lessThan(2),
+    );
   });
 }

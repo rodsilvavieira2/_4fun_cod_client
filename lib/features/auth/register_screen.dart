@@ -16,7 +16,7 @@ class RegisterScreen extends ConsumerStatefulWidget {
 }
 
 class _RegisterScreenState extends ConsumerState<RegisterScreen> {
-  static final _usernameRegex = RegExp(r'^[a-z0-9_]{3,20}$');
+  static final _usernameRegex = RegExp(r'^[A-Za-z0-9_]{3,20}$');
 
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
@@ -48,7 +48,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
           .read(authControllerProvider.notifier)
           .register(
             name: _nameController.text.trim(),
-            username: _usernameController.text.trim().toLowerCase(),
+            username: _usernameController.text.trim(),
             email: _emailController.text.trim(),
             password: _passwordController.text,
           );
@@ -123,9 +123,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                         label: 'USERNAME',
                         hintText: 'usuario123',
                         validator: (value) {
-                          final username = value?.trim().toLowerCase() ?? '';
+                          final username = value?.trim() ?? '';
                           if (!_usernameRegex.hasMatch(username)) {
-                            return '3-20 caracteres: a-z, 0-9 e _';
+                            return '3-20 caracteres: A-Z, a-z, 0-9 e _';
                           }
                           return null;
                         },
