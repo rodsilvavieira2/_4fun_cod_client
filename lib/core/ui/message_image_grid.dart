@@ -7,10 +7,11 @@ import 'ds_tokens.dart';
 /// Tamanho máximo de cada anexo (mesmo teto do avatar/ícone do servidor).
 const kMaxChatAttachments = 10;
 
-/// Grade de imagens de uma mensagem (estilo Discord, spec-chat-imagens).
+/// Lista vertical de imagens de uma mensagem.
 ///
-/// - 1 imagem: cheia (até 360x360, respeita aspect ratio real).
-/// - 2: lado a lado. 3+: grade 2 colunas (4ª célula vira `+N`).
+/// - Cada imagem usa o mesmo tamanho do caso de imagem única (até 360 de
+///   altura, respeita aspect ratio real com clamp 0.5–2.5).
+/// - Uma embaixo da outra com espaçamento de 4px (sem grade estilo Discord).
 /// - Anexo ainda PENDING/PROCESSING (url nula): spinner sobre o placeholder.
 /// - FAILED: card de erro inline com botão Tentar de novo ([onRetry] recebe
 ///   o `uploadId` — o server re-enfileira o staging, sem bytes no client).
@@ -36,46 +37,47 @@ class MessageImageGrid extends StatelessWidget {
     final items = attachments.take(kMaxChatAttachments).toList();
     if (items.isEmpty) return const SizedBox.shrink();
     if (items.length == 1) {
-      // Altura SEMPRE limitada: sem isso o Stack(expand)+Center do _Cell
-      // recebe h=Infinity dentro do ListView do chat e quebra o layout da
-      // lista inteira (RenderPositionedBox → viewport envenenado).
-      final ratio = items.first.aspectRatio.clamp(0.5, 2.5);
-      return ConstrainedBox(
-        constraints: const BoxConstraints(maxHeight: 360),
-        child: AspectRatio(
-          aspectRatio: ratio,
-          child: _Cell(
-            attachment: items.first,
-            onRetry: onRetry,
-            onOpen: onOpen,
-          ),
-        ),
+      return _SingleImage(
+        attachment: items.first,
+        onRetry: onRetry,
+        onOpen: onOpen,
       );
     }
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final maxW = constraints.maxWidth > 0 ? constraints.maxWidth : 360.0;
-        final cellW = (maxW - 4) / 2;
-        final shown = items.take(4).toList();
-        final extra = items.length - shown.length;
-        return Wrap(
-          spacing: 4,
-          runSpacing: 4,
-          children: [
-            for (var i = 0; i < shown.length; i++)
-              SizedBox(
-                width: cellW,
-                height: 150,
-                child: _Cell(
-                  attachment: shown[i],
-                  overlayCount: i == 3 && extra > 0 ? extra : 0,
-                  onRetry: onRetry,
-                  onOpen: onOpen,
-                ),
-              ),
-          ],
-        );
-      },
+    // Múltiplas imagens: uma embaixo da outra, cada uma com o mesmo
+    // tamanho do caso de imagem única (sem grade, sem overlay `+N`).
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var i = 0; i < items.length; i++) ...[
+          if (i > 0) const SizedBox(height: 4),
+          _SingleImage(attachment: items[i], onRetry: onRetry, onOpen: onOpen),
+        ],
+      ],
+    );
+  }
+}
+
+/// Uma imagem no tamanho padrão do chat (até 360 de altura, aspect real).
+class _SingleImage extends StatelessWidget {
+  const _SingleImage({required this.attachment, this.onRetry, this.onOpen});
+
+  final MessageAttachment attachment;
+  final ValueChanged<String>? onRetry;
+  final ValueChanged<String>? onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    // Altura SEMPRE limitada: sem isso o Stack(expand)+Center do _Cell
+    // recebe h=Infinity dentro do ListView do chat e quebra o layout da
+    // lista inteira (RenderPositionedBox → viewport envenenado).
+    final ratio = attachment.aspectRatio.clamp(0.5, 2.5);
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxHeight: 360),
+      child: AspectRatio(
+        aspectRatio: ratio,
+        child: _Cell(attachment: attachment, onRetry: onRetry, onOpen: onOpen),
+      ),
     );
   }
 }
@@ -127,15 +129,9 @@ Future<void> showImageLightbox(BuildContext context, String url) {
 }
 
 class _Cell extends StatelessWidget {
-  const _Cell({
-    required this.attachment,
-    this.overlayCount = 0,
-    this.onRetry,
-    this.onOpen,
-  });
+  const _Cell({required this.attachment, this.onRetry, this.onOpen});
 
   final MessageAttachment attachment;
-  final int overlayCount;
   final ValueChanged<String>? onRetry;
   final ValueChanged<String>? onOpen;
 
@@ -170,22 +166,6 @@ class _Cell extends StatelessWidget {
               )
             else
               const _Spinner(),
-            if (overlayCount > 0)
-              DecoratedBox(
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.6),
-                ),
-                child: Center(
-                  child: Text(
-                    '+$overlayCount',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ),
           ],
         ),
       ),
