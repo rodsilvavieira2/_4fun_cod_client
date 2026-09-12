@@ -261,6 +261,10 @@ class _ConnectedStageState extends ConsumerState<_ConnectedStage> {
     final state = widget.state;
     final notifier = widget.notifier;
     final isSpotlight = state.spotlightParticipantId != null;
+    // Fullscreen imersivo: badges/overlays somem junto com o dock (fica só
+    // o vídeo); fora do fullscreen continuam sempre visíveis (Discord).
+    // O cursor some junto — hover revela tudo de novo.
+    final overlayVisible = !state.isFullscreen || _controlsVisible;
     final controls = _Controls(
       state: state,
       isSpotlight: isSpotlight,
@@ -271,6 +275,9 @@ class _ConnectedStageState extends ConsumerState<_ConnectedStage> {
       onToggleFilmstrip: notifier.toggleFilmstrip,
     );
     return MouseRegion(
+      cursor: overlayVisible
+          ? SystemMouseCursors.basic
+          : SystemMouseCursors.none,
       onEnter: (_) => _reveal(),
       onHover: (_) => _reveal(),
       child: Stack(
@@ -287,13 +294,13 @@ class _ConnectedStageState extends ConsumerState<_ConnectedStage> {
                   arg: widget.arg,
                   transmitQuality: _transmitQualityLabel(state),
                   onToggleFullscreen: widget.onToggleFullscreen,
+                  overlayVisible: overlayVisible,
                 ),
               ),
             ],
           ),
-          // Dock inferior (auto-hide): header antigo removido — LIVE +
-          // qualidade + expandir agora moram no overlay de cada tile de
-          // transmissão (sempre visível).
+          // Dock inferior (auto-hide): em fullscreen os overlays dos tiles
+          // seguem o mesmo timer (some tudo, fica só o vídeo).
           Positioned(
             left: 16,
             right: 16,
@@ -444,6 +451,7 @@ class _ParticipantsPanel extends StatelessWidget {
     required this.arg,
     required this.transmitQuality,
     required this.onToggleFullscreen,
+    this.overlayVisible = true,
   });
 
   final VoiceState state;
@@ -456,6 +464,9 @@ class _ParticipantsPanel extends StatelessWidget {
 
   /// Expansão do tile em destaque (takeover fullscreen). Nulo fora do palco.
   final VoidCallback? onToggleFullscreen;
+
+  /// Fullscreen imersivo: false esconde os badges dos tiles junto com o dock.
+  final bool overlayVisible;
 
   @override
   Widget build(BuildContext context) {
@@ -509,6 +520,7 @@ class _ParticipantsPanel extends StatelessWidget {
               notifier: notifier,
               arg: arg,
               transmitQuality: transmitQuality,
+              overlayVisible: overlayVisible,
             ),
           );
         }
@@ -520,6 +532,7 @@ class _ParticipantsPanel extends StatelessWidget {
             arg: arg,
             transmitQuality: transmitQuality,
             onToggleFullscreen: onToggleFullscreen,
+            overlayVisible: overlayVisible,
           ),
         );
     }
@@ -671,6 +684,7 @@ class _VideoGrid extends StatelessWidget {
     required this.notifier,
     required this.arg,
     required this.transmitQuality,
+    this.overlayVisible = true,
   });
 
   final VoiceState state;
@@ -679,6 +693,9 @@ class _VideoGrid extends StatelessWidget {
 
   /// Qualidade do Go Live local (cada tile de tela exibe só se for local).
   final String? transmitQuality;
+
+  /// Fullscreen imersivo: false esconde os badges dos tiles junto com o dock.
+  final bool overlayVisible;
 
   @override
   Widget build(BuildContext context) {
@@ -753,6 +770,7 @@ class _VideoGrid extends StatelessWidget {
                               )
                             : null,
                         isFullscreen: state.isFullscreen,
+                        overlayVisible: overlayVisible,
                       ),
                     ),
                 ],
@@ -822,6 +840,7 @@ class _SpotlightLayout extends StatelessWidget {
     required this.arg,
     required this.transmitQuality,
     required this.onToggleFullscreen,
+    this.overlayVisible = true,
   });
 
   final VoiceState state;
@@ -833,6 +852,9 @@ class _SpotlightLayout extends StatelessWidget {
 
   /// Expansão do tile em destaque (takeover fullscreen).
   final VoidCallback? onToggleFullscreen;
+
+  /// Fullscreen imersivo: false esconde os badges do tile junto com o dock.
+  final bool overlayVisible;
 
   /// Altura da faixa de miniaturas (wireframe B).
   static const double filmstripHeight = 132;
@@ -864,6 +886,7 @@ class _SpotlightLayout extends StatelessWidget {
         notifier: notifier,
         arg: arg,
         transmitQuality: transmitQuality,
+        overlayVisible: overlayVisible,
       );
     }
     final selected = focused;
@@ -901,6 +924,7 @@ class _SpotlightLayout extends StatelessWidget {
                   ? onToggleFullscreen
                   : null,
               isFullscreen: state.isFullscreen,
+              overlayVisible: overlayVisible,
             ),
           ),
         ),

@@ -94,6 +94,7 @@ class VoiceVideoTile extends ConsumerStatefulWidget {
     this.qualityLabel,
     this.onExpand,
     this.isFullscreen = false,
+    this.overlayVisible = true,
   });
 
   /// Identificação do canal (chave do [voiceControllerProvider]).
@@ -120,6 +121,10 @@ class VoiceVideoTile extends ConsumerStatefulWidget {
 
   /// Troca o ícone do botão expandir (fullscreen ↔ fullscreen_exit).
   final bool isFullscreen;
+
+  /// Fullscreen imersivo: false esconde badges/overlays junto com o dock
+  /// (fica só o vídeo) e oculta o cursor.
+  final bool overlayVisible;
 
   @override
   ConsumerState<VoiceVideoTile> createState() => _VoiceVideoTileState();
@@ -231,15 +236,18 @@ class _VoiceVideoTileState extends ConsumerState<VoiceVideoTile> {
                   isLocal: isLocal,
                   showAvatar: hasVideo,
                   palette: palette,
+                  visible: widget.overlayVisible,
                 ),
               // Transmissão de tela (grid/spotlight): badge LIVE + qualidade
-              // no top-left e expandir no top-right — sempre visível, como no
-              // Discord. Nome do transmissor continua no badge inferior.
+              // no top-left e expandir no top-right — fora do fullscreen é
+              // sempre visível (Discord); em fullscreen segue o auto-hide do
+              // palco (some junto com o dock, fica só o vídeo).
               if (widget.source == VoiceVideoSource.screen && !isMiniature)
                 _TransmitTopOverlay(
                   qualityLabel: isLocal ? widget.qualityLabel : null,
                   isFullscreen: widget.isFullscreen,
                   onExpand: widget.onExpand,
+                  visible: widget.overlayVisible,
                 ),
               // Moldura fixa para leitura sobre vídeo; fala ativa ganha primary.
               IgnorePointer(
@@ -256,6 +264,11 @@ class _VoiceVideoTileState extends ConsumerState<VoiceVideoTile> {
       ),
     );
 
+    // Fullscreen imersivo idle: esconde cursor e desativa o menu de volume
+    // (o FocusableActionDetector interno forçaria cursor basic visível).
+    if (!widget.overlayVisible) {
+      return MouseRegion(cursor: SystemMouseCursors.none, child: tile);
+    }
     return MouseRegion(
       cursor: widget.onTap == null
           ? SystemMouseCursors.basic
@@ -302,6 +315,7 @@ class _TileOverlay extends StatelessWidget {
     required this.isLocal,
     required this.showAvatar,
     required this.palette,
+    this.visible = true,
   });
 
   final RtcParticipant participant;
@@ -313,78 +327,91 @@ class _TileOverlay extends StatelessWidget {
   /// grande já identifica — mostrar de novo duplicaria.
   final bool showAvatar;
 
+  /// Fullscreen imersivo: false some com fade (fica só o vídeo).
+  final bool visible;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Positioned(
       left: 8,
       bottom: 8,
-      child: Container(
-        constraints: const BoxConstraints(maxWidth: 240),
-        padding: const EdgeInsets.fromLTRB(3, 3, 8, 3),
-        decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.72),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppTokens.borderSubtle),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (showAvatar)
-              _NameAvatar(
-                name: participant.name,
-                radius: 14,
-                accent: palette.base,
-              ),
-            if (showAvatar) const SizedBox(width: 6),
-            Flexible(
-              child: Text(
-                participant.name,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
+      child: AnimatedOpacity(
+        duration: const Duration(milliseconds: 200),
+        opacity: visible ? 1 : 0,
+        child: IgnorePointer(
+          ignoring: !visible,
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 240),
+            padding: const EdgeInsets.fromLTRB(3, 3, 8, 3),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.72),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: AppTokens.borderSubtle),
             ),
-            if (isLocal) ...[
-              const SizedBox(width: 6),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.secondaryContainer,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  'Você',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: theme.colorScheme.onSecondaryContainer,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (showAvatar)
+                  _NameAvatar(
+                    name: participant.name,
+                    radius: 14,
+                    accent: palette.base,
+                  ),
+                if (showAvatar) const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    participant.name,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
-              ),
-            ],
-            // Volume da fonte do tile: tela controla a transmissão, câmera
-            // controla a voz — um nunca afeta o outro.
-            if (!isLocal)
-              ParticipantVolumeButton(
-                identity: participant.id,
-                displayName: participant.name,
-                source: source == VoiceVideoSource.screen
-                    ? RtcAudioSource.screenShareAudio
-                    : RtcAudioSource.microphone,
-                // Sem track de áudio na transmissão, o controle mostra mutado.
-                audioAvailable: source == VoiceVideoSource.screen
-                    ? participant.isSystemAudioEnabled
-                    : null,
-                iconColor: AppTokens.textPrimary,
-                iconSize: 15.4,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints.tightFor(
-                  width: 24,
-                  height: 24,
-                ),
-              ),
-          ],
+                if (isLocal) ...[
+                  const SizedBox(width: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 5,
+                      vertical: 1,
+                    ),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.secondaryContainer,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      'Você',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.onSecondaryContainer,
+                      ),
+                    ),
+                  ),
+                ],
+                // Volume da fonte do tile: tela controla a transmissão, câmera
+                // controla a voz — um nunca afeta o outro.
+                if (!isLocal)
+                  ParticipantVolumeButton(
+                    identity: participant.id,
+                    displayName: participant.name,
+                    source: source == VoiceVideoSource.screen
+                        ? RtcAudioSource.screenShareAudio
+                        : RtcAudioSource.microphone,
+                    // Sem track de áudio na transmissão, o controle mostra mutado.
+                    audioAvailable: source == VoiceVideoSource.screen
+                        ? participant.isSystemAudioEnabled
+                        : null,
+                    iconColor: AppTokens.textPrimary,
+                    iconSize: 15.4,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints.tightFor(
+                      width: 24,
+                      height: 24,
+                    ),
+                  ),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -392,19 +419,23 @@ class _TileOverlay extends StatelessWidget {
 }
 
 /// Overlay superior do tile de TRANSMISSÃO (só screen, grid/spotlight):
-/// badge qualidade + LIVE no top-left, expandir no top-right. Sempre
-/// visível (fora do auto-hide do palco) — espelha o Discord.
+/// badge qualidade + LIVE no top-left, expandir no top-right. Fora do
+/// fullscreen é sempre visível (Discord); em fullscreen segue o auto-hide.
 class _TransmitTopOverlay extends StatelessWidget {
   const _TransmitTopOverlay({
     required this.qualityLabel,
     required this.isFullscreen,
     required this.onExpand,
+    this.visible = true,
   });
 
   /// Qualidade conhecida do transmissor local; nulo no remoto (só LIVE).
   final String? qualityLabel;
   final bool isFullscreen;
   final VoidCallback? onExpand;
+
+  /// Fullscreen imersivo: false some com fade (fica só o vídeo).
+  final bool visible;
 
   @override
   Widget build(BuildContext context) {
@@ -413,61 +444,71 @@ class _TransmitTopOverlay extends StatelessWidget {
       left: 8,
       right: 8,
       top: 8,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          IgnorePointer(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.72),
-                borderRadius: BorderRadius.circular(999),
-                border: Border.all(color: AppTokens.borderSubtle),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (qualityLabel != null) ...[
-                    Text(
-                      qualityLabel!,
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: AppTokens.textSecondary,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                  ],
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 6,
-                      vertical: 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppTokens.accentDanger,
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      'LIVE',
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
+      child: AnimatedOpacity(
+        duration: const Duration(milliseconds: 200),
+        opacity: visible ? 1 : 0,
+        child: IgnorePointer(
+          ignoring: !visible,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              IgnorePointer(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
                   ),
-                ],
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.72),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: AppTokens.borderSubtle),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (qualityLabel != null) ...[
+                        Text(
+                          qualityLabel!,
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: AppTokens.textSecondary,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                      ],
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppTokens.accentDanger,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          'LIVE',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
-            ),
+              const Spacer(),
+              if (onExpand != null)
+                OverlayIconButton(
+                  icon: isFullscreen ? Icons.fullscreen_exit : Icons.fullscreen,
+                  tooltip: isFullscreen
+                      ? 'Sair do fullscreen'
+                      : 'Expandir transmissão',
+                  onPressed: onExpand,
+                ),
+            ],
           ),
-          const Spacer(),
-          if (onExpand != null)
-            OverlayIconButton(
-              icon: isFullscreen ? Icons.fullscreen_exit : Icons.fullscreen,
-              tooltip: isFullscreen
-                  ? 'Sair do fullscreen'
-                  : 'Expandir transmissão',
-              onPressed: onExpand,
-            ),
-        ],
+        ),
       ),
     );
   }
