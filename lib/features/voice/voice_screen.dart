@@ -185,7 +185,7 @@ class VoiceScreen extends ConsumerWidget {
       await notifier.stopScreenShare();
       return;
     }
-    // Modal Go Live (tipo + qualidade) → seletor do tipo → start. Cancelar em
+    // Modal Go Live (áudio + qualidade) → seletor de fonte → start. Cancelar em
     // qualquer etapa retorna null e nada inicia.
     final goLive = await showGoLiveModal(
       context,

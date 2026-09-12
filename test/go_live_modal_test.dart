@@ -122,9 +122,12 @@ void main() {
         onResult: (f) => f.then((r) => result = r),
       );
 
-      expect(find.text('Escolha o que você vai transmitir.'), findsOneWidget);
+      expect(find.text('Áudio da transmissão.'), findsOneWidget);
       expect(find.text('Escolha a qualidade da transmissão.'), findsOneWidget);
-      expect(find.textContaining('portal do sistema'), findsOneWidget);
+      expect(find.text('Escolha o que você vai transmitir.'), findsNothing);
+      expect(find.text('Janela'), findsNothing);
+      expect(find.text('Tela'), findsNothing);
+      expect(find.textContaining('mix geral do sistema'), findsOneWidget);
 
       await tester.tap(find.text('Go Live'));
       await tester.pumpAndSettle();
@@ -140,9 +143,7 @@ void main() {
       );
     });
 
-    testWidgets('troca de tipo e qualidade reflete no resultado', (
-      tester,
-    ) async {
+    testWidgets('troca de qualidade reflete no resultado', (tester) async {
       GoLiveResult? result;
       await _openModal(
         tester,
@@ -152,15 +153,13 @@ void main() {
       );
 
       // Pendente órfão (q360p3) abre no chip mais próximo (Baixa); troca tudo.
-      await tester.tap(find.text('Janela'));
-      await tester.pump();
       await tester.tap(find.text('Alta'));
       await tester.pump();
       await tester.tap(find.text('Go Live'));
       await tester.pumpAndSettle();
 
       expect(result, isNotNull);
-      expect(result!.kind, RtcScreenShareSourceKind.window);
+      expect(result!.kind, RtcScreenShareSourceKind.display);
       expect(result!.quality, GoLiveQuality.high);
     });
 
@@ -182,16 +181,13 @@ void main() {
       expect(result!.includeAudio, isFalse);
     });
 
-    testWidgets('modo janela no Linux avisa mix geral', (tester) async {
+    testWidgets('no Linux avisa mix geral', (tester) async {
       await _openModal(
         tester,
         backend: _FakeScreenShareBackend(usesSystemPicker: true),
         pending: RtcScreenShareQuality.auto,
         onResult: (_) async {},
       );
-
-      await tester.tap(find.text('Janela'));
-      await tester.pump();
 
       expect(find.textContaining('mix geral do sistema'), findsOneWidget);
     });
