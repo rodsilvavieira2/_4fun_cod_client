@@ -226,16 +226,25 @@ class _MemberAdminTile extends StatelessWidget {
           clipBehavior: Clip.none,
           children: [
             CircleAvatar(
-              foregroundImage: member.user.avatarUrl != null
-                  ? NetworkImage(member.user.avatarUrl!)
-                  : null,
+              backgroundColor: AppTokens.surface3,
               child: member.user.avatarUrl == null
                   ? Text(
                       member.user.name.isEmpty
                           ? '?'
                           : member.user.name[0].toUpperCase(),
                     )
-                  : null,
+                  : ClipOval(
+                      child: AppFileImage(
+                        path: member.user.avatarUrl,
+                        width: 40,
+                        height: 40,
+                        fallback: Text(
+                          member.user.name.isEmpty
+                              ? '?'
+                              : member.user.name[0].toUpperCase(),
+                        ),
+                      ),
+                    ),
             ),
             Positioned(
               right: -2,

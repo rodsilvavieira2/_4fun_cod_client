@@ -45,12 +45,11 @@ class DmProfilePanel extends ConsumerWidget {
                 alignment: Alignment.center,
                 clipBehavior: Clip.antiAlias,
                 child: member?.user.avatarUrl != null
-                    ? Image.network(
-                        member!.user.avatarUrl!,
+                    ? AppFileImage(
+                        path: member?.user.avatarUrl,
                         width: 72,
                         height: 72,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) => _initial(member.user.name),
+                        fallback: _initial(member?.user.name ?? '?'),
                       )
                     : _initial(member?.user.name ?? '?'),
               ),

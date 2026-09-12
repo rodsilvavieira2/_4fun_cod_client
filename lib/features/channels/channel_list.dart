@@ -397,9 +397,6 @@ class _VoiceOccupantRow extends StatelessWidget {
               backgroundColor: isSpeaking
                   ? AppTokens.accentGreen
                   : AppTokens.surface3,
-              backgroundImage: occupant.avatarUrl == null
-                  ? null
-                  : NetworkImage(occupant.avatarUrl!),
               child: occupant.avatarUrl == null
                   ? Text(
                       occupant.name.isEmpty
@@ -411,7 +408,23 @@ class _VoiceOccupantRow extends StatelessWidget {
                         fontWeight: FontWeight.w600,
                       ),
                     )
-                  : null,
+                  : ClipOval(
+                      child: AppFileImage(
+                        path: occupant.avatarUrl,
+                        width: 24,
+                        height: 24,
+                        fallback: Text(
+                          occupant.name.isEmpty
+                              ? '?'
+                              : occupant.name[0].toUpperCase(),
+                          style: const TextStyle(
+                            fontFamily: 'Geist',
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
             ),
             const SizedBox(width: 8),
             Expanded(

@@ -229,13 +229,11 @@ class _Avatar extends StatelessWidget {
             )
           : user.avatarUrl == null
           ? _AvatarInitial(value: initial, size: size)
-          : Image.network(
-              user.avatarUrl!,
+          : AppFileImage(
+              path: user.avatarUrl,
               width: size,
               height: size,
-              fit: BoxFit.cover,
-              errorBuilder: (_, _, _) =>
-                  _AvatarInitial(value: initial, size: size),
+              fallback: _AvatarInitial(value: initial, size: size),
             ),
     );
   }

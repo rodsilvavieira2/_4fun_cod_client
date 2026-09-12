@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fourfun_cod_client/core/auth/auth_controller.dart';
 import 'package:fourfun_cod_client/core/auth/auth_state.dart';
+import 'package:fourfun_cod_client/core/ui/app_file_image.dart';
 import 'package:fourfun_cod_client/core/ui/settings_sections/account_section.dart';
 import 'package:fourfun_cod_client/shared/models/user.dart';
 
@@ -26,6 +27,10 @@ void main() {
       ProviderScope(
         overrides: [
           authControllerProvider.overrideWith(_AuthenticatedController.new),
+          // Sem rede em teste: a imagem cai no fallback (inicial do avatar).
+          fileImageBytesProvider(
+            'https://example.com/avatar.png',
+          ).overrideWith((ref) => throw StateError('rede desabilitada')),
         ],
         child: const MaterialApp(home: Scaffold(body: AccountSection())),
       ),

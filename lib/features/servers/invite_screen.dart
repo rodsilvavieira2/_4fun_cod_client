@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/api/api_exception.dart';
 import '../../core/auth/auth_controller.dart';
 import '../../core/auth/auth_state.dart';
+import '../../core/ui/ui.dart';
 import 'servers_providers.dart';
 
 /// Deep link público `/invite/:code`: resolve o convite (sem login) e
@@ -88,12 +89,20 @@ class _InviteScreenState extends ConsumerState<InviteScreen> {
                   children: [
                     CircleAvatar(
                       radius: 40,
-                      foregroundImage: data.server.iconUrl != null
-                          ? NetworkImage(data.server.iconUrl!)
-                          : null,
+                      backgroundColor: Theme.of(context).colorScheme.surface,
                       child: data.server.iconUrl == null
                           ? const Icon(Icons.dns_outlined, size: 40)
-                          : null,
+                          : ClipOval(
+                              child: AppFileImage(
+                                path: data.server.iconUrl,
+                                width: 80,
+                                height: 80,
+                                fallback: const Icon(
+                                  Icons.dns_outlined,
+                                  size: 40,
+                                ),
+                              ),
+                            ),
                     ),
                     const SizedBox(height: 16),
                     Text(

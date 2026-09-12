@@ -116,12 +116,11 @@ class UserPanel extends ConsumerWidget {
                       alignment: Alignment.center,
                       clipBehavior: Clip.antiAlias,
                       child: avatarUrl != null
-                          ? Image.network(
-                              avatarUrl,
+                          ? AppFileImage(
+                              path: avatarUrl,
                               width: 34,
                               height: 34,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, _, _) => _initial(name),
+                              fallback: _initial(name),
                             )
                           : _initial(name),
                     ),

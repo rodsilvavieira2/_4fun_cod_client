@@ -202,12 +202,11 @@ class _ConversationRowState extends State<_ConversationRow> {
                 alignment: Alignment.center,
                 clipBehavior: Clip.antiAlias,
                 child: conversation.avatarUrl != null
-                    ? Image.network(
-                        conversation.avatarUrl!,
+                    ? AppFileImage(
+                        path: conversation.avatarUrl,
                         width: 26,
                         height: 26,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) => _initial(conversation.name),
+                        fallback: _initial(conversation.name),
                       )
                     : _initial(conversation.name),
               ),

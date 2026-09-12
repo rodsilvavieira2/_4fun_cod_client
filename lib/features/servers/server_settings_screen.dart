@@ -557,12 +557,11 @@ class _ServerIconEditor extends StatelessWidget {
                     color: AppTokens.textPrimary,
                   ),
                 )
-              : Image.network(
-                  iconUrl,
+              : AppFileImage(
+                  path: iconUrl,
                   width: 58,
                   height: 58,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) => const Icon(
+                  fallback: const Icon(
                     Icons.dns_outlined,
                     color: AppTokens.textMuted,
                   ),

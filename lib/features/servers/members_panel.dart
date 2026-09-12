@@ -114,12 +114,11 @@ class _MemberRowState extends ConsumerState<_MemberRow> {
                   alignment: Alignment.center,
                   clipBehavior: Clip.antiAlias,
                   child: user.avatarUrl != null
-                      ? Image.network(
-                          user.avatarUrl!,
+                      ? AppFileImage(
+                          path: user.avatarUrl,
                           width: 30,
                           height: 30,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, _, _) => _initial(displayName),
+                          fallback: _initial(displayName),
                         )
                       : _initial(displayName),
                 ),

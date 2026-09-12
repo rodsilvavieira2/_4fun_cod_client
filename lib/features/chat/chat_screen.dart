@@ -615,12 +615,11 @@ class _Avatar extends StatelessWidget {
       alignment: Alignment.center,
       clipBehavior: Clip.antiAlias,
       child: author.avatarUrl != null
-          ? Image.network(
-              author.avatarUrl!,
+          ? AppFileImage(
+              path: author.avatarUrl,
               width: 36,
               height: 36,
-              fit: BoxFit.cover,
-              errorBuilder: (_, _, _) => _avatarInitial(author),
+              fallback: _avatarInitial(author),
             )
           : _avatarInitial(author),
     );
