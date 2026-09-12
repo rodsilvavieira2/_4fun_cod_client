@@ -264,23 +264,26 @@ class _VoiceVideoTileState extends ConsumerState<VoiceVideoTile> {
       ),
     );
 
-    // Fullscreen imersivo idle: esconde cursor e desativa o menu de volume
-    // (o FocusableActionDetector interno forçaria cursor basic visível).
-    if (!widget.overlayVisible) {
-      return MouseRegion(cursor: SystemMouseCursors.none, child: tile);
-    }
-    return MouseRegion(
-      cursor: widget.onTap == null
-          ? SystemMouseCursors.basic
-          : SystemMouseCursors.click,
-      child: isLocal
-          ? tile
-          : ParticipantVolumeMenuRegion(
-              identity: participant.id,
-              displayName: participant.name,
-              child: tile,
-            ),
-    );
+    // Estrutura IDÊNTICA com overlay visível ou oculto (só props mudam):
+    // trocar o tipo do wrapper aqui desmontava a subárvore e recriava o
+    // VideoTrackRenderer (textura nativa) — daí o "pisca" no hide/show.
+    // O cursor none vai no MouseRegion MAIS interno: ele vence o `basic`
+    // do FocusableActionDetector do menu de volume.
+    final effectiveCursor = !widget.overlayVisible
+        ? SystemMouseCursors.none
+        : (widget.onTap == null
+              ? SystemMouseCursors.basic
+              : SystemMouseCursors.click);
+    final interactiveTile = MouseRegion(cursor: effectiveCursor, child: tile);
+    return isLocal
+        ? interactiveTile
+        : ParticipantVolumeMenuRegion(
+            identity: participant.id,
+            displayName: participant.name,
+            // Escondido: sem menu de volume sobre o vídeo puro (só prop).
+            enabled: widget.overlayVisible,
+            child: interactiveTile,
+          );
   }
 }
 
