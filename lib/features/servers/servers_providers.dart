@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/api/api_client.dart';
+import '../../core/auth/auth_controller.dart';
+import '../../core/auth/auth_state.dart';
 import '../../core/logging/app_logger.dart';
 import '../../core/websocket/realtime_event.dart';
 import '../../core/websocket/socket_service.dart';
@@ -64,6 +66,19 @@ class ServerDetailController
     _reconnectedSubscription = socket.reconnected.listen(
       (_) => ref.invalidateSelf(),
     );
+    // O próprio usuário trocou avatar/nome (upload 202→READY só atualiza o
+    // auth): re-busca para membros/voz refletirem a URL nova — a antiga é
+    // deletada do R2 no finalize e cairia em 404→fallback para sempre.
+    ref.listen(authControllerProvider, (prev, next) {
+      final prevUser = prev?.valueOrNull;
+      final nextUser = next.valueOrNull;
+      if (prevUser is Authenticated &&
+          nextUser is Authenticated &&
+          (prevUser.user.avatarUrl != nextUser.user.avatarUrl ||
+              prevUser.user.name != nextUser.user.name)) {
+        ref.invalidateSelf();
+      }
+    });
     ref.onDispose(() {
       _membershipSubscription?.cancel();
       _reconnectedSubscription?.cancel();
