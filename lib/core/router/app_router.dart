@@ -131,8 +131,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/servers/:serverId',
         name: 'server-shell',
-        builder: (context, state) =>
-            ServerShellScreen(serverId: state.pathParameters['serverId']!),
+        builder: (context, state) => ServerShellScreen(
+          serverId: state.pathParameters['serverId']!,
+          initialChannelId: state.uri.queryParameters['channelId'],
+        ),
       ),
       GoRoute(
         path: '/servers/:serverId/members',

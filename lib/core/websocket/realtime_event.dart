@@ -1,5 +1,6 @@
 import '../../shared/models/message.dart';
 import '../../shared/models/servers.dart';
+import '../../shared/models/user.dart';
 
 /// Evento de tempo real tipado, recebido do gateway Socket.IO do servidor.
 ///
@@ -14,6 +15,8 @@ sealed class RealtimeEvent {
       'message.created' => MessageCreatedEvent.fromJson(json),
       'message.updated' => MessageUpdatedEvent.fromJson(json),
       'message.deleted' => MessageDeletedEvent.fromJson(json),
+      'notification.message_created' =>
+        NotificationMessageCreatedEvent.fromJson(json),
       'channel.created' => ChannelCreatedEvent.fromJson(json),
       'channel.updated' => ChannelUpdatedEvent.fromJson(json),
       'channel.deleted' => ChannelDeletedEvent.fromJson(json),
@@ -67,6 +70,59 @@ class MessageDeletedEvent extends RealtimeEvent {
 
   final String channelId;
   final String messageId;
+}
+
+enum NotificationMessageType {
+  channelMessage,
+  mention;
+
+  static NotificationMessageType fromApi(Object? value) => switch (value) {
+    'MENTION' => NotificationMessageType.mention,
+    _ => NotificationMessageType.channelMessage,
+  };
+}
+
+/// `notification.message_created` — payload resumido para notificação do SO.
+class NotificationMessageCreatedEvent extends RealtimeEvent {
+  const NotificationMessageCreatedEvent({
+    required this.type,
+    required this.serverId,
+    required this.serverName,
+    required this.channelId,
+    required this.channelName,
+    required this.messageId,
+    required this.author,
+    required this.kind,
+    required this.preview,
+    required this.createdAt,
+  });
+
+  factory NotificationMessageCreatedEvent.fromJson(Map<String, dynamic> json) =>
+      NotificationMessageCreatedEvent(
+        type: NotificationMessageType.fromApi(json['type']),
+        serverId: json['serverId'] as String,
+        serverName: json['serverName'] as String? ?? '',
+        channelId: json['channelId'] as String,
+        channelName: json['channelName'] as String? ?? '',
+        messageId: json['messageId'] as String,
+        author: User.fromJson(json['author'] as Map<String, dynamic>),
+        kind: ChatMessageKind.fromApi(json['kind']),
+        preview: json['preview'] as String? ?? '',
+        createdAt:
+            DateTime.tryParse(json['createdAt'] as String? ?? '') ??
+            DateTime.fromMillisecondsSinceEpoch(0),
+      );
+
+  final NotificationMessageType type;
+  final String serverId;
+  final String serverName;
+  final String channelId;
+  final String channelName;
+  final String messageId;
+  final User author;
+  final ChatMessageKind kind;
+  final String preview;
+  final DateTime createdAt;
 }
 
 /// `channel.created { serverId, channel }`.

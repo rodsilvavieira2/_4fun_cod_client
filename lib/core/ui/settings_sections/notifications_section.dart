@@ -1,23 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../notifications/notification_preferences.dart';
 import '../settings_section_layout.dart';
 
-/// Seção Notificações do modal (UI shell): switches VISUAIS com estado
-/// local (StatefulBuilder) — nada persiste; resetam ao reabrir o modal.
-class NotificationsSection extends StatefulWidget {
+class NotificationsSection extends ConsumerWidget {
   const NotificationsSection({super.key});
 
   @override
-  State<NotificationsSection> createState() => _NotificationsSectionState();
-}
+  Widget build(BuildContext context, WidgetRef ref) {
+    final preferences = ref.watch(notificationPreferencesProvider);
+    final value = preferences.valueOrNull ?? NotificationPreferences.defaults;
+    final controller = ref.read(notificationPreferencesProvider.notifier);
+    final enabled = !preferences.isLoading;
 
-class _NotificationsSectionState extends State<NotificationsSection> {
-  bool _mensagens = true;
-  bool _mencoes = true;
-  bool _sons = false;
-
-  @override
-  Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -27,19 +23,19 @@ class _NotificationsSectionState extends State<NotificationsSection> {
               title: 'Conversas',
               children: [
                 SettingsRow(
-                  icon: Icons.chat_bubble_outline,
-                  title: 'Mensagens diretas',
+                  icon: Icons.tag,
+                  title: 'Mensagens em canais',
                   trailing: SettingsSwitch(
-                    value: _mensagens,
-                    onChanged: (value) => setState(() => _mensagens = value),
+                    value: value.channelMessages,
+                    onChanged: enabled ? controller.setChannelMessages : null,
                   ),
                 ),
                 SettingsRow(
                   icon: Icons.alternate_email,
-                  title: 'Menções',
+                  title: 'Menções com @',
                   trailing: SettingsSwitch(
-                    value: _mencoes,
-                    onChanged: (value) => setState(() => _mencoes = value),
+                    value: value.mentions,
+                    onChanged: enabled ? controller.setMentions : null,
                   ),
                 ),
               ],
@@ -51,8 +47,8 @@ class _NotificationsSectionState extends State<NotificationsSection> {
                   icon: Icons.volume_up_outlined,
                   title: 'Sons de notificação',
                   trailing: SettingsSwitch(
-                    value: _sons,
-                    onChanged: (value) => setState(() => _sons = value),
+                    value: value.sounds,
+                    onChanged: enabled ? controller.setSounds : null,
                   ),
                 ),
               ],

@@ -204,6 +204,10 @@ class SocketService {
     socket.on('message.created', (data) => _dispatch('message.created', data));
     socket.on('message.updated', (data) => _dispatch('message.updated', data));
     socket.on('message.deleted', (data) => _dispatch('message.deleted', data));
+    socket.on(
+      'notification.message_created',
+      (data) => _dispatch('notification.message_created', data),
+    );
     socket.on('channel.created', (data) => _dispatch('channel.created', data));
     socket.on('channel.updated', (data) => _dispatch('channel.updated', data));
     socket.on('channel.deleted', (data) => _dispatch('channel.deleted', data));

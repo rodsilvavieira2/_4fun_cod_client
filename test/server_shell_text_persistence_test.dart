@@ -78,6 +78,7 @@ class _Repo implements ServersRepository {
   @override
   Future<List<ServerChannel>> fetchChannels(String serverId) async => const [
     ServerChannel(id: 't1', name: 'geral', type: ChannelType.text),
+    ServerChannel(id: 't2', name: 'avisos', type: ChannelType.text),
     ServerChannel(id: 'v1', name: 'Voz', type: ChannelType.voice),
   ];
 
@@ -254,4 +255,44 @@ void main() {
       );
     },
   );
+
+  testWidgets('initialChannelId abre o canal de texto informado', (
+    WidgetTester tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    await tester.binding.setSurfaceSize(const Size(1280, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    final socket = _Socket();
+    final repo = _Repo();
+    final container = ProviderContainer(
+      overrides: [
+        authControllerProvider.overrideWith(_FakeAuth.new),
+        socketServiceProvider.overrideWithValue(socket),
+        serversRepositoryProvider.overrideWithValue(repo),
+        serverDetailProvider.overrideWith(_Detail.new),
+        rtcServiceProvider.overrideWithValue(_Rtc()),
+      ],
+    );
+    addTearDown(() async {
+      await tester.pumpWidget(const SizedBox());
+      container.dispose();
+    });
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(
+          home: Scaffold(
+            body: ServerShellScreen(serverId: 's1', initialChannelId: 't2'),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(socket.joined, contains('t2'));
+    expect(socket.joined.last, 't2');
+    expect(find.text('olá do texto'), findsOneWidget);
+  });
 }

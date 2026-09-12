@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/auth/auth_controller.dart';
 import 'core/auth/auth_state.dart';
+import 'core/notifications/notification_coordinator.dart';
 import 'core/router/app_router.dart';
 import 'core/telemetry/telemetry_service.dart';
 import 'core/theme/app_theme.dart';
@@ -19,6 +20,7 @@ class App extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(routerProvider);
+    ref.watch(notificationCoordinatorProvider);
     // Fire-and-forget: no-op quando OTEL_ENABLED=false (default).
     final telemetry = ref.read(telemetryServiceProvider);
     telemetry.init();

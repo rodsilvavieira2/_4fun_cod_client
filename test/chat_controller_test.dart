@@ -213,6 +213,27 @@ void main() {
       expect((event! as MessageDeletedEvent).messageId, 'm1');
     });
 
+    test('notification.message_created', () {
+      final event = RealtimeEvent.fromJson('notification.message_created', {
+        'type': 'MENTION',
+        'serverId': 's1',
+        'serverName': 'Servidor',
+        'channelId': 'c1',
+        'channelName': 'geral',
+        'messageId': 'm1',
+        'kind': 'TEXT',
+        'preview': 'oi @ana',
+        'createdAt': '2026-08-18T20:00:00.000Z',
+        'author': {'id': 'u2', 'name': 'Bia', 'username': 'bia'},
+      });
+
+      expect(event, isA<NotificationMessageCreatedEvent>());
+      final notification = event! as NotificationMessageCreatedEvent;
+      expect(notification.type, NotificationMessageType.mention);
+      expect(notification.author.username, 'bia');
+      expect(notification.preview, 'oi @ana');
+    });
+
     test('presence.changed ONLINE/OFFLINE', () {
       final online = RealtimeEvent.fromJson('presence.changed', {
         'userId': 'u2',

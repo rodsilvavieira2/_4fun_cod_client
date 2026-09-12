@@ -32,9 +32,14 @@ import 'user_panel.dart';
 /// selecionar canal de TEXTO, `channel:join`/`channel:leave` — o join é
 /// reemitido automaticamente pelo [SocketService] após reconexão.
 class ServerShellScreen extends ConsumerStatefulWidget {
-  const ServerShellScreen({super.key, required this.serverId});
+  const ServerShellScreen({
+    super.key,
+    required this.serverId,
+    this.initialChannelId,
+  });
 
   final String serverId;
+  final String? initialChannelId;
 
   @override
   ConsumerState<ServerShellScreen> createState() => _ServerShellScreenState();
@@ -46,6 +51,7 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
   // Room de texto com `channel:join` ativo. Pode diferir da seleção visível:
   // ao ver voz, a room de texto permanece conectada (volta sem refetch).
   String? _joinedTextChannelId;
+  String? _appliedInitialChannelId;
   int _voiceSwitchEpoch = 0;
   bool _didSelectInitialChannel = false;
   bool _leavingServer = false;
@@ -68,6 +74,14 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
       if (!mounted) return;
       ref.read(socketServiceProvider).joinServer(widget.serverId);
     });
+  }
+
+  @override
+  void didUpdateWidget(covariant ServerShellScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.initialChannelId != widget.initialChannelId) {
+      _appliedInitialChannelId = null;
+    }
   }
 
   @override
@@ -286,11 +300,38 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
             )),
           );
 
+    final requestedChannelId = widget.initialChannelId;
+    if (requestedChannelId != null &&
+        requestedChannelId != _appliedInitialChannelId &&
+        requestedChannelId != _selectedChannelId &&
+        channels.hasValue) {
+      final requestedChannel = channelList
+          .where(
+            (channel) =>
+                channel.id == requestedChannelId &&
+                channel.type == ChannelType.text,
+          )
+          .firstOrNull;
+      if (requestedChannel != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || _appliedInitialChannelId == requestedChannelId) {
+            return;
+          }
+          _appliedInitialChannelId = requestedChannelId;
+          unawaited(_onChannelSelected(requestedChannelId, channelList));
+        });
+      } else {
+        _appliedInitialChannelId = requestedChannelId;
+      }
+    }
+
     // Como no Discord, abrir um servidor leva direto ao primeiro canal de
     // texto. Canais de voz nunca são conectados automaticamente.
     if (!_didSelectInitialChannel &&
         _selectedChannelId == null &&
-        channels.hasValue) {
+        channels.hasValue &&
+        (requestedChannelId == null ||
+            requestedChannelId == _appliedInitialChannelId)) {
       final firstTextChannel = channelList
           .where((channel) => channel.type == ChannelType.text)
           .firstOrNull;

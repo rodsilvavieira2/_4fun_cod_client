@@ -285,6 +285,7 @@ class ChatController
           MemberRemovedEvent() ||
           MemberRoleUpdatedEvent() ||
           PresenceChangedEvent() ||
+          NotificationMessageCreatedEvent() ||
           VoicePresenceChangedEvent():
         break; // não afetam a lista de mensagens
     }
