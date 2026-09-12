@@ -303,6 +303,29 @@ class ServersRepository {
     }
   }
 
+  /// `PATCH /messages/:id { content }` → mensagem editada (só autor,
+  /// só texto/legenda; anexos usam o PATCH de attachments).
+  Future<ChatMessage> editMessage(String messageId, String content) async {
+    try {
+      final response = await _dio.patch(
+        '/messages/$messageId',
+        data: {'content': content},
+      );
+      return ChatMessage.fromJson(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      throw ApiException.fromDio(e);
+    }
+  }
+
+  /// `DELETE /messages/:id` → 204 (só autor; chega via `message.deleted`).
+  Future<void> deleteMessage(String messageId) async {
+    try {
+      await _dio.delete('/messages/$messageId');
+    } on DioException catch (e) {
+      throw ApiException.fromDio(e);
+    }
+  }
+
   /// Retry parcial de anexo FAILED (spec-chat-imagens): novo `POST /uploads`
   /// + `PATCH /messages/:id/attachments { uploadIds }` → mensagem atualizada.
   ///

@@ -811,7 +811,7 @@ class _EmptyVoiceStage extends StatelessWidget {
 }
 
 /// Destaque opcional com filmstrip colapsável de miniaturas maiores
-/// (192x108, Discord-like). Câmera e tela da mesma pessoa continuam sendo
+/// (192x120, Discord-like). Câmera e tela da mesma pessoa continuam sendo
 /// itens distintos. Fullscreen esconde a filmstrip (palco imersivo).
 class _SpotlightLayout extends StatelessWidget {
   const _SpotlightLayout({
@@ -833,11 +833,11 @@ class _SpotlightLayout extends StatelessWidget {
   final VoidCallback? onToggleFullscreen;
 
   /// Altura da faixa de miniaturas (wireframe B).
-  static const double filmstripHeight = 120;
+  static const double filmstripHeight = 132;
 
-  /// Tamanho do thumb da filmstrip (16:9).
+  /// Tamanho do thumb da filmstrip, com altura extra para overlays compactos.
   static const double miniatureWidth = 192;
-  static const double miniatureHeight = 108;
+  static const double miniatureHeight = 120;
 
   @override
   Widget build(BuildContext context) {

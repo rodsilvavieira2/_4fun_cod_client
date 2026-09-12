@@ -294,6 +294,27 @@ class ChatController
     );
   }
 
+  /// Edita o texto/legenda (só autor) e aplica o `message.updated` local.
+  Future<void> editMessage(String messageId, String content) async {
+    final message = await ref
+        .read(serversRepositoryProvider)
+        .editMessage(messageId, content);
+    if (_disposed) return;
+    _applyEvent(
+      MessageUpdatedEvent(channelId: arg.channelId, message: message),
+    );
+  }
+
+  /// Exclui (só autor) e remove localmente (idempotente com o
+  /// `message.deleted` do realtime).
+  Future<void> deleteMessage(String messageId) async {
+    await ref.read(serversRepositoryProvider).deleteMessage(messageId);
+    if (_disposed) return;
+    _applyEvent(
+      MessageDeletedEvent(channelId: arg.channelId, messageId: messageId),
+    );
+  }
+
   /// Retry parcial de anexo FAILED (spec-chat-imagens): apos novo
   /// `POST /uploads`, vincula via PATCH e aplica `message.updated` local.
   Future<void> retryAttachments(

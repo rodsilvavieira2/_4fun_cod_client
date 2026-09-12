@@ -67,6 +67,42 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     }
   }
 
+  Future<void> _editMessage(ChatMessage message, String content) async {
+    try {
+      await ref
+          .read(
+            chatControllerProvider((
+              serverId: widget.serverId,
+              channelId: widget.channelId,
+            )).notifier,
+          )
+          .editMessage(message.id, content);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Não foi possível editar a mensagem.')),
+      );
+    }
+  }
+
+  Future<void> _deleteMessage(ChatMessage message) async {
+    try {
+      await ref
+          .read(
+            chatControllerProvider((
+              serverId: widget.serverId,
+              channelId: widget.channelId,
+            )).notifier,
+          )
+          .deleteMessage(message.id);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Não foi possível excluir a mensagem.')),
+      );
+    }
+  }
+
   /// Retry de anexo FAILED já vinculado: `POST /uploads/:id/retry`; a imagem
   /// chega via `message.updated` (sem estado local — o grid já mostra spinner
   /// enquanto o upload não está READY).
@@ -128,6 +164,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               members: members,
               onReply: _startReply,
               onReact: _toggleReaction,
+              onEdit: _editMessage,
+              onDelete: _deleteMessage,
               onRetryAttachment: _retryAttachment,
               onLoadMore: () => ref
                   .read(
@@ -192,6 +230,8 @@ class _MessageList extends StatefulWidget {
     required this.onLoadMore,
     required this.onReply,
     required this.onReact,
+    required this.onEdit,
+    required this.onDelete,
     required this.onRetryAttachment,
     this.members = const [],
     this.myUserId,
@@ -204,6 +244,8 @@ class _MessageList extends StatefulWidget {
   final VoidCallback onLoadMore;
   final ValueChanged<ChatMessage> onReply;
   final Future<void> Function(ChatMessage message, String emoji) onReact;
+  final Future<void> Function(ChatMessage message, String content) onEdit;
+  final Future<void> Function(ChatMessage message) onDelete;
   final ValueChanged<String> onRetryAttachment;
 
   @override
@@ -343,6 +385,8 @@ class _MessageListState extends State<_MessageList> {
               quickReactionEmojis: quickReactionEmojis,
               onReply: widget.onReply,
               onReact: widget.onReact,
+              onEdit: widget.onEdit,
+              onDelete: widget.onDelete,
               onRetryAttachment: widget.onRetryAttachment,
             ),
           ],
@@ -403,6 +447,8 @@ class _MessageTile extends StatefulWidget {
     required this.quickReactionEmojis,
     required this.onReply,
     required this.onReact,
+    required this.onEdit,
+    required this.onDelete,
     required this.onRetryAttachment,
     this.myUserId,
   });
@@ -414,6 +460,8 @@ class _MessageTile extends StatefulWidget {
   final List<String> quickReactionEmojis;
   final ValueChanged<ChatMessage> onReply;
   final Future<void> Function(ChatMessage message, String emoji) onReact;
+  final Future<void> Function(ChatMessage message, String content) onEdit;
+  final Future<void> Function(ChatMessage message) onDelete;
   final ValueChanged<String> onRetryAttachment;
 
   @override
@@ -422,12 +470,119 @@ class _MessageTile extends StatefulWidget {
 
 class _MessageTileState extends State<_MessageTile> {
   bool _hovered = false;
+  bool _editing = false;
+
+  bool get _isOwner {
+    final myUserId = widget.myUserId;
+    if (myUserId == null) return false;
+    // Bolha otimista local ainda sem id real: sem ações de dono.
+    if (widget.message.id.startsWith('local-')) return false;
+    return widget.message.author.id == myUserId;
+  }
 
   Future<void> _pickReaction(BuildContext anchorContext) async {
     final emoji = await _showEmojiPopup(anchorContext, title: 'Reagir');
     if (emoji == null) return;
     if (!mounted) return;
     await widget.onReact(widget.message, emoji);
+  }
+
+  @override
+  void didUpdateWidget(covariant _MessageTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Tiles sem key podem ser reaproveitados para outra mensagem (ex. após
+    // excluir): nunca vazar o modo de edição para a mensagem errada.
+    if (oldWidget.message.id != widget.message.id && _editing) {
+      setState(() => _editing = false);
+    }
+  }
+
+  Future<void> _showMoreMenu(BuildContext anchorContext) async {
+    final canEdit = widget.message.kind != ChatMessageKind.gif;
+    final action = await _showAnchoredPopup<String>(
+      anchorContext: anchorContext,
+      preferredSize: Size(AppMenu.minWidth, canEdit ? 80 : 40),
+      builder: (onSelected, onClose) => _MessageMoreMenu(
+        canEdit: canEdit,
+        onSelected: onSelected,
+        onClose: onClose,
+      ),
+    );
+    if (!mounted) return;
+    if (action == 'edit') {
+      _startEdit();
+    } else if (action == 'delete') {
+      await _confirmDelete();
+    }
+  }
+
+  /// Entra em edição inline (estilo Discord): o texto vira campo no lugar,
+  /// sem modal.
+  void _startEdit() {
+    if (_editing) return;
+    setState(() => _editing = true);
+  }
+
+  void _cancelEdit() {
+    if (!_editing) return;
+    setState(() => _editing = false);
+  }
+
+  Future<void> _saveEdit(String content) async {
+    final trimmed = content.trim();
+    if (trimmed.isEmpty || trimmed == widget.message.content) {
+      _cancelEdit();
+      return;
+    }
+    setState(() => _editing = false);
+    await widget.onEdit(widget.message, trimmed);
+  }
+
+  Future<void> _confirmDelete() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: AppTokens.surface2,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadius.lg),
+          side: const BorderSide(color: AppTokens.borderSubtle),
+        ),
+        title: const Text(
+          'Excluir mensagem',
+          style: TextStyle(
+            fontFamily: 'Geist',
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
+            color: AppTokens.textPrimary,
+          ),
+        ),
+        content: const Text(
+          'Tem certeza que deseja excluir esta mensagem? Essa ação não pode ser desfeita.',
+          style: TextStyle(
+            fontFamily: 'Geist',
+            fontSize: 13.5,
+            height: 1.45,
+            color: AppTokens.textSecondary,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            style: TextButton.styleFrom(
+              foregroundColor: AppTokens.accentDanger,
+            ),
+            child: const Text('Excluir'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    if (confirmed != true) return;
+    await widget.onDelete(widget.message);
   }
 
   @override
@@ -531,7 +686,13 @@ class _MessageTileState extends State<_MessageTile> {
                               _ReplyPreview(replyTo: widget.message.replyTo!),
                               const SizedBox(height: 4),
                             ],
-                            if (widget.message.content.isNotEmpty)
+                            if (_editing)
+                              _InlineMessageEditor(
+                                initialText: widget.message.content,
+                                onSave: _saveEdit,
+                                onCancel: _cancelEdit,
+                              )
+                            else if (widget.message.content.isNotEmpty)
                               Padding(
                                 padding: EdgeInsets.only(
                                   bottom:
@@ -590,24 +751,27 @@ class _MessageTileState extends State<_MessageTile> {
                 ],
               ),
             ),
-            Positioned(
-              top: 0,
-              right: 0,
-              child: IgnorePointer(
-                ignoring: !_hovered,
-                child: AnimatedOpacity(
-                  duration: const Duration(milliseconds: 100),
-                  opacity: _hovered ? 1 : 0,
-                  child: _MessageActionBar(
-                    message: widget.message,
-                    quickReactionEmojis: widget.quickReactionEmojis,
-                    onReact: widget.onReact,
-                    onPickReaction: _pickReaction,
-                    onReply: widget.onReply,
+            if (!_editing)
+              Positioned(
+                top: 0,
+                right: 0,
+                child: IgnorePointer(
+                  ignoring: !_hovered,
+                  child: AnimatedOpacity(
+                    duration: const Duration(milliseconds: 100),
+                    opacity: _hovered ? 1 : 0,
+                    child: _MessageActionBar(
+                      message: widget.message,
+                      quickReactionEmojis: widget.quickReactionEmojis,
+                      isOwner: _isOwner,
+                      onReact: widget.onReact,
+                      onPickReaction: _pickReaction,
+                      onShowMoreMenu: _showMoreMenu,
+                      onReply: widget.onReply,
+                    ),
                   ),
                 ),
               ),
-            ),
           ],
         ),
       ),
@@ -856,19 +1020,136 @@ class _GifEmbed extends StatelessWidget {
   }
 }
 
+/// Editor inline estilo Discord: substitui o texto no lugar da mensagem.
+/// `Enter` salva, `Shift+Enter` quebra linha e `Esc` cancela.
+class _InlineMessageEditor extends StatefulWidget {
+  const _InlineMessageEditor({
+    required this.initialText,
+    required this.onSave,
+    required this.onCancel,
+  });
+
+  final String initialText;
+  final ValueChanged<String> onSave;
+  final VoidCallback onCancel;
+
+  @override
+  State<_InlineMessageEditor> createState() => _InlineMessageEditorState();
+}
+
+class _InlineMessageEditorState extends State<_InlineMessageEditor> {
+  late final TextEditingController _controller;
+  late final FocusNode _focusNode;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialText)
+      ..selection = TextSelection.collapsed(offset: widget.initialText.length);
+    _focusNode = FocusNode(
+      onKeyEvent: (node, event) {
+        if (event is! KeyDownEvent) return KeyEventResult.ignored;
+        if (event.logicalKey == LogicalKeyboardKey.escape) {
+          widget.onCancel();
+          return KeyEventResult.handled;
+        }
+        if (event.logicalKey == LogicalKeyboardKey.enter &&
+            !HardwareKeyboard.instance.isShiftPressed) {
+          widget.onSave(_controller.text);
+          return KeyEventResult.handled;
+        }
+        return KeyEventResult.ignored;
+      },
+    )..requestFocus();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        TextField(
+          controller: _controller,
+          focusNode: _focusNode,
+          autofocus: true,
+          minLines: 1,
+          maxLines: 8,
+          maxLength: 4000,
+          buildCounter:
+              (
+                context, {
+                required int currentLength,
+                required bool isFocused,
+                int? maxLength,
+              }) => const SizedBox.shrink(),
+          keyboardType: TextInputType.multiline,
+          textInputAction: TextInputAction.newline,
+          style: const TextStyle(
+            fontFamily: 'Geist',
+            fontSize: 14.5,
+            height: 1.42,
+            color: AppTokens.textPrimary,
+          ),
+          decoration: InputDecoration(
+            filled: true,
+            fillColor: AppTokens.surface1,
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 10,
+            ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(AppRadius.md),
+              borderSide: const BorderSide(color: AppTokens.borderSubtle),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(AppRadius.md),
+              borderSide: const BorderSide(color: AppTokens.borderSubtle),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(AppRadius.md),
+              borderSide: const BorderSide(color: AppTokens.accentVercel),
+            ),
+          ),
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          'esc para cancelar • enter para salvar',
+          style: TextStyle(
+            fontFamily: 'Geist',
+            fontSize: 11,
+            color: AppTokens.textMuted,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _MessageActionBar extends StatelessWidget {
   const _MessageActionBar({
     required this.message,
     required this.quickReactionEmojis,
+    required this.isOwner,
     required this.onReact,
     required this.onPickReaction,
+    required this.onShowMoreMenu,
     required this.onReply,
   });
 
   final ChatMessage message;
   final List<String> quickReactionEmojis;
+  final bool isOwner;
   final Future<void> Function(ChatMessage message, String emoji) onReact;
   final Future<void> Function(BuildContext anchorContext) onPickReaction;
+  final Future<void> Function(BuildContext anchorContext) onShowMoreMenu;
   final ValueChanged<ChatMessage> onReply;
 
   @override
@@ -907,7 +1188,123 @@ class _MessageActionBar extends StatelessWidget {
               iconSize: 16,
               onPressed: () => onReply(message),
             ),
+            if (isOwner)
+              Builder(
+                builder: (anchorContext) => AppIconButton(
+                  icon: Icons.more_horiz,
+                  tooltip: 'Mais ações',
+                  minSize: 28,
+                  iconSize: 16,
+                  onPressed: () => onShowMoreMenu(anchorContext),
+                ),
+              ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Menu âncora do ⋯ (só dono) no padrão compacto [AppMenu] dos demais
+/// menus do app (`channel_list`, `user_panel`, `voice_screen`): itens de
+/// 32px, ícone 16 [AppTokens.textSecondary] e divisor de 8px antes da ação
+/// destrutiva (— que mantém o vermelho [AppTokens.accentDanger], como no
+/// Discord).
+class _MessageMoreMenu extends StatelessWidget {
+  const _MessageMoreMenu({
+    required this.canEdit,
+    required this.onSelected,
+    required this.onClose,
+  });
+
+  final bool canEdit;
+  final ValueChanged<String> onSelected;
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: AppTokens.surface2,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(color: AppTokens.borderSubtle, width: 1),
+        boxShadow: AppShadows.popover,
+      ),
+      child: Padding(
+        padding: AppMenu.menuPadding,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (canEdit)
+              _CompactMenuEntry(
+                icon: Icons.edit_outlined,
+                label: 'Editar mensagem',
+                onTap: () => onSelected('edit'),
+              ),
+            if (canEdit)
+              const Divider(
+                height: AppMenu.dividerHeight,
+                color: AppTokens.borderHairline,
+              ),
+            _CompactMenuEntry(
+              icon: Icons.delete_outline,
+              label: 'Excluir mensagem',
+              destructive: true,
+              onTap: () => onSelected('delete'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CompactMenuEntry extends StatelessWidget {
+  const _CompactMenuEntry({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.destructive = false,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final bool destructive;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = destructive
+        ? AppTokens.accentDanger
+        : AppTokens.textSecondary;
+    return SizedBox(
+      height: AppMenu.itemHeight,
+      width: double.infinity,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          hoverColor: AppTokens.hoverOverlay,
+          splashColor: Colors.transparent,
+          highlightColor: Colors.transparent,
+          child: Padding(
+            padding: AppMenu.itemPadding,
+            child: Row(
+              children: [
+                Icon(icon, size: 16, color: color),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    label,
+                    overflow: TextOverflow.ellipsis,
+                    style: destructive
+                        ? AppMenu.itemTextStyle.copyWith(color: color)
+                        : AppMenu.itemTextStyle,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );

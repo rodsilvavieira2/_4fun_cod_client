@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -353,6 +355,24 @@ String _displayName(
   return member?.user.name ?? fallbackId;
 }
 
+const _voiceAvatarGoldenAngle = 137.50776405003785;
+
+Color _voiceOccupantAccent(_VoiceOccupant occupant) {
+  final hash = _stableVoiceOccupantHash('${occupant.userId}|${occupant.name}');
+  final hue = ((hash % 1024) * _voiceAvatarGoldenAngle) % 360;
+  return HSVColor.fromAHSV(1, hue, 0.42, 0.76).toColor();
+}
+
+int _stableVoiceOccupantHash(String value) {
+  const fnvPrime = 0x01000193;
+  var hash = 0x811C9DC5;
+  for (final unit in value.codeUnits) {
+    hash ^= unit;
+    hash = (hash * fnvPrime) & 0xFFFFFFFF;
+  }
+  return hash;
+}
+
 /// Participante compacto abaixo de um canal de voz, no mesmo agrupamento
 /// visual usado pelo Discord. Estado detalhado de fala/mídia segue no palco
 /// da sala ativa, que recebe o stream direto do LiveKit.
@@ -386,60 +406,38 @@ class _VoiceOccupantRow extends StatelessWidget {
     final isSpeaking = participant?.isSpeaking == true;
     final canOpenVolume =
         participant != null && participant.id != localParticipantId;
+    final accent = _voiceOccupantAccent(occupant);
     final row = Padding(
       padding: const EdgeInsets.only(left: 32, right: 12, bottom: 2),
       child: SizedBox(
         height: 36,
         child: Row(
           children: [
-            CircleAvatar(
-              radius: 12,
-              backgroundColor: isSpeaking
-                  ? AppTokens.accentGreen
-                  : AppTokens.surface3,
-              child: occupant.avatarUrl == null
-                  ? Text(
-                      occupant.name.isEmpty
-                          ? '?'
-                          : occupant.name[0].toUpperCase(),
-                      style: const TextStyle(
-                        fontFamily: 'Geist',
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    )
-                  : ClipOval(
-                      child: AppFileImage(
-                        path: occupant.avatarUrl,
-                        width: 24,
-                        height: 24,
-                        fallback: Text(
-                          occupant.name.isEmpty
-                              ? '?'
-                              : occupant.name[0].toUpperCase(),
-                          style: const TextStyle(
-                            fontFamily: 'Geist',
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ),
+            _VoiceOccupantAvatar(
+              occupant: occupant,
+              accent: accent,
+              speaking: isSpeaking,
             ),
             const SizedBox(width: 8),
             Expanded(
-              child: Text(
-                occupant.name,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
+              child: AnimatedDefaultTextStyle(
+                duration: const Duration(milliseconds: 160),
+                curve: Curves.easeOutCubic,
+                style: TextStyle(
                   fontFamily: 'Geist',
                   fontSize: 13,
-                  color: AppTokens.textSecondary,
+                  fontWeight: isSpeaking ? FontWeight.w600 : FontWeight.w400,
+                  color: isSpeaking
+                      ? AppTokens.textPrimary
+                      : AppTokens.textSecondary,
                 ),
+                child: Text(occupant.name, overflow: TextOverflow.ellipsis),
               ),
             ),
             if (participant != null) ...[
-              const SizedBox(width: 4),
+              const SizedBox(width: 6),
+              _VoiceOccupantSpeakingMeter(active: isSpeaking, accent: accent),
+              const SizedBox(width: 6),
               Icon(
                 participant.isMicrophoneEnabled ? Icons.mic : Icons.mic_off,
                 size: 14,
@@ -458,6 +456,224 @@ class _VoiceOccupantRow extends StatelessWidget {
       displayName: occupant.name,
       child: row,
     );
+  }
+}
+
+class _VoiceOccupantAvatar extends StatelessWidget {
+  const _VoiceOccupantAvatar({
+    required this.occupant,
+    required this.accent,
+    required this.speaking,
+  });
+
+  final _VoiceOccupant occupant;
+  final Color accent;
+  final bool speaking;
+
+  @override
+  Widget build(BuildContext context) {
+    final initial = occupant.name.isEmpty
+        ? '?'
+        : occupant.name[0].toUpperCase();
+    final image = occupant.avatarUrl;
+    return SizedBox.square(
+      dimension: 32,
+      child: Center(
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          curve: Curves.easeOutCubic,
+          width: 24,
+          height: 24,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: image == null
+                ? LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      Color.alphaBlend(
+                        accent.withValues(alpha: speaking ? 0.54 : 0.32),
+                        AppTokens.surface3,
+                      ),
+                      Color.alphaBlend(
+                        accent.withValues(alpha: speaking ? 0.24 : 0.10),
+                        AppTokens.surface2,
+                      ),
+                    ],
+                  )
+                : null,
+            color: image == null ? null : AppTokens.surface3,
+            border: Border.all(
+              color: speaking
+                  ? accent.withValues(alpha: 0.72)
+                  : Colors.white.withValues(alpha: 0.05),
+              width: speaking ? 1.3 : 1,
+            ),
+            boxShadow: [
+              if (speaking)
+                BoxShadow(
+                  color: accent.withValues(alpha: 0.20),
+                  blurRadius: 9,
+                  spreadRadius: -4,
+                ),
+            ],
+          ),
+          child: ClipOval(
+            child: image == null
+                ? Center(child: _VoiceOccupantInitial(initial: initial))
+                : AppFileImage(
+                    path: image,
+                    width: 24,
+                    height: 24,
+                    fallback: Center(
+                      child: _VoiceOccupantInitial(initial: initial),
+                    ),
+                  ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _VoiceOccupantInitial extends StatelessWidget {
+  const _VoiceOccupantInitial({required this.initial});
+
+  final String initial;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      initial,
+      style: const TextStyle(
+        fontFamily: 'Geist',
+        fontSize: 11,
+        fontWeight: FontWeight.w700,
+        color: AppTokens.textPrimary,
+      ),
+    );
+  }
+}
+
+class _VoiceOccupantSpeakingMeter extends StatefulWidget {
+  const _VoiceOccupantSpeakingMeter({
+    required this.active,
+    required this.accent,
+  });
+
+  final bool active;
+  final Color accent;
+
+  @override
+  State<_VoiceOccupantSpeakingMeter> createState() =>
+      _VoiceOccupantSpeakingMeterState();
+}
+
+class _VoiceOccupantSpeakingMeterState
+    extends State<_VoiceOccupantSpeakingMeter>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 780),
+    );
+    if (widget.active) {
+      _controller.repeat();
+    }
+  }
+
+  @override
+  void didUpdateWidget(_VoiceOccupantSpeakingMeter oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.active == oldWidget.active) return;
+    if (widget.active) {
+      _controller.repeat();
+    } else {
+      _controller.stop();
+      _controller.value = 0;
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!widget.active) {
+      return const SizedBox(width: 16, height: 16);
+    }
+
+    return RepaintBoundary(
+      key: const ValueKey('voice-occupant-speaking-meter'),
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, _) => CustomPaint(
+          painter: _VoiceOccupantMeterPainter(
+            progress: _controller.value,
+            accent: widget.accent,
+          ),
+          child: const SizedBox(width: 16, height: 16),
+        ),
+      ),
+    );
+  }
+}
+
+class _VoiceOccupantMeterPainter extends CustomPainter {
+  const _VoiceOccupantMeterPainter({
+    required this.progress,
+    required this.accent,
+  });
+
+  final double progress;
+  final Color accent;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const barWidth = 2.2;
+    const gap = 1.65;
+    const minHeight = 4.0;
+    const maxHeight = 13.0;
+    const phases = [0.0, 0.34, 0.68, 0.18];
+    const weights = [0.68, 1.0, 0.82, 0.54];
+    final totalWidth = barWidth * phases.length + gap * (phases.length - 1);
+    final startX = (size.width - totalWidth) / 2;
+    final centerY = size.height / 2;
+    final paint = Paint()..style = PaintingStyle.fill;
+
+    for (var index = 0; index < phases.length; index++) {
+      final phase = (progress + phases[index]) % 1;
+      final wave = (math.sin(phase * math.pi * 2) + 1) / 2;
+      final eased = Curves.easeInOutCubic.transform(wave);
+      final height =
+          minHeight + (maxHeight - minHeight) * eased * weights[index];
+      final x = startX + index * (barWidth + gap);
+      final rect = Rect.fromLTWH(x, centerY - height / 2, barWidth, height);
+      paint.shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [
+          accent.withValues(alpha: 0.95),
+          accent.withValues(alpha: 0.36),
+        ],
+      ).createShader(rect);
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(rect, const Radius.circular(barWidth)),
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_VoiceOccupantMeterPainter oldDelegate) {
+    return oldDelegate.progress != progress || oldDelegate.accent != accent;
   }
 }
 

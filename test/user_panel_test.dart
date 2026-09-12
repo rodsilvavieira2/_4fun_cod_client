@@ -309,6 +309,8 @@ void main() {
     expect(find.text('42 ms'), findsNothing);
     expect(find.byIcon(Icons.wifi_rounded), findsOneWidget);
     expect(find.byTooltip('Latência da conexão: 42 ms'), findsOneWidget);
+    expect(find.text('Câmera'), findsOneWidget);
+    expect(find.text('Tela'), findsOneWidget);
     expect(find.byIcon(Icons.videocam_off_outlined), findsOneWidget);
     expect(find.byIcon(Icons.present_to_all), findsOneWidget);
     expect(find.byIcon(Icons.mic_none), findsOneWidget);
@@ -383,16 +385,11 @@ void main() {
 
     final cameraIcon = find.byIcon(Icons.videocam_off_outlined);
     expect(cameraIcon, findsOneWidget);
-    // Caixa do IconButton (34px de altura, largura cheia).
+    // Caixa do botão (38px de altura, largura cheia).
     final buttonBox = tester.getRect(
-      find.ancestor(
-        of: cameraIcon,
-        matching: find.byWidgetPredicate(
-          (w) => w is SizedBox && w.height == 34,
-        ),
-      ),
+      find.byKey(const ValueKey('voice-action-button-Câmera')),
     );
-    expect(buttonBox.height, 34);
+    expect(buttonBox.height, 38);
 
     // Cursor ativo do dispositivo de mouse (id 1 por padrão nos testes).
     MouseCursor? cursorOf(int device) =>

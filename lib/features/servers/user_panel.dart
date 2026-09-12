@@ -450,6 +450,7 @@ class _VoiceConnectionPanel extends StatelessWidget {
                   icon: state.isCameraEnabled
                       ? Icons.videocam
                       : Icons.videocam_off_outlined,
+                  label: 'Câmera',
                   tooltip: state.isCameraEnabled
                       ? 'Desativar câmera'
                       : 'Ativar câmera',
@@ -461,6 +462,7 @@ class _VoiceConnectionPanel extends StatelessWidget {
               Expanded(
                 child: _VoiceActionButton(
                   icon: Icons.present_to_all,
+                  label: 'Tela',
                   tooltip: state.isScreenSharing
                       ? 'Parar compartilhamento'
                       : 'Compartilhar tela',
@@ -1023,43 +1025,160 @@ class _SplitMediaControl extends StatelessWidget {
   }
 }
 
-class _VoiceActionButton extends StatelessWidget {
+class _VoiceActionButton extends StatefulWidget {
   const _VoiceActionButton({
     required this.icon,
+    required this.label,
     required this.tooltip,
     required this.isActive,
     required this.onPressed,
   });
 
   final IconData icon;
+  final String label;
   final String tooltip;
   final bool isActive;
   final VoidCallback? onPressed;
 
   @override
+  State<_VoiceActionButton> createState() => _VoiceActionButtonState();
+}
+
+class _VoiceActionButtonState extends State<_VoiceActionButton> {
+  bool _hovered = false;
+  bool _pressed = false;
+
+  @override
   Widget build(BuildContext context) {
-    // Cursor click vem do tema (iconButtonTheme): mãozinha na área cheia,
-    // seta quando desabilitado.
-    return SizedBox(
-      height: 34,
-      child: IconButton(
-        tooltip: tooltip,
-        onPressed: onPressed,
-        icon: Icon(icon, size: 17),
-        style: IconButton.styleFrom(
-          foregroundColor: isActive
-              ? AppTokens.accentDanger
-              : AppTokens.accentGreen,
-          disabledForegroundColor: AppTokens.textMuted,
-          backgroundColor: AppTokens.surfaceBase,
-          minimumSize: Size.zero,
-          padding: EdgeInsets.zero,
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppRadius.sm),
+    final enabled = widget.onPressed != null;
+    final foreground = _foregroundColor(enabled);
+    final background = _backgroundColor(enabled);
+    final border = _borderColor(enabled);
+    final shadow = _shadow(enabled);
+
+    return Tooltip(
+      message: widget.tooltip,
+      child: Semantics(
+        button: true,
+        enabled: enabled,
+        selected: widget.isActive,
+        label: widget.tooltip,
+        child: MouseRegion(
+          cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
+          onEnter: (_) => setState(() => _hovered = true),
+          onExit: (_) => setState(() {
+            _hovered = false;
+            _pressed = false;
+          }),
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: widget.onPressed,
+            onTapDown: enabled ? (_) => setState(() => _pressed = true) : null,
+            onTapUp: enabled ? (_) => setState(() => _pressed = false) : null,
+            onTapCancel: enabled
+                ? () => setState(() => _pressed = false)
+                : null,
+            child: AnimatedScale(
+              scale: _pressed ? 0.985 : 1,
+              duration: const Duration(milliseconds: 90),
+              curve: Curves.easeOutCubic,
+              child: AnimatedContainer(
+                key: ValueKey('voice-action-button-${widget.label}'),
+                duration: const Duration(milliseconds: 140),
+                curve: Curves.easeOutCubic,
+                height: 38,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(
+                  color: background,
+                  borderRadius: BorderRadius.circular(AppRadius.sm),
+                  border: Border.all(color: border, width: 1),
+                  boxShadow: shadow,
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(widget.icon, size: 16, color: foreground),
+                    const SizedBox(width: 7),
+                    Flexible(
+                      child: Text(
+                        widget.label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontFamily: 'Geist',
+                          fontSize: 12,
+                          height: 1,
+                          fontWeight: widget.isActive
+                              ? FontWeight.w700
+                              : FontWeight.w600,
+                          color: foreground,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
         ),
       ),
     );
+  }
+
+  Color _foregroundColor(bool enabled) {
+    if (!enabled) return AppTokens.textMuted.withValues(alpha: 0.48);
+    if (widget.isActive) return AppTokens.accentGreen;
+    return _hovered ? Colors.white : AppTokens.textPrimary;
+  }
+
+  Color _backgroundColor(bool enabled) {
+    if (!enabled) {
+      return Color.alphaBlend(
+        Colors.white.withValues(alpha: 0.018),
+        AppTokens.surfaceBase,
+      );
+    }
+    if (widget.isActive) {
+      return Color.alphaBlend(
+        AppTokens.accentGreen.withValues(alpha: _pressed ? 0.28 : 0.20),
+        AppTokens.surface2,
+      );
+    }
+    return Color.alphaBlend(
+      Colors.white.withValues(
+        alpha: _pressed ? 0.16 : (_hovered ? 0.12 : 0.085),
+      ),
+      AppTokens.surface2,
+    );
+  }
+
+  Color _borderColor(bool enabled) {
+    if (!enabled) return Colors.white.withValues(alpha: 0.035);
+    if (widget.isActive) return AppTokens.accentGreen.withValues(alpha: 0.58);
+    if (_hovered) return Colors.white.withValues(alpha: 0.24);
+    return AppTokens.borderSubtle;
+  }
+
+  List<BoxShadow> _shadow(bool enabled) {
+    if (!enabled) return const [];
+    if (widget.isActive) {
+      return [
+        BoxShadow(
+          color: AppTokens.accentGreen.withValues(alpha: 0.18),
+          blurRadius: 16,
+          spreadRadius: -7,
+          offset: const Offset(0, 6),
+        ),
+      ];
+    }
+    return [
+      BoxShadow(
+        color: Colors.black.withValues(alpha: 0.22),
+        blurRadius: 10,
+        spreadRadius: -8,
+        offset: const Offset(0, 5),
+      ),
+    ];
   }
 }

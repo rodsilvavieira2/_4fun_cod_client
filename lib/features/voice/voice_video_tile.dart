@@ -18,6 +18,57 @@ enum VoiceVideoTileRole { spotlight, grid, miniature }
 /// participante podem aparecer lado a lado no mesmo grid.
 enum VoiceVideoSource { camera, screen, avatar }
 
+const _miniatureShadows = <BoxShadow>[
+  BoxShadow(
+    color: Color(0x66000000),
+    offset: Offset(0, 8),
+    blurRadius: 18,
+    spreadRadius: -8,
+  ),
+  BoxShadow(color: Color(0x33000000), offset: Offset(0, 1), blurRadius: 4),
+];
+
+const _goldenAngle = 137.50776405003785;
+
+class _ParticipantVisualPalette {
+  const _ParticipantVisualPalette({
+    required this.base,
+    required this.secondary,
+    required this.highlight,
+    required this.deep,
+  });
+
+  final Color base;
+  final Color secondary;
+  final Color highlight;
+  final Color deep;
+}
+
+_ParticipantVisualPalette _paletteForParticipant(RtcParticipant participant) {
+  final hash = _stableHash('${participant.id}|${participant.name}');
+  final hue = ((hash % 1024) * _goldenAngle) % 360;
+  final secondaryHue = (hue + 34 + ((hash >> 10) & 0x2F)) % 360;
+  final highlightHue = (hue + 12 + ((hash >> 17) & 0x1F)) % 360;
+  final deepHue = (hue + 334 + ((hash >> 24) & 0x19)) % 360;
+
+  return _ParticipantVisualPalette(
+    base: HSVColor.fromAHSV(1, hue, 0.44, 0.70).toColor(),
+    secondary: HSVColor.fromAHSV(1, secondaryHue, 0.34, 0.60).toColor(),
+    highlight: HSVColor.fromAHSV(1, highlightHue, 0.28, 0.82).toColor(),
+    deep: HSVColor.fromAHSV(1, deepHue, 0.46, 0.20).toColor(),
+  );
+}
+
+int _stableHash(String value) {
+  const fnvPrime = 0x01000193;
+  var hash = 0x811C9DC5;
+  for (final unit in value.codeUnits) {
+    hash ^= unit;
+    hash = (hash * fnvPrime) & 0xFFFFFFFF;
+  }
+  return hash;
+}
+
 /// Tile de vídeo de um participante (Fase 5 + Fase 6).
 ///
 /// - Fonte do vídeo (Fase 6): no papel [VoiceVideoTileRole.spotlight], a
@@ -118,7 +169,6 @@ class _VoiceVideoTileState extends ConsumerState<VoiceVideoTile> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final rtc = ref.read(rtcServiceProvider);
     final participant = widget.participant;
     final isLocal = participant.id == rtc.localParticipantId;
@@ -129,61 +179,79 @@ class _VoiceVideoTileState extends ConsumerState<VoiceVideoTile> {
     };
     final hasVideo = trackRef != null;
     final isMiniature = widget.role == VoiceVideoTileRole.miniature;
+    final palette = _paletteForParticipant(participant);
+    final tileRadius = BorderRadius.circular(AppRadius.lg);
+    final frameColor = participant.isSpeaking
+        ? palette.base
+        : isMiniature
+        ? AppTokens.borderSubtle
+        : AppTokens.borderHairline;
+    final frameWidth = participant.isSpeaking ? 2.0 : 1.0;
 
     final tile = GestureDetector(
       onTap: widget.onTap,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            if (hasVideo)
-              RtcVideoView(
-                trackRef: trackRef,
-                // Tela em destaque pede até 2x a densidade (960px → 1080p);
-                // demais casos seguem em auto para economizar banda.
-                highDensity:
-                    widget.source == VoiceVideoSource.screen &&
-                    widget.role == VoiceVideoTileRole.spotlight,
-              )
-            else
-              _AvatarPlaceholder(participant: participant),
-            if (isMiniature)
-              _MiniatureOverlay(
-                participant: participant,
-                source: widget.source,
-                showAvatar: hasVideo,
-              )
-            else
-              _TileOverlay(
-                participant: participant,
-                source: widget.source,
-                isLocal: isLocal,
-                showAvatar: hasVideo,
-              ),
-            // Transmissão de tela (grid/spotlight): badge LIVE + qualidade
-            // no top-left e expandir no top-right — sempre visível, como no
-            // Discord. Nome do transmissor continua no badge inferior.
-            if (widget.source == VoiceVideoSource.screen && !isMiniature)
-              _TransmitTopOverlay(
-                qualityLabel: isLocal ? widget.qualityLabel : null,
-                isFullscreen: widget.isFullscreen,
-                onExpand: widget.onExpand,
-              ),
-            // Active speaker: borda de 2px em primary (miniatura não tem).
-            if (participant.isSpeaking && !isMiniature)
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: tileRadius,
+          boxShadow: isMiniature ? _miniatureShadows : null,
+        ),
+        child: ClipRRect(
+          borderRadius: tileRadius,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (hasVideo)
+                RtcVideoView(
+                  trackRef: trackRef,
+                  // Tela em destaque pede até 2x a densidade (960px → 1080p);
+                  // demais casos seguem em auto para economizar banda.
+                  highDensity:
+                      widget.source == VoiceVideoSource.screen &&
+                      widget.role == VoiceVideoTileRole.spotlight,
+                )
+              else
+                _AvatarPlaceholder(
+                  participant: participant,
+                  compact: isMiniature,
+                  speaking: participant.isSpeaking,
+                  palette: palette,
+                ),
+              if (isMiniature) const _MiniatureBottomScrim(),
+              if (isMiniature)
+                _MiniatureOverlay(
+                  participant: participant,
+                  source: widget.source,
+                  showAvatar: hasVideo,
+                  palette: palette,
+                )
+              else
+                _TileOverlay(
+                  participant: participant,
+                  source: widget.source,
+                  isLocal: isLocal,
+                  showAvatar: hasVideo,
+                  palette: palette,
+                ),
+              // Transmissão de tela (grid/spotlight): badge LIVE + qualidade
+              // no top-left e expandir no top-right — sempre visível, como no
+              // Discord. Nome do transmissor continua no badge inferior.
+              if (widget.source == VoiceVideoSource.screen && !isMiniature)
+                _TransmitTopOverlay(
+                  qualityLabel: isLocal ? widget.qualityLabel : null,
+                  isFullscreen: widget.isFullscreen,
+                  onExpand: widget.onExpand,
+                ),
+              // Moldura fixa para leitura sobre vídeo; fala ativa ganha primary.
               IgnorePointer(
                 child: DecoratedBox(
                   decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: theme.colorScheme.primary,
-                      width: 2,
-                    ),
+                    borderRadius: tileRadius,
+                    border: Border.all(color: frameColor, width: frameWidth),
                   ),
                 ),
               ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -203,6 +271,28 @@ class _VoiceVideoTileState extends ConsumerState<VoiceVideoTile> {
   }
 }
 
+class _MiniatureBottomScrim extends StatelessWidget {
+  const _MiniatureBottomScrim();
+
+  @override
+  Widget build(BuildContext context) {
+    return const IgnorePointer(
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0x00000000), Color(0x12000000), Color(0xC4000000)],
+            stops: [0.38, 0.64, 1],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+String _initialFor(String name) => name.isEmpty ? '?' : name[0].toUpperCase();
+
 /// Overlay completo (grid/spotlight): badge compacto com avatar + nome +
 /// badge "Você" + volume individual, legível sobre o vídeo sem scrim cheia.
 class _TileOverlay extends StatelessWidget {
@@ -211,11 +301,13 @@ class _TileOverlay extends StatelessWidget {
     required this.source,
     required this.isLocal,
     required this.showAvatar,
+    required this.palette,
   });
 
   final RtcParticipant participant;
   final VoiceVideoSource source;
   final bool isLocal;
+  final _ParticipantVisualPalette palette;
 
   /// Exibe a inicial sobre o vídeo. Com placeholder (sem vídeo), o avatar
   /// grande já identifica — mostrar de novo duplicaria.
@@ -238,7 +330,12 @@ class _TileOverlay extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (showAvatar) _NameAvatar(name: participant.name, radius: 14),
+            if (showAvatar)
+              _NameAvatar(
+                name: participant.name,
+                radius: 14,
+                accent: palette.base,
+              ),
             if (showAvatar) const SizedBox(width: 6),
             Flexible(
               child: Text(
@@ -378,23 +475,23 @@ class _TransmitTopOverlay extends StatelessWidget {
 
 /// Avatar circular com a inicial, cor cíclica por nome (tokens do app).
 class _NameAvatar extends StatelessWidget {
-  const _NameAvatar({required this.name, required this.radius});
+  const _NameAvatar({
+    required this.name,
+    required this.radius,
+    required this.accent,
+  });
 
   final String name;
   final double radius;
+  final Color accent;
 
   @override
   Widget build(BuildContext context) {
-    final colors = AppTokens.authorColors;
-    final index = name.isEmpty
-        ? 0
-        : name.codeUnits.fold<int>(0, (sum, unit) => sum + unit) %
-              colors.length;
     return CircleAvatar(
       radius: radius,
-      backgroundColor: colors[index],
+      backgroundColor: accent,
       child: Text(
-        name.isEmpty ? '?' : name[0].toUpperCase(),
+        _initialFor(name),
         style: TextStyle(
           color: Colors.white,
           fontSize: radius * 0.95,
@@ -412,10 +509,12 @@ class _MiniatureOverlay extends StatelessWidget {
     required this.participant,
     required this.source,
     required this.showAvatar,
+    required this.palette,
   });
 
   final RtcParticipant participant;
   final VoiceVideoSource source;
+  final _ParticipantVisualPalette palette;
 
   /// Mesmo motivo do [_TileOverlay.showAvatar]: sem vídeo, o placeholder
   /// já mostra o avatar grande.
@@ -425,27 +524,34 @@ class _MiniatureOverlay extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Positioned(
-      left: 6,
-      bottom: 6,
+      left: 8,
+      bottom: 8,
       child: Container(
         constraints: const BoxConstraints(maxWidth: 176),
-        padding: const EdgeInsets.fromLTRB(3, 3, 7, 3),
+        padding: const EdgeInsets.fromLTRB(4, 4, 8, 4),
         decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.72),
-          borderRadius: BorderRadius.circular(8),
+          color: Colors.black.withValues(alpha: 0.68),
+          borderRadius: BorderRadius.circular(9),
           border: Border.all(color: AppTokens.borderSubtle),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (showAvatar) _NameAvatar(name: participant.name, radius: 9),
-            if (showAvatar) const SizedBox(width: 5),
+            if (showAvatar)
+              _NameAvatar(
+                name: participant.name,
+                radius: 10,
+                accent: palette.base,
+              ),
+            if (showAvatar) const SizedBox(width: 6),
             Flexible(
               child: Text(
                 participant.name,
+                maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: theme.textTheme.labelSmall?.copyWith(
                   color: Colors.white,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
             ),
@@ -461,35 +567,240 @@ class _MiniatureOverlay extends StatelessWidget {
   }
 }
 
-/// Placeholder de tile SEM vídeo: apenas o avatar circular com a inicial —
-/// o estado "sem vídeo" já é sinalizado pelo badge superior e pelo overlay
-/// com o nome (adaptação visual do `_ParticipantTile` da lista da Fase 4).
-class _AvatarPlaceholder extends StatelessWidget {
-  const _AvatarPlaceholder({required this.participant});
+class _PlaceholderGradientWash extends StatelessWidget {
+  const _PlaceholderGradientWash({
+    required this.palette,
+    required this.compact,
+    required this.speaking,
+  });
 
-  final RtcParticipant participant;
+  final _ParticipantVisualPalette palette;
+  final bool compact;
+  final bool speaking;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final boost = speaking ? 1.14 : 1.0;
+    return IgnorePointer(
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: RadialGradient(
+                center: const Alignment(-0.72, -0.86),
+                radius: compact ? 0.86 : 0.72,
+                colors: [
+                  palette.highlight.withValues(
+                    alpha: (compact ? 0.09 : 0.10) * boost,
+                  ),
+                  palette.base.withValues(alpha: compact ? 0.035 : 0.045),
+                  Colors.transparent,
+                ],
+                stops: const [0, 0.46, 1],
+              ),
+            ),
+          ),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: RadialGradient(
+                center: const Alignment(0.82, 0.72),
+                radius: compact ? 1.08 : 0.92,
+                colors: [
+                  palette.secondary.withValues(alpha: compact ? 0.055 : 0.07),
+                  Colors.transparent,
+                ],
+                stops: const [0, 0.96],
+              ),
+            ),
+          ),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.white.withValues(alpha: 0.018),
+                  Colors.transparent,
+                  Colors.black.withValues(alpha: compact ? 0.28 : 0.34),
+                ],
+                stops: const [0, 0.52, 1],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PlaceholderAvatar extends StatelessWidget {
+  const _PlaceholderAvatar({
+    required this.name,
+    required this.compact,
+    required this.speaking,
+    required this.palette,
+  });
+
+  final String name;
+  final bool compact;
+  final bool speaking;
+  final _ParticipantVisualPalette palette;
+
+  @override
+  Widget build(BuildContext context) {
+    final radius = compact ? 30.0 : 42.0;
+    final diameter = radius * 2;
+    return Container(
+      width: diameter,
+      height: diameter,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color.alphaBlend(
+              palette.highlight.withValues(alpha: 0.48),
+              AppTokens.surface3,
+            ),
+            Color.alphaBlend(
+              palette.base.withValues(alpha: 0.62),
+              AppTokens.surface3,
+            ),
+            Color.alphaBlend(
+              palette.deep.withValues(alpha: 0.52),
+              AppTokens.surface3,
+            ),
+          ],
+          stops: const [0, 0.62, 1],
+        ),
+        border: Border.all(
+          color: speaking
+              ? palette.highlight.withValues(alpha: 0.72)
+              : Colors.white.withValues(alpha: 0.07),
+          width: speaking ? 1.25 : 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: palette.base.withValues(
+              alpha: speaking
+                  ? compact
+                        ? 0.28
+                        : 0.34
+                  : compact
+                  ? 0.12
+                  : 0.16,
+            ),
+            blurRadius: speaking
+                ? compact
+                      ? 22
+                      : 30
+                : compact
+                ? 14
+                : 22,
+            spreadRadius: compact ? -3 : -6,
+          ),
+          const BoxShadow(
+            color: Color(0x66000000),
+            offset: Offset(0, 10),
+            blurRadius: 24,
+            spreadRadius: -12,
+          ),
+        ],
+      ),
+      child: Center(
+        child: Text(
+          _initialFor(name),
+          style: TextStyle(
+            color: AppTokens.textPrimary,
+            fontSize: compact ? 28 : 36,
+            fontWeight: FontWeight.w700,
+            fontFamily: 'Geist',
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Placeholder de tile SEM vídeo: avatar central com profundidade e badge de
+/// estado, preservando a identificação pelo overlay de nome.
+class _AvatarPlaceholder extends StatelessWidget {
+  const _AvatarPlaceholder({
+    required this.participant,
+    required this.compact,
+    required this.speaking,
+    required this.palette,
+  });
+
+  final RtcParticipant participant;
+  final bool compact;
+  final bool speaking;
+  final _ParticipantVisualPalette palette;
+
+  @override
+  Widget build(BuildContext context) {
     final name = participant.name;
     return Container(
       key: const ValueKey('voice-video-placeholder'),
       decoration: BoxDecoration(
         color: AppTokens.surface1,
-        border: Border.all(color: AppTokens.borderHairline),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color.alphaBlend(
+              palette.base.withValues(alpha: compact ? 0.055 : 0.07),
+              AppTokens.surface2,
+            ),
+            Color.alphaBlend(
+              palette.secondary.withValues(alpha: compact ? 0.035 : 0.045),
+              AppTokens.surface1,
+            ),
+            Color.alphaBlend(
+              palette.deep.withValues(alpha: compact ? 0.12 : 0.16),
+              AppTokens.surfaceBase,
+            ),
+          ],
+          stops: const [0, 0.58, 1],
+        ),
       ),
       child: Stack(
         children: [
-          const Positioned(left: 12, top: 12, child: _NoVideoBadge()),
+          Positioned.fill(
+            child: _PlaceholderGradientWash(
+              palette: palette,
+              compact: compact,
+              speaking: speaking,
+            ),
+          ),
+          if (!compact)
+            Positioned(
+              left: 12,
+              top: 12,
+              child: _NoVideoBadge(compact: compact),
+            ),
           Center(
-            child: CircleAvatar(
-              radius: 32,
-              backgroundColor: AppTokens.surface3,
-              child: Text(
-                name.isEmpty ? '?' : name[0].toUpperCase(),
-                style: theme.textTheme.headlineMedium?.copyWith(
-                  color: AppTokens.textPrimary,
+            child: Transform.translate(
+              offset: const Offset(0, -8),
+              child: SizedBox.square(
+                dimension: compact ? 100 : 136,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    _SpeakingAvatarPulse(
+                      active: speaking,
+                      palette: palette,
+                      compact: compact,
+                    ),
+                    _PlaceholderAvatar(
+                      name: name,
+                      compact: compact,
+                      speaking: speaking,
+                      palette: palette,
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -500,33 +811,170 @@ class _AvatarPlaceholder extends StatelessWidget {
   }
 }
 
+class _SpeakingAvatarPulse extends StatefulWidget {
+  const _SpeakingAvatarPulse({
+    required this.active,
+    required this.palette,
+    required this.compact,
+  });
+
+  final bool active;
+  final _ParticipantVisualPalette palette;
+  final bool compact;
+
+  @override
+  State<_SpeakingAvatarPulse> createState() => _SpeakingAvatarPulseState();
+}
+
+class _SpeakingAvatarPulseState extends State<_SpeakingAvatarPulse>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    );
+    if (widget.active) {
+      _controller.repeat();
+    }
+  }
+
+  @override
+  void didUpdateWidget(_SpeakingAvatarPulse oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.active == oldWidget.active) return;
+    if (widget.active) {
+      _controller.repeat();
+    } else {
+      _controller.stop();
+      _controller.value = 0;
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!widget.active) return const SizedBox.shrink();
+
+    return RepaintBoundary(
+      key: const ValueKey('voice-speaking-avatar-pulse'),
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, _) {
+          return CustomPaint(
+            painter: _SpeakingPulsePainter(
+              progress: _controller.value,
+              palette: widget.palette,
+              compact: widget.compact,
+            ),
+            child: const SizedBox.expand(),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _SpeakingPulsePainter extends CustomPainter {
+  const _SpeakingPulsePainter({
+    required this.progress,
+    required this.palette,
+    required this.compact,
+  });
+
+  final double progress;
+  final _ParticipantVisualPalette palette;
+  final bool compact;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = size.center(Offset.zero);
+    final baseRadius = compact ? 30.0 : 42.0;
+    final travel = compact ? 18.0 : 26.0;
+    final fill = Paint()
+      ..style = PaintingStyle.fill
+      ..shader = RadialGradient(
+        colors: [
+          palette.highlight.withValues(alpha: 0.07),
+          palette.base.withValues(alpha: 0.035),
+          Colors.transparent,
+        ],
+        stops: const [0, 0.58, 1],
+      ).createShader(Rect.fromCircle(center: center, radius: baseRadius + 12));
+    canvas.drawCircle(center, baseRadius + 4, fill);
+
+    for (final wave in [progress, (progress + 0.48) % 1]) {
+      final eased = Curves.easeOutCubic.transform(wave);
+      final radius = baseRadius + travel * eased;
+      final opacity = (1 - eased) * 0.38;
+      final strokeWidth = (compact ? 2.2 : 2.8) - eased;
+      final ringRect = Rect.fromCircle(center: center, radius: radius);
+      final paint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = strokeWidth.clamp(1.0, 3.0)
+        ..shader = SweepGradient(
+          colors: [
+            palette.highlight.withValues(alpha: opacity.clamp(0.0, 0.38)),
+            palette.base.withValues(alpha: (opacity * 0.74).clamp(0.0, 0.28)),
+            palette.secondary.withValues(
+              alpha: (opacity * 0.56).clamp(0.0, 0.22),
+            ),
+            palette.highlight.withValues(alpha: opacity.clamp(0.0, 0.38)),
+          ],
+          stops: const [0, 0.36, 0.74, 1],
+        ).createShader(ringRect);
+      canvas.drawCircle(center, radius, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_SpeakingPulsePainter oldDelegate) {
+    return oldDelegate.progress != progress ||
+        oldDelegate.palette != palette ||
+        oldDelegate.compact != compact;
+  }
+}
+
 class _NoVideoBadge extends StatelessWidget {
-  const _NoVideoBadge();
+  const _NoVideoBadge({required this.compact});
+
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 6 : 7,
+        vertical: compact ? 3 : 4,
+      ),
       decoration: BoxDecoration(
-        color: AppTokens.surface2,
+        color: Colors.black.withValues(alpha: 0.46),
         borderRadius: AppRadius.brSm,
         border: Border.all(color: AppTokens.borderSubtle),
       ),
-      child: const Row(
+      child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(
             Icons.videocam_off_outlined,
-            size: 13,
+            size: compact ? 12 : 13,
             color: AppTokens.textSecondary,
           ),
-          SizedBox(width: 5),
+          SizedBox(width: compact ? 4 : 5),
           Text(
             'Sem vídeo',
             style: TextStyle(
               fontFamily: 'Geist',
-              fontSize: 10.5,
-              fontWeight: FontWeight.w500,
+              fontSize: compact ? 10 : 10.5,
+              fontWeight: FontWeight.w600,
               color: AppTokens.textSecondary,
             ),
           ),

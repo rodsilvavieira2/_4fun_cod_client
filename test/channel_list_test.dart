@@ -99,6 +99,7 @@ void main() {
     String? localParticipantId,
     VoidCallback? onOpenSettings,
     VoidCallback? onLeaveServer,
+    bool settle = true,
   }) async {
     await tester.pumpWidget(
       ProviderScope(
@@ -129,7 +130,12 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    if (settle) {
+      await tester.pumpAndSettle();
+    } else {
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+    }
   }
 
   testWidgets(
@@ -250,5 +256,62 @@ void main() {
 
     final checkbox = tester.widget<Checkbox>(find.byType(Checkbox));
     expect(checkbox.value, isTrue);
+  });
+
+  testWidgets('ocupante de voz mostra medidor enquanto está falando', (
+    tester,
+  ) async {
+    _channels = const [
+      ServerChannel(id: 'voice-1', name: 'chat', type: ChannelType.voice),
+    ];
+    _detail = ServerDetail(
+      server: const Server(id: 'server-1', name: 'Servidor de teste'),
+      channels: _channels,
+      members: [
+        ServerMember(
+          id: 'member-1',
+          userId: 'soul',
+          role: ServerRole.member,
+          joinedAt: DateTime.fromMillisecondsSinceEpoch(0),
+          user: const User(
+            id: 'soul',
+            name: 'SoulEater',
+            username: 'SoulEater',
+          ),
+        ),
+      ],
+      myRole: ServerRole.owner,
+    );
+    _voicePresence = const {
+      'voice-1': {'soul'},
+    };
+
+    await pumpChannelList(
+      tester,
+      canManageServer: true,
+      activeVoiceChannelId: 'voice-1',
+      activeVoiceParticipants: const [
+        RtcParticipant(
+          id: 'user_soul',
+          name: 'SoulEater',
+          isMicrophoneEnabled: true,
+          isCameraEnabled: false,
+          isScreenSharing: false,
+          isSystemAudioEnabled: false,
+          isSpeaking: true,
+        ),
+      ],
+      localParticipantId: 'user-local',
+      settle: false,
+    );
+    await tester.pump(const Duration(milliseconds: 120));
+
+    expect(find.text('SoulEater'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('voice-occupant-speaking-meter')),
+      findsOneWidget,
+    );
+
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 }

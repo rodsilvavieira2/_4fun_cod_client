@@ -29,6 +29,7 @@ void main() {
     required VoiceVideoTileRole role,
     String? qualityLabel,
     VoidCallback? onExpand,
+    Size size = const Size(640, 360),
   }) async {
     await tester.pumpWidget(
       ProviderScope(
@@ -37,8 +38,8 @@ void main() {
           theme: theme4funCod,
           home: Scaffold(
             body: SizedBox(
-              width: 640,
-              height: 360,
+              width: size.width,
+              height: size.height,
               child: VoiceVideoTile(
                 arg: (serverId: 'server-1', channelId: 'voice-1'),
                 participant: participant,
@@ -186,4 +187,127 @@ void main() {
       expect(decoration.color, AppTokens.surface1);
     },
   );
+
+  testWidgets('miniatura sem vídeo oculta badge e mantém nome', (tester) async {
+    const participant = RtcParticipant(
+      id: 'user-1',
+      name: 'SoulEater',
+      isMicrophoneEnabled: true,
+      isCameraEnabled: false,
+      isScreenSharing: false,
+      isSystemAudioEnabled: false,
+      isSpeaking: false,
+    );
+
+    await pumpTile(
+      tester,
+      participant: participant,
+      source: VoiceVideoSource.avatar,
+      role: VoiceVideoTileRole.miniature,
+      size: const Size(192, 120),
+    );
+
+    expect(find.text('Sem vídeo'), findsNothing);
+    expect(find.text('SoulEater'), findsOneWidget);
+    expect(find.text('S'), findsOneWidget);
+  });
+
+  testWidgets('miniatura sem vídeo anima avatar enquanto fala', (tester) async {
+    const participant = RtcParticipant(
+      id: 'user-1',
+      name: 'SoulEater',
+      isMicrophoneEnabled: true,
+      isCameraEnabled: false,
+      isScreenSharing: false,
+      isSystemAudioEnabled: false,
+      isSpeaking: true,
+    );
+
+    await pumpTile(
+      tester,
+      participant: participant,
+      source: VoiceVideoSource.avatar,
+      role: VoiceVideoTileRole.miniature,
+      size: const Size(192, 120),
+    );
+    await tester.pump(const Duration(milliseconds: 120));
+
+    expect(find.text('Sem vídeo'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('voice-speaking-avatar-pulse')),
+      findsOneWidget,
+    );
+
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('participantes diferentes recebem gradientes base distintos', (
+    tester,
+  ) async {
+    const first = RtcParticipant(
+      id: 'user-1',
+      name: 'SoulEater',
+      isMicrophoneEnabled: true,
+      isCameraEnabled: false,
+      isScreenSharing: false,
+      isSystemAudioEnabled: false,
+      isSpeaking: false,
+    );
+    const second = RtcParticipant(
+      id: 'user-2',
+      name: 'Rodrigo',
+      isMicrophoneEnabled: true,
+      isCameraEnabled: false,
+      isScreenSharing: false,
+      isSystemAudioEnabled: false,
+      isSpeaking: false,
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [rtcServiceProvider.overrideWithValue(_FakeRtcService())],
+        child: MaterialApp(
+          theme: theme4funCod,
+          home: const Scaffold(
+            body: Row(
+              children: [
+                SizedBox(
+                  width: 192,
+                  height: 120,
+                  child: VoiceVideoTile(
+                    arg: (serverId: 'server-1', channelId: 'voice-1'),
+                    participant: first,
+                    role: VoiceVideoTileRole.miniature,
+                    source: VoiceVideoSource.avatar,
+                  ),
+                ),
+                SizedBox(
+                  width: 192,
+                  height: 120,
+                  child: VoiceVideoTile(
+                    arg: (serverId: 'server-1', channelId: 'voice-1'),
+                    participant: second,
+                    role: VoiceVideoTileRole.miniature,
+                    source: VoiceVideoSource.avatar,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final decorations = tester
+        .widgetList<Container>(
+          find.byKey(const ValueKey('voice-video-placeholder')),
+        )
+        .map((container) => container.decoration! as BoxDecoration)
+        .toList();
+    final firstGradient = decorations[0].gradient! as LinearGradient;
+    final secondGradient = decorations[1].gradient! as LinearGradient;
+
+    expect(firstGradient.colors.first, isNot(secondGradient.colors.first));
+  });
 }
