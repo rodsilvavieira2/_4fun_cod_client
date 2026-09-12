@@ -40,10 +40,9 @@ final fileImageBytesProvider = FutureProvider.family<Uint8List, String>((
   ref,
   url,
 ) async {
-  final res = await ref.watch(apiClientProvider).get<List<int>>(
-    url,
-    options: Options(responseType: ResponseType.bytes),
-  );
+  final res = await ref
+      .watch(apiClientProvider)
+      .get<List<int>>(url, options: Options(responseType: ResponseType.bytes));
   final data = res.data;
   if (data == null || data.isEmpty) {
     throw StateError('Resposta vazia ao baixar imagem: $url');
