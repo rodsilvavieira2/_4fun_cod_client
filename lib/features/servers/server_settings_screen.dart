@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_selector/file_selector.dart';
@@ -71,6 +73,7 @@ class _ServerSettingsContentState extends ConsumerState<ServerSettingsContent> {
   bool _initialized = false;
   bool _saving = false;
   bool _savingIcon = false;
+  List<int>? _previewIconBytes;
   bool _working = false;
   String? _savedName;
   String? _error;
@@ -151,6 +154,7 @@ class _ServerSettingsContentState extends ConsumerState<ServerSettingsContent> {
 
     setState(() {
       _savingIcon = true;
+      _previewIconBytes = bytes;
       _error = null;
     });
     try {
@@ -162,13 +166,26 @@ class _ServerSettingsContentState extends ConsumerState<ServerSettingsContent> {
             contentType: contentType,
           );
     } on ApiException catch (error) {
-      if (mounted) setState(() => _error = error.message);
+      if (mounted) {
+        setState(() {
+          _previewIconBytes = null;
+          _error = error.message;
+        });
+      }
     } catch (_) {
       if (mounted) {
-        setState(() => _error = 'Falha ao enviar a imagem. Tente novamente.');
+        setState(() {
+          _previewIconBytes = null;
+          _error = 'Falha ao enviar a imagem. Tente novamente.';
+        });
       }
     } finally {
-      if (mounted) setState(() => _savingIcon = false);
+      if (mounted) {
+        setState(() {
+          _savingIcon = false;
+          _previewIconBytes = null;
+        });
+      }
     }
   }
 
@@ -397,6 +414,7 @@ class _ServerSettingsContentState extends ConsumerState<ServerSettingsContent> {
               server: detail.server,
               loading: _savingIcon,
               enabled: !_saving && !_working,
+              previewBytes: _previewIconBytes,
               onPick: _pickIcon,
               onRemove: _removeIcon,
             ),
@@ -487,6 +505,7 @@ class _ServerIconEditor extends StatelessWidget {
     required this.enabled,
     required this.onPick,
     required this.onRemove,
+    this.previewBytes,
   });
 
   final Server server;
@@ -495,9 +514,13 @@ class _ServerIconEditor extends StatelessWidget {
   final VoidCallback onPick;
   final VoidCallback onRemove;
 
+  /// Preview local otimista (bytes recém-escolhidos, antes do `READY`).
+  final List<int>? previewBytes;
+
   @override
   Widget build(BuildContext context) {
     final iconUrl = server.iconUrl;
+    final preview = previewBytes;
     return Wrap(
       spacing: 14,
       runSpacing: 10,
@@ -513,7 +536,18 @@ class _ServerIconEditor extends StatelessWidget {
             shape: BoxShape.circle,
             border: Border.all(color: AppTokens.borderSubtle),
           ),
-          child: iconUrl == null
+          child: preview != null
+              ? Image.memory(
+                  Uint8List.fromList(preview),
+                  width: 58,
+                  height: 58,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) => const Icon(
+                    Icons.dns_outlined,
+                    color: AppTokens.textMuted,
+                  ),
+                )
+              : iconUrl == null
               ? Text(
                   server.name.isEmpty ? '?' : server.name[0].toUpperCase(),
                   style: const TextStyle(

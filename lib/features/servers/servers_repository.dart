@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 
 import '../../core/api/api_exception.dart';
+import '../../core/storage/uploads_client.dart';
 import '../../shared/models/message.dart';
 import '../../shared/models/servers.dart';
 import '../../shared/models/voice.dart';
@@ -58,7 +59,8 @@ class ServersRepository {
     }
   }
 
-  /// `PATCH /servers/:id/icon` multipart → URL do ícone persistido.
+  /// `POST /uploads` (kind `server-icon`, async) + polling até `READY` →
+  /// URL do ícone persistido.
   Future<String> uploadServerIcon(
     String serverId, {
     required List<int> bytes,
@@ -66,19 +68,14 @@ class ServersRepository {
     required String contentType,
   }) async {
     try {
-      final formData = FormData.fromMap({
-        'file': MultipartFile.fromBytes(
-          bytes,
-          filename: fileName,
-          contentType: DioMediaType.parse(contentType),
-        ),
-      });
-      final response = await _dio.patch(
-        '/servers/$serverId/icon',
-        data: formData,
+      return await enqueueImageUpload(
+        _dio,
+        bytes: bytes,
+        fileName: fileName,
+        contentType: contentType,
+        kind: 'server-icon',
+        serverId: serverId,
       );
-      final data = response.data as Map<String, dynamic>;
-      return data['iconUrl'] as String;
     } on DioException catch (e) {
       throw ApiException.fromDio(e);
     }

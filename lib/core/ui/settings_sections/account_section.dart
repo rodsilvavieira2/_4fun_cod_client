@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -105,7 +107,7 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
     return showMacModalWindow<void>(
       context: context,
       title: 'Editar perfil',
-      maxWidth: 460,
+      maxWidth: 420,
       child: _ProfileEditDialog(initialUser: user),
     );
   }
@@ -189,14 +191,18 @@ class _ProfileSummary extends StatelessWidget {
 }
 
 class _Avatar extends StatelessWidget {
-  const _Avatar({required this.user, required this.size});
+  const _Avatar({super.key, required this.user, required this.size, this.previewBytes});
 
   final User user;
   final double size;
 
+  /// Preview local otimista (bytes recém-escolhidos, antes do `READY`).
+  final List<int>? previewBytes;
+
   @override
   Widget build(BuildContext context) {
     final initial = user.name.isEmpty ? '?' : user.name[0].toUpperCase();
+    final preview = previewBytes;
     return Container(
       width: size,
       height: size,
@@ -207,7 +213,16 @@ class _Avatar extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppRadius.sm),
         border: Border.all(color: AppTokens.borderHairline, width: 1),
       ),
-      child: user.avatarUrl == null
+      child: preview != null
+          ? Image.memory(
+              Uint8List.fromList(preview),
+              width: size,
+              height: size,
+              fit: BoxFit.cover,
+              errorBuilder: (_, _, _) =>
+                  _AvatarInitial(value: initial, size: size),
+            )
+          : user.avatarUrl == null
           ? _AvatarInitial(value: initial, size: size)
           : Image.network(
               user.avatarUrl!,
@@ -251,10 +266,11 @@ class _ProfileEditDialog extends ConsumerStatefulWidget {
 }
 
 class _ProfileEditDialogState extends ConsumerState<_ProfileEditDialog> {
-  static final _usernameRegex = RegExp(r'^[a-z0-9_]{3,20}$');
+  static final _usernameRegex = RegExp(r'^[A-Za-z0-9_]{3,20}$');
+  static const _maxImageBytes = 5 * 1024 * 1024;
   static const _imageTypeGroup = XTypeGroup(
     label: 'Imagens',
-    extensions: ['jpg', 'jpeg', 'png', 'webp', 'gif'],
+    extensions: ['jpg', 'jpeg', 'png', 'webp'],
   );
 
   final _formKey = GlobalKey<FormState>();
@@ -262,6 +278,7 @@ class _ProfileEditDialogState extends ConsumerState<_ProfileEditDialog> {
   late final TextEditingController _usernameController;
   bool _savingProfile = false;
   bool _savingAvatar = false;
+  List<int>? _previewAvatarBytes;
   String? _error;
 
   @override
@@ -296,28 +313,48 @@ class _ProfileEditDialogState extends ConsumerState<_ProfileEditDialog> {
       setState(() => _error = 'Formato de imagem não suportado.');
       return;
     }
+    final bytes = await file.readAsBytes();
+    if (!mounted) return;
+    if (bytes.length > _maxImageBytes) {
+      setState(() => _error = 'A imagem deve ter no máximo 5 MB.');
+      return;
+    }
 
     setState(() {
       _savingAvatar = true;
+      _previewAvatarBytes = bytes;
       _error = null;
     });
     try {
       await ref
           .read(storageServiceProvider)
           .uploadAvatar(
-            bytes: await file.readAsBytes(),
+            bytes: bytes,
             fileName: file.name,
             contentType: contentType,
           );
       await ref.read(authControllerProvider.notifier).refreshCurrentUser();
     } on ApiException catch (error) {
-      if (mounted) setState(() => _error = error.message);
+      if (mounted) {
+        setState(() {
+          _previewAvatarBytes = null;
+          _error = error.message;
+        });
+      }
     } catch (_) {
       if (mounted) {
-        setState(() => _error = 'Falha ao enviar a imagem. Tente novamente.');
+        setState(() {
+          _previewAvatarBytes = null;
+          _error = 'Falha ao enviar a imagem. Tente novamente.';
+        });
       }
     } finally {
-      if (mounted) setState(() => _savingAvatar = false);
+      if (mounted) {
+        setState(() {
+          _savingAvatar = false;
+          _previewAvatarBytes = null;
+        });
+      }
     }
   }
 
@@ -352,7 +389,7 @@ class _ProfileEditDialogState extends ConsumerState<_ProfileEditDialog> {
           .read(authControllerProvider.notifier)
           .updateProfile(
             name: _nameController.text.trim(),
-            username: _usernameController.text.trim().toLowerCase(),
+            username: _usernameController.text.trim(),
           );
       if (!mounted) return;
       Navigator.of(context).pop();
@@ -372,35 +409,52 @@ class _ProfileEditDialogState extends ConsumerState<_ProfileEditDialog> {
   Widget build(BuildContext context) {
     final user = _user;
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
+      key: const Key('profile-edit-dialog'),
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
       child: Form(
         key: _formKey,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Center(child: _Avatar(user: user, size: 72)),
-            const SizedBox(height: 10),
-            Wrap(
-              alignment: WrapAlignment.center,
-              spacing: 8,
+            Row(
               children: [
-                AppButton(
-                  label: _savingAvatar ? 'Enviando' : 'Alterar avatar',
-                  size: AppButtonSize.sm,
-                  variant: AppButtonVariant.secondary,
-                  loading: _savingAvatar,
-                  onPressed: _savingAvatar ? null : _pickAvatar,
+                _Avatar(
+                  key: const Key('profile-edit-avatar'),
+                  user: user,
+                  size: 56,
+                  previewBytes: _previewAvatarBytes,
                 ),
-                if (user.avatarUrl != null)
-                  AppButton(
-                    label: 'Remover',
-                    size: AppButtonSize.sm,
-                    variant: AppButtonVariant.ghost,
-                    onPressed: _savingAvatar ? null : _removeAvatar,
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        AppButton(
+                          key: const Key('profile-edit-avatar-action'),
+                          label: _savingAvatar ? 'Enviando' : 'Alterar avatar',
+                          size: AppButtonSize.sm,
+                          variant: AppButtonVariant.secondary,
+                          loading: _savingAvatar,
+                          onPressed: _savingAvatar ? null : _pickAvatar,
+                        ),
+                        if (user.avatarUrl != null) ...[
+                          const SizedBox(width: 6),
+                          AppButton(
+                            label: 'Remover',
+                            size: AppButtonSize.sm,
+                            variant: AppButtonVariant.ghost,
+                            onPressed: _savingAvatar ? null : _removeAvatar,
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
+                ),
               ],
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 18),
             AppTextField(
               controller: _nameController,
               label: 'Nome',
@@ -413,22 +467,22 @@ class _ProfileEditDialogState extends ConsumerState<_ProfileEditDialog> {
                     : null;
               },
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 12),
             AppTextField(
               controller: _usernameController,
               label: 'Username',
               validator: (value) {
-                final username = value?.trim().toLowerCase() ?? '';
+                final username = value?.trim() ?? '';
                 return _usernameRegex.hasMatch(username)
                     ? null
-                    : 'Use 3–20 caracteres: a-z, 0-9 ou _.';
+                    : 'Use 3–20 caracteres: A-Z, a-z, 0-9 ou _.';
               },
             ),
             if (_error != null) ...[
-              const SizedBox(height: 14),
+              const SizedBox(height: 12),
               _ErrorText(_error!),
             ],
-            const SizedBox(height: 20),
+            const SizedBox(height: 18),
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
@@ -722,7 +776,6 @@ String? _contentTypeFor(String fileName) {
     'jpg' || 'jpeg' => 'image/jpeg',
     'png' => 'image/png',
     'webp' => 'image/webp',
-    'gif' => 'image/gif',
     _ => null,
   };
 }

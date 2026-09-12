@@ -3,14 +3,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/api_client.dart';
 import '../api/api_exception.dart';
+import 'uploads_client.dart';
 
-/// Serviço de object storage — avatares via multipart para o backend (§5.2).
+/// Serviço de object storage — avatares via fila async do backend (§5.2).
 ///
-/// O client envia o arquivo e o backend gera a chave no R2 e persiste o
-/// `avatarUrl`; o client nunca constrói URLs nem conhece a chave do objeto.
+/// O client envia o arquivo (`POST /uploads`, kind `avatar`) e aguarda o
+/// `READY`; o backend gera a chave no R2 e persiste o `avatarUrl`.
 abstract class StorageService {
-  /// Faz upload do avatar (`PATCH /users/me/avatar`, multipart `file`) a
-  /// partir de bytes, o que funciona tanto em browser quanto em desktop.
+  /// Faz upload do avatar (async: enqueue + polling até `READY`) a partir
+  /// de bytes, o que funciona tanto em browser quanto em desktop.
   Future<String> uploadAvatar({
     required List<int> bytes,
     required String fileName,
@@ -22,7 +23,7 @@ abstract class StorageService {
   Future<void> deleteAvatar();
 }
 
-/// Implementação via dio multipart (`FormData`) para o backend NestJS.
+/// Implementação via fila async de uploads do backend NestJS.
 class ApiStorageService implements StorageService {
   ApiStorageService(this._dio);
 
@@ -35,16 +36,13 @@ class ApiStorageService implements StorageService {
     required String contentType,
   }) async {
     try {
-      final formData = FormData.fromMap({
-        'file': MultipartFile.fromBytes(
-          bytes,
-          filename: fileName,
-          contentType: DioMediaType.parse(contentType),
-        ),
-      });
-      final response = await _dio.patch('/users/me/avatar', data: formData);
-      final data = response.data as Map<String, dynamic>;
-      return data['avatarUrl'] as String;
+      return await enqueueImageUpload(
+        _dio,
+        bytes: bytes,
+        fileName: fileName,
+        contentType: contentType,
+        kind: 'avatar',
+      );
     } on DioException catch (e) {
       throw ApiException.fromDio(e);
     }
