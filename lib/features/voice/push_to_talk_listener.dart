@@ -81,11 +81,9 @@ class _PushToTalkListenerState extends ConsumerState<PushToTalkListener>
         !binding.matchesKey(event)) {
       return false;
     }
-    if (!kIsWeb && state.isPushToTalkRegistered) {
-      // O runner já recebe o evento global; aqui apenas evitamos que a tecla
-      // configurada seja escrita no chat quando a janela estiver focada.
-      return true;
-    }
+    // Mesmo no desktop, manter o fallback focado ativo. Alguns ambientes
+    // registram o atalho global com sucesso, mas o hook/portal não entrega os
+    // eventos; quando a janela está focada, isso ainda deve abrir o microfone.
     if (event is KeyDownEvent) {
       unawaited(controls.setPushToTalkPressed(true));
     } else if (event is KeyUpEvent) {
@@ -111,7 +109,6 @@ class _PushToTalkListenerState extends ConsumerState<PushToTalkListener>
       return;
     }
     final binding = state.pushToTalkBinding;
-    if (!kIsWeb && state.isPushToTalkRegistered) return;
     if (state.isPushToTalkEnabled &&
         binding != null &&
         binding.matchesPointer(event)) {
@@ -122,7 +119,6 @@ class _PushToTalkListenerState extends ConsumerState<PushToTalkListener>
   void _onPointerUp(PointerUpEvent event) {
     final state = ref.read(voiceControlsProvider);
     final binding = state.pushToTalkBinding;
-    if (!kIsWeb && state.isPushToTalkRegistered) return;
     if (state.isPushToTalkEnabled &&
         binding != null &&
         binding.mouseButton != null) {

@@ -26,6 +26,7 @@ struct PttInput {
   guint activated_subscription = 0;
   guint deactivated_subscription = 0;
   guint request_subscription = 0;
+  FlMethodCall* pending_configure = nullptr;
   std::atomic<bool> mouse_running{false};
   GThread* mouse_thread = nullptr;
   int mouse_code = 0;
@@ -57,6 +58,52 @@ gboolean send_event_on_main(gpointer data) {
 
 void send_event_from_worker(const char* state) {
   g_main_context_invoke(nullptr, send_event_on_main, g_strdup(state));
+}
+
+bool respond_pending_configure_success() {
+  if (input == nullptr || input->pending_configure == nullptr) return false;
+  g_autoptr(FlValue) result = fl_value_new_bool(true);
+  fl_method_call_respond_success(input->pending_configure, result, nullptr);
+  g_clear_object(&input->pending_configure);
+  return true;
+}
+
+bool respond_pending_configure_error(const char* message) {
+  if (input == nullptr || input->pending_configure == nullptr) return false;
+  fl_method_call_respond_error(input->pending_configure, "register_failed",
+                               message, nullptr, nullptr);
+  g_clear_object(&input->pending_configure);
+  return true;
+}
+
+void fail_pending_configure_or_emit(const char* message) {
+  if (!respond_pending_configure_error(message)) send_event("failed");
+}
+
+void cancel_pending_configure() {
+  respond_pending_configure_error("Registro global de Push to Talk cancelado.");
+}
+
+void clear_request_subscription() {
+  if (input == nullptr || input->bus == nullptr ||
+      input->request_subscription == 0) {
+    return;
+  }
+  g_dbus_connection_signal_unsubscribe(input->bus,
+                                       input->request_subscription);
+  input->request_subscription = 0;
+}
+
+std::string portal_request_path(const std::string& token) {
+  if (input == nullptr || input->bus == nullptr) return "";
+  const gchar* unique_name = g_dbus_connection_get_unique_name(input->bus);
+  if (unique_name == nullptr) return "";
+  std::string sender = unique_name;
+  if (!sender.empty() && sender[0] == ':') sender.erase(0, 1);
+  for (char& c : sender) {
+    if (c == '.') c = '_';
+  }
+  return "/org/freedesktop/portal/desktop/request/" + sender + "/" + token;
 }
 
 int evdev_code_for_mouse_button(int button) {
@@ -147,6 +194,7 @@ bool configure_mouse(int button) {
 
 void close_session() {
   if (input == nullptr) return;
+  cancel_pending_configure();
   stop_mouse_listener();
   if (input->bus == nullptr) return;
   if (input->activated_subscription != 0) {
@@ -159,11 +207,7 @@ void close_session() {
                                          input->deactivated_subscription);
     input->deactivated_subscription = 0;
   }
-  if (input->request_subscription != 0) {
-    g_dbus_connection_signal_unsubscribe(input->bus,
-                                         input->request_subscription);
-    input->request_subscription = 0;
-  }
+  clear_request_subscription();
   if (input->session != nullptr) {
     g_dbus_connection_call(input->bus, kPortalBus, input->session,
                            "org.freedesktop.portal.Session", "Close", nullptr,
@@ -220,22 +264,74 @@ void on_shortcut_signal(GDBusConnection*, const gchar*, const gchar*,
   }
 }
 
+bool response_includes_ptt_shortcut(GVariant* results) {
+  g_autoptr(GVariant) shortcuts = nullptr;
+  if (!g_variant_lookup(results, "shortcuts", "@a(sa{sv})", &shortcuts)) {
+    return false;
+  }
+  GVariantIter iter;
+  g_variant_iter_init(&iter, shortcuts);
+  const gchar* shortcut_id = nullptr;
+  GVariant* options = nullptr;
+  while (g_variant_iter_next(&iter, "(&s@a{sv})", &shortcut_id, &options)) {
+    const bool matches = g_strcmp0(shortcut_id, kPttId) == 0;
+    if (options != nullptr) g_variant_unref(options);
+    if (matches) return true;
+  }
+  return false;
+}
+
+void subscribe_shortcut_events() {
+  if (input == nullptr || input->bus == nullptr) return;
+  input->activated_subscription = g_dbus_connection_signal_subscribe(
+      input->bus, kPortalBus, kPortalInterface, "Activated", nullptr, nullptr,
+      G_DBUS_SIGNAL_FLAGS_NONE, on_shortcut_signal, GINT_TO_POINTER(1),
+      nullptr);
+  input->deactivated_subscription = g_dbus_connection_signal_subscribe(
+      input->bus, kPortalBus, kPortalInterface, "Deactivated", nullptr, nullptr,
+      G_DBUS_SIGNAL_FLAGS_NONE, on_shortcut_signal, nullptr, nullptr);
+}
+
 void bind_response(GDBusConnection*, const gchar*, const gchar*, const gchar*,
                    const gchar*, GVariant* parameters, gpointer) {
   guint32 response = 2;
   g_autoptr(GVariant) results = nullptr;
   g_variant_get(parameters, "(u@a{sv})", &response, &results);
-  if (input != nullptr && input->request_subscription != 0) {
-    g_dbus_connection_signal_unsubscribe(input->bus,
-                                         input->request_subscription);
-    input->request_subscription = 0;
+  clear_request_subscription();
+  if (response != 0) {
+    fail_pending_configure_or_emit(
+        "Permissão de atalho global recusada pelo portal.");
+    close_session();
+    return;
   }
-  if (response != 0) send_event("failed");
+  if (!response_includes_ptt_shortcut(results)) {
+    fail_pending_configure_or_emit(
+        "O portal não vinculou o atalho global de Push to Talk.");
+    close_session();
+    return;
+  }
+  subscribe_shortcut_events();
+  respond_pending_configure_success();
+}
+
+void subscribe_request(const std::string& request_path,
+                       GDBusSignalCallback callback, gpointer user_data,
+                       GDestroyNotify destroy) {
+  if (input == nullptr || input->bus == nullptr || request_path.empty()) {
+    if (destroy != nullptr && user_data != nullptr) destroy(user_data);
+    return;
+  }
+  clear_request_subscription();
+  input->request_subscription = g_dbus_connection_signal_subscribe(
+      input->bus, kPortalBus, "org.freedesktop.portal.Request", "Response",
+      request_path.c_str(), nullptr, G_DBUS_SIGNAL_FLAGS_NONE, callback,
+      user_data, destroy);
 }
 
 void bind_shortcut(const std::string& trigger) {
   if (input == nullptr || input->bus == nullptr || input->session == nullptr) {
-    send_event("failed");
+    fail_pending_configure_or_emit(
+        "Sessão de atalho global indisponível no portal.");
     return;
   }
   GVariantBuilder shortcut_options;
@@ -251,6 +347,10 @@ void bind_shortcut(const std::string& trigger) {
   GVariantBuilder options;
   g_variant_builder_init(&options, G_VARIANT_TYPE_VARDICT);
   const std::string handle_token = next_portal_token("fourfun_ptt_bind");
+  const std::string expected_request_path = portal_request_path(handle_token);
+  // Assinar antes da chamada evita perder Response em portais que respondem
+  // rápido demais; se o handle retornado divergir, atualizamos abaixo.
+  subscribe_request(expected_request_path, bind_response, nullptr, nullptr);
   g_variant_builder_add(&options, "{sv}", "handle_token",
                         g_variant_new_string(handle_token.c_str()));
   g_autoptr(GError) error = nullptr;
@@ -262,21 +362,18 @@ void bind_shortcut(const std::string& trigger) {
       G_DBUS_CALL_FLAGS_NONE, -1, nullptr, &error);
   if (reply == nullptr) {
     g_warning("Push to Talk portal bind failed: %s", error->message);
-    send_event("failed");
+    clear_request_subscription();
+    fail_pending_configure_or_emit(
+        "Não foi possível vincular o atalho global no portal.");
     return;
   }
   const gchar* request_path = nullptr;
   g_variant_get(reply, "(&o)", &request_path);
-  input->request_subscription = g_dbus_connection_signal_subscribe(
-      input->bus, kPortalBus, "org.freedesktop.portal.Request", "Response",
-      request_path, nullptr, G_DBUS_SIGNAL_FLAGS_NONE, bind_response, nullptr,
-      nullptr);
-  input->activated_subscription = g_dbus_connection_signal_subscribe(
-      input->bus, kPortalBus, kPortalInterface, "Activated", nullptr, nullptr,
-      G_DBUS_SIGNAL_FLAGS_NONE, on_shortcut_signal, GINT_TO_POINTER(1), nullptr);
-  input->deactivated_subscription = g_dbus_connection_signal_subscribe(
-      input->bus, kPortalBus, kPortalInterface, "Deactivated", nullptr, nullptr,
-      G_DBUS_SIGNAL_FLAGS_NONE, on_shortcut_signal, nullptr, nullptr);
+  if (input->pending_configure != nullptr &&
+      input->activated_subscription == 0 &&
+      g_strcmp0(request_path, expected_request_path.c_str()) != 0) {
+    subscribe_request(request_path, bind_response, nullptr, nullptr);
+  }
 }
 
 void create_response(GDBusConnection*, const gchar*, const gchar*, const gchar*,
@@ -284,35 +381,44 @@ void create_response(GDBusConnection*, const gchar*, const gchar*, const gchar*,
   guint32 response = 2;
   g_autoptr(GVariant) results = nullptr;
   g_variant_get(parameters, "(u@a{sv})", &response, &results);
+  clear_request_subscription();
   if (response != 0) {
-    send_event("failed");
+    fail_pending_configure_or_emit(
+        "Permissão de sessão de atalho global recusada pelo portal.");
+    close_session();
     return;
   }
   const gchar* session = nullptr;
   if (!g_variant_lookup(results, "session_handle", "&s", &session)) {
-    send_event("failed");
+    fail_pending_configure_or_emit(
+        "O portal não retornou uma sessão de atalho global válida.");
+    close_session();
     return;
   }
   input->session = g_strdup(session);
-  if (input->request_subscription != 0) {
-    g_dbus_connection_signal_unsubscribe(input->bus,
-                                         input->request_subscription);
-    input->request_subscription = 0;
-  }
   bind_shortcut(static_cast<const char*>(user_data));
 }
 
-bool configure_keyboard(FlValue* arguments) {
+void configure_keyboard(FlValue* arguments) {
   g_autoptr(GError) error = nullptr;
   input->bus = g_bus_get_sync(G_BUS_TYPE_SESSION, nullptr, &error);
   if (input->bus == nullptr) {
     g_warning("Push to Talk portal unavailable: %s", error->message);
-    return false;
+    respond_pending_configure_error(
+        "Portal de atalhos globais indisponível nesta sessão.");
+    close_session();
+    return;
   }
   GVariantBuilder options;
   g_variant_builder_init(&options, G_VARIANT_TYPE_VARDICT);
   const std::string handle_token = next_portal_token("fourfun_ptt");
   const std::string session_token = next_portal_token("fourfun_ptt_session");
+  const std::string trigger = preferred_trigger(arguments);
+  const std::string expected_request_path = portal_request_path(handle_token);
+  // Mesmo sendo um object path, a spec mantém session_handle como string por
+  // compatibilidade. A assinatura antecipada segue a recomendação do Request.
+  subscribe_request(expected_request_path, create_response,
+                    g_strdup(trigger.c_str()), g_free);
   g_variant_builder_add(&options, "{sv}", "handle_token",
                         g_variant_new_string(handle_token.c_str()));
   g_variant_builder_add(&options, "{sv}", "session_handle_token",
@@ -323,16 +429,19 @@ bool configure_keyboard(FlValue* arguments) {
       G_VARIANT_TYPE("(o)"), G_DBUS_CALL_FLAGS_NONE, -1, nullptr, &error);
   if (reply == nullptr) {
     g_warning("Push to Talk portal session failed: %s", error->message);
-    return false;
+    clear_request_subscription();
+    respond_pending_configure_error(
+        "Não foi possível criar a sessão de atalho global no portal.");
+    close_session();
+    return;
   }
   const gchar* request_path = nullptr;
   g_variant_get(reply, "(&o)", &request_path);
-  const std::string trigger = preferred_trigger(arguments);
-  input->request_subscription = g_dbus_connection_signal_subscribe(
-      input->bus, kPortalBus, "org.freedesktop.portal.Request", "Response",
-      request_path, nullptr, G_DBUS_SIGNAL_FLAGS_NONE, create_response,
-      g_strdup(trigger.c_str()), g_free);
-  return true;
+  if (input->pending_configure != nullptr && input->session == nullptr &&
+      g_strcmp0(request_path, expected_request_path.c_str()) != 0) {
+    subscribe_request(request_path, create_response, g_strdup(trigger.c_str()),
+                      g_free);
+  }
 }
 
 FlMethodErrorResponse* on_listen(FlEventChannel*, FlValue*, gpointer) {
@@ -364,11 +473,14 @@ void method_call(FlMethodChannel*, FlMethodCall* call, gpointer) {
       g_strcmp0(fl_value_get_string(kind), "keyboard") == 0;
   const bool mouse = kind != nullptr &&
       g_strcmp0(fl_value_get_string(kind), "mouse") == 0;
+  if (keyboard) {
+    input->pending_configure = FL_METHOD_CALL(g_object_ref(call));
+    configure_keyboard(arguments);
+    return;
+  }
   FlValue* mouse_button = fl_value_lookup_string(arguments, "mouseButton");
-  const bool configured = keyboard
-      ? configure_keyboard(arguments)
-      : mouse && mouse_button != nullptr &&
-          configure_mouse(static_cast<int>(fl_value_get_int(mouse_button)));
+  const bool configured = mouse && mouse_button != nullptr &&
+      configure_mouse(static_cast<int>(fl_value_get_int(mouse_button)));
   g_autoptr(FlMethodResponse) response = FL_METHOD_RESPONSE(
       fl_method_success_response_new(fl_value_new_bool(configured)));
   fl_method_call_respond(call, response, nullptr);
