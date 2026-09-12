@@ -10,19 +10,26 @@ import '../config/app_config.dart';
 /// Resolve um path de arquivo do servidor (`/api/v1/files/...`, como vem em
 /// `User.avatarUrl` / `Server.iconUrl`) para URL absoluta.
 ///
-/// URLs já absolutas passam intactas. Paths relativos são ancorados em
-/// [restBase] (`AppConfig.apiRestBaseUrl`) — NUNCA em `Uri.base`, que no
-/// desktop é `file://` e quebrava todas as imagens (`No host specified
-/// in URI file:///api/...`).
+/// URLs já absolutas passam intactas. O `finalUrl` do servidor já carrega o
+/// prefixo da API (`/api/v1/files/...`), então é ancorado na **origem** de
+/// [restBase] para não duplicar o prefixo. Paths sem esse prefixo são
+/// ancorados em [restBase]. Nunca em `Uri.base`, que no desktop é `file://`
+/// e quebrava todas as imagens (`No host specified in URI file:///api/...`).
 String resolveFileUrl(String restBase, String path) {
   final uri = Uri.tryParse(path);
   if (uri != null && uri.hasScheme) {
     return path;
   }
-  final base = restBase.endsWith('/')
+  final base = Uri.parse(restBase);
+  if (base.path.isNotEmpty &&
+      base.path != '/' &&
+      path.startsWith(base.path)) {
+    return '${base.origin}$path';
+  }
+  final b = restBase.endsWith('/')
       ? restBase.substring(0, restBase.length - 1)
       : restBase;
-  return path.startsWith('/') ? '$base$path' : '$base/$path';
+  return path.startsWith('/') ? '$b$path' : '$b/$path';
 }
 
 /// Bytes de uma imagem do proxy autenticado `GET /api/v1/files/*`,
