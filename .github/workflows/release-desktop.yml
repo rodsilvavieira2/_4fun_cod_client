@@ -578,7 +578,9 @@ jobs:
         run: |
           cd dist
 
-          sha256sum * > SHA256SUMS.txt
+          # Só arquivos do nível raiz (dist/updater/ é insumo do feed,
+          # com hashes próprios dentro dos release.json).
+          find . -maxdepth 1 -type f -exec sha256sum {} + > SHA256SUMS.txt
 
           cat SHA256SUMS.txt
 
