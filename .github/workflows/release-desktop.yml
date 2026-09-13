@@ -156,6 +156,38 @@ jobs:
         run: |
           ls -lh dist/linux
 
+      - name: Restore updater signing key
+        env:
+          UPDATER_BUNDLE_B64: ${{ secrets.DESKTOP_UPDATER_KEY_BUNDLE }}
+          UPDATER_PASSPHRASE: ${{ secrets.DESKTOP_UPDATER_KEY_PASSPHRASE }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "$UPDATER_BUNDLE_B64" | base64 -d > "$RUNNER_TEMP/release-key.dukey"
+          dart run desktop_updater:release keys import \
+            --input "$RUNNER_TEMP/release-key.dukey" \
+            --passphrase-env UPDATER_PASSPHRASE
+          shred -u "$RUNNER_TEMP/release-key.dukey"
+
+      - name: Package updater files (Linux)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Input = bundle COM as .so do tray (step anterior); o zip do
+          # updater preserva modos Unix do runner.
+          dart run desktop_updater:package \
+            --input "build/linux/x64/release/bundle" \
+            --output "dist/updater/linux" \
+            --package-id "io.github.rodsilvavieira2.fourfun" \
+            --app-name "$APP_NAME" \
+            --version "$APP_VERSION" \
+            --build-number "${{ github.run_number }}" \
+            --platform linux \
+            --channel stable \
+            --artifact-url "https://github.com/rodsilvavieira2/_4fun_cod_client/releases/download/${{ github.ref_name }}/$APP_NAME-$APP_VERSION-linux.zip"
+          dart run desktop_updater:release sign \
+            --release "dist/updater/linux/release.json"
+
       - name: Build AppImage
         shell: bash
         run: |
@@ -194,6 +226,14 @@ jobs:
         with:
           name: release-linux
           path: dist/linux
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload Linux updater files
+        uses: actions/upload-artifact@v4
+        with:
+          name: updater-linux
+          path: dist/updater/linux
           if-no-files-found: error
           retention-days: 7
 
@@ -394,11 +434,47 @@ jobs:
         run: |
           Get-ChildItem dist\windows
 
+      - name: Restore updater signing key
+        env:
+          UPDATER_BUNDLE_B64: ${{ secrets.DESKTOP_UPDATER_KEY_BUNDLE }}
+          UPDATER_PASSPHRASE: ${{ secrets.DESKTOP_UPDATER_KEY_PASSPHRASE }}
+        shell: pwsh
+        run: |
+          [IO.File]::WriteAllBytes("$env:RUNNER_TEMP\release-key.dukey", [Convert]::FromBase64String($env:UPDATER_BUNDLE_B64))
+          dart run desktop_updater:release keys import --input "$env:RUNNER_TEMP\release-key.dukey" --passphrase-env UPDATER_PASSPHRASE
+          Remove-Item "$env:RUNNER_TEMP\release-key.dukey" -Force
+
+      - name: Package updater files (Windows)
+        shell: pwsh
+        run: |
+          # Input = Release cru (SEM vc_redist — o updater não deve
+          # versionar o instalador MSVC dentro do app). Zip direto:
+          # wholeDirectoryReplace preservando unins*.exe do Inno.
+          dart run desktop_updater:package `
+            --input "build\windows\x64\runner\Release" `
+            --output "dist\updater\windows" `
+            --package-id "fourfun_cod_client" `
+            --app-name "$env:APP_NAME" `
+            --version "$env:APP_VERSION" `
+            --build-number "${{ github.run_number }}" `
+            --platform windows `
+            --channel stable `
+            --artifact-url "https://github.com/rodsilvavieira2/_4fun_cod_client/releases/download/${{ github.ref_name }}/$env:APP_NAME-$env:APP_VERSION-windows.zip"
+          dart run desktop_updater:release sign --release "dist\updater\windows\release.json"
+
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
         with:
           name: release-windows
           path: dist/windows
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload Windows updater files
+        uses: actions/upload-artifact@v4
+        with:
+          name: updater-windows
+          path: dist/updater/windows
           if-no-files-found: error
           retention-days: 7
 
@@ -431,9 +507,71 @@ jobs:
           path: dist
           merge-multiple: true
 
+      - name: Download updater files
+        uses: actions/download-artifact@v4
+        with:
+          pattern: updater-*
+          path: dist/updater
+
+      - name: Setup Flutter (updater tooling)
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
       - name: List release files
         run: |
-          find dist -maxdepth 2 -type f -print
+          find dist -maxdepth 3 -type f -print
+
+      - name: Restore updater signing key
+        env:
+          UPDATER_BUNDLE_B64: ${{ secrets.DESKTOP_UPDATER_KEY_BUNDLE }}
+          UPDATER_PASSPHRASE: ${{ secrets.DESKTOP_UPDATER_KEY_PASSPHRASE }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "$UPDATER_BUNDLE_B64" | base64 -d > "$RUNNER_TEMP/release-key.dukey"
+          dart run desktop_updater:release keys import \
+            --input "$RUNNER_TEMP/release-key.dukey" \
+            --passphrase-env UPDATER_PASSPHRASE
+          shred -u "$RUNNER_TEMP/release-key.dukey"
+
+      - name: Assemble update feed
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          BASE="https://github.com/rodsilvavieira2/_4fun_cod_client/releases/download/$GITHUB_REF_NAME"
+          mkdir -p dist/updater/feed
+          # Nomes únicos por plataforma (os release.json crus colidiriam).
+          cp dist/updater/updater-linux/release.json dist/updater/feed/release-linux.json
+          cp dist/updater/updater-windows/release.json dist/updater/feed/release-windows.json
+          cp dist/updater/updater-linux/*.zip dist/updater/feed/
+          cp dist/updater/updater-windows/*.zip dist/updater/feed/
+          # Histórico: estende o feed publicado ou começa um novo (1ª vez).
+          if curl -sfL "https://github.com/rodsilvavieira2/_4fun_cod_client/releases/latest/download/app-archive.json" \
+              -o dist/updater/feed/app-archive.json; then
+            echo "extending published feed"
+          else
+            echo "first feed release"
+            rm -f dist/updater/feed/app-archive.json
+          fi
+          for platform in linux windows; do
+            dart run desktop_updater:app_archive upsert \
+              --archive dist/updater/feed/app-archive.json \
+              --app-name "$APP_NAME" \
+              --version "$VERSION" \
+              --build-number "${{ github.run_number }}" \
+              --platform "$platform" \
+              --channel stable \
+              --release-url "$BASE/release-$platform.json"
+          done
+          dart run desktop_updater:release sign \
+            --app-archive dist/updater/feed/app-archive.json
 
       - name: Generate SHA256 checksums
         shell: bash
@@ -449,9 +587,29 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
+          set -euo pipefail
+          cd dist
+          # Regra do feed: zips + descriptors primeiro, app-archive.json
+          # por último (upload separado abaixo).
           gh release create \
             "$GITHUB_REF_NAME" \
-            dist/* \
+            *.tar.gz \
+            *.AppImage \
+            *.zip \
+            *.exe \
+            SHA256SUMS.txt \
+            updater/feed/*.zip \
+            updater/feed/release-*.json \
             --verify-tag \
             --generate-notes \
             --title "$GITHUB_REF_NAME"
+          gh release upload \
+            "$GITHUB_REF_NAME" \
+            updater/feed/app-archive.json
+          BASE="https://github.com/rodsilvavieira2/_4fun_cod_client/releases/download/$GITHUB_REF_NAME"
+          for platform in linux windows; do
+            curl -fsSL "$BASE/release-$platform.json" -o "$RUNNER_TEMP/hosted-$platform.json"
+            dart run desktop_updater:verify --release "$RUNNER_TEMP/hosted-$platform.json"
+          done
+          curl -fsSL "$BASE/app-archive.json" -o "$RUNNER_TEMP/hosted-archive.json"
+          echo "hosted feed OK"

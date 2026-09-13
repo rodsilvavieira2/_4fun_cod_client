@@ -83,6 +83,29 @@ o app pode falhar com `VCRUNTIME140.dll was not found`:
 Definido em `installer/windows.iss` (Inno Setup 6). `AppId=com.fourfun.codclient`
 é permanente — não alterar após a primeira release pública.
 
+## Feed de auto-update (desktop_updater, schema-v3 assinado)
+
+O pipeline publica, além dos instaladores, o feed que o app consulta em
+`.../releases/latest/download/app-archive.json` (canal `stable`):
+
+```text
+4FunCode-<ver>-linux.zip   + release-linux.json
+4FunCode-<ver>-windows.zip + release-windows.json
+app-archive.json            (sempre por último)
+```
+
+- Chave: privada no bundle `DESKTOP_UPDATER_KEY_BUNDLE` + `DESKTOP_UPDATER_KEY_PASSPHRASE`
+  (GitHub secrets + Infisical); pública pinada em `lib/core/updates/update_config.dart`;
+  perfil público em `desktop_updater.keys.json` (commitado).
+- IDs do feed (imutáveis após o 1º publish): Linux `io.github.rodsilvavieira2.fourfun`
+  (= `APPLICATION_ID`), Windows `fourfun_cod_client` (= `name` do pubspec).
+- Ordem garantida pelo job `release`: zips + descriptors → `verify` hospedado →
+  `app-archive.json` → checagem final. Releases seguintes estendem o archive
+  publicado (histórico preservado).
+- Modo zip direto (`wholeDirectoryReplace`): no Windows preserva `unins*.exe` do
+  Inno; no Linux cobre instalação por extração (tar.gz). Sem Authenticode
+  (sem certificado) e sem modo instalador Inno — ver `doctor` no CI.
+
 ## Checklist pré-tag
 
 ```text
@@ -95,7 +118,9 @@ Definido em `installer/windows.iss` (Inno Setup 6). `AppId=com.fourfun.codclient
 [ ] versão/tag correta (tags são imutáveis — nunca reutilizar vX.Y.Z)
 ```
 
-Pós-pipeline: conferir no GitHub `Releases → vX.Y.Z` os 4 arquivos.
+Pós-pipeline: conferir no GitHub `Releases → vX.Y.Z` os 4 instaladores +
+5 do feed (`4FunCode-*-linux.zip`, `4FunCode-*-windows.zip`,
+`release-linux.json`, `release-windows.json`, `app-archive.json`).
 Se falhar antes do Release existir: `Re-run failed jobs`, sem recriar tag.
 Linux deve ser testado ao menos uma vez num Ubuntu 22.04 limpo
 (`ldd ./_4fun_cod_client`, ex. `libgtk-3-0`); `tray_manager`/`window_manager`

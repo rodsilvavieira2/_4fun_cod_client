@@ -55,8 +55,12 @@ void main() {
       expect(updateAppArchiveUrl.pathSegments.last, 'app-archive.json');
     });
 
-    test('signing starts unconfigured (keygen pendente)', () {
-      expect(isUpdateSigningConfigured, isFalse);
+    test('signing configured (release key pinned)', () {
+      expect(isUpdateSigningConfigured, isTrue);
+      expect(
+        trustedReleasePublicKeys,
+        contains('release-de4dba08820a7c59511f86ce'),
+      );
     });
   });
 }

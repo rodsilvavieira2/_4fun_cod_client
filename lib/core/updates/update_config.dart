@@ -11,9 +11,11 @@ library;
 /// override tem que ser usado aqui (via [expectedPackageIdForPlatform]).
 const String windowsPackageId = 'fourfun_cod_client';
 
-/// Placeholder (`com.example.*`); trocar antes do primeiro publish e
-/// republicar o feed com o mesmo `--package-id`.
-const String linuxPackageId = 'com.example.u_4fun_cod_client';
+/// ID de produção (opção B, ancorado no GitHub). Deve ser idêntico ao
+/// `APPLICATION_ID` de `linux/CMakeLists.txt` e ao `--package-id` do
+/// `dart run desktop_updater:release publish --platform linux`.
+/// Imutável na prática após o primeiro feed publicado.
+const String linuxPackageId = 'io.github.rodsilvavieira2.fourfun';
 
 /// Canal único nesta fase (estável).
 const String updateChannel = 'stable';
@@ -52,12 +54,15 @@ bool shouldEnableUpdates({
 
 /// Mapa keyId → chave pública Ed25519 pinada no app.
 ///
-/// Placeholder até `dart run desktop_updater:release keygen`; a troca
-/// acompanha [isUpdateSigningConfigured] (nunca commitar a privada).
+/// Gerado via `dart run desktop_updater:release keygen` (keyId
+/// `release-de4dba08820a7c59511f86ce`). A privada vive só no bundle
+/// criptografado (secrets `DESKTOP_UPDATER_KEY_BUNDLE` /
+/// `DESKTOP_UPDATER_KEY_PASSPHRASE`) — nunca commitar a privada.
 const Map<String, String> trustedReleasePublicKeys = <String, String>{
-  'release-placeholder': 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
+  'release-de4dba08820a7c59511f86ce':
+      'MUceP/D/eQGYTiNhtcu3B6p0czGJW+LVWsHyhUjkJgE=',
 };
 
 /// `true` quando houver chave real pinada. Enquanto `false`, o backend
 /// nem faz request (startup silencioso, manual mostra "não configurado").
-const bool isUpdateSigningConfigured = false;
+const bool isUpdateSigningConfigured = true;
