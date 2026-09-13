@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../shared/models/message.dart';
 import 'app_file_image.dart';
+import 'chat_image_actions.dart';
 import 'ds_tokens.dart';
 
 /// Tamanho máximo de cada anexo (mesmo teto do avatar/ícone do servidor).
@@ -96,20 +98,7 @@ Future<void> showImageLightbox(BuildContext context, String url) {
               constraints: const BoxConstraints(maxWidth: 900, maxHeight: 700),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(AppRadius.md),
-                child: AppFileImage(
-                  path: url,
-                  fit: BoxFit.contain,
-                  fallback: const SizedBox(
-                    width: 320,
-                    height: 240,
-                    child: Center(
-                      child: Icon(
-                        Icons.broken_image_outlined,
-                        color: AppTokens.textMuted,
-                      ),
-                    ),
-                  ),
-                ),
+                child: _LightboxImage(url: url),
               ),
             ),
           ),
@@ -128,7 +117,41 @@ Future<void> showImageLightbox(BuildContext context, String url) {
   );
 }
 
-class _Cell extends StatelessWidget {
+/// Imagem grande do lightbox com menu de botão direito
+/// (Copiar imagem / Salvar imagem).
+class _LightboxImage extends ConsumerWidget {
+  const _LightboxImage({required this.url});
+
+  final String url;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return GestureDetector(
+      onSecondaryTapUp: (details) => showChatImageMenu(
+        context: context,
+        ref: ref,
+        globalPosition: details.globalPosition,
+        url: url,
+      ),
+      child: AppFileImage(
+        path: url,
+        fit: BoxFit.contain,
+        fallback: const SizedBox(
+          width: 320,
+          height: 240,
+          child: Center(
+            child: Icon(
+              Icons.broken_image_outlined,
+              color: AppTokens.textMuted,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _Cell extends ConsumerWidget {
   const _Cell({required this.attachment, this.onRetry, this.onOpen});
 
   final MessageAttachment attachment;
@@ -136,7 +159,7 @@ class _Cell extends StatelessWidget {
   final ValueChanged<String>? onOpen;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final failed = attachment.status == 'FAILED';
     final ready = attachment.url != null && !failed;
     return ClipRRect(
@@ -150,12 +173,24 @@ class _Cell extends StatelessWidget {
           fit: StackFit.expand,
           children: [
             if (ready)
-              GestureDetector(
-                onTap: onOpen == null ? null : () => onOpen!(attachment.url!),
-                child: AppFileImage(
-                  path: attachment.url,
-                  fit: BoxFit.cover,
-                  fallback: const _Spinner(),
+              MouseRegion(
+                cursor: onOpen == null
+                    ? SystemMouseCursors.basic
+                    : SystemMouseCursors.click,
+                child: GestureDetector(
+                  onTap: onOpen == null ? null : () => onOpen!(attachment.url!),
+                  onSecondaryTapUp: (details) => showChatImageMenu(
+                    context: context,
+                    ref: ref,
+                    globalPosition: details.globalPosition,
+                    url: attachment.url!,
+                    suggestedName: 'imagem-${attachment.id}',
+                  ),
+                  child: AppFileImage(
+                    path: attachment.url,
+                    fit: BoxFit.cover,
+                    fallback: const _Spinner(),
+                  ),
                 ),
               )
             else if (failed)
