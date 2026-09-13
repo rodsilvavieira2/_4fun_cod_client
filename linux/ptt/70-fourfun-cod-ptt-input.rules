@@ -1,0 +1,5 @@
+# Permite ao grupo dedicado ler teclado/mouse para o fallback global evdev.
+# O app filtra localmente apenas o atalho PTT configurado, mas a permissao do
+# sistema da acesso aos eventos brutos desses dispositivos.
+SUBSYSTEM=="input", KERNEL=="event*", ENV{ID_INPUT_KEYBOARD}=="1", GROUP="fourfun-ptt", MODE="0660"
+SUBSYSTEM=="input", KERNEL=="event*", ENV{ID_INPUT_MOUSE}=="1", GROUP="fourfun-ptt", MODE="0660"

@@ -17,6 +17,11 @@ constexpr char kPortalBus[] = "org.freedesktop.portal.Desktop";
 constexpr char kPortalPath[] = "/org/freedesktop/portal/desktop";
 constexpr char kPortalInterface[] = "org.freedesktop.portal.GlobalShortcuts";
 constexpr char kPttId[] = "push-to-talk";
+constexpr char kGnomeShellBus[] = "org.gnome.Shell";
+constexpr char kGnomeShellPath[] = "/org/gnome/Shell";
+constexpr char kGnomeShellInterface[] = "org.gnome.Shell";
+constexpr guint kGnomeShellModeNormal = 1;
+constexpr guint kGnomeShellTriggerRelease = 128;
 
 struct PttInput {
   FlEventChannel* events = nullptr;
@@ -26,7 +31,22 @@ struct PttInput {
   guint activated_subscription = 0;
   guint deactivated_subscription = 0;
   guint request_subscription = 0;
+  guint gnome_activated_subscription = 0;
+  guint gnome_deactivated_subscription = 0;
+  guint gnome_action = 0;
   FlMethodCall* pending_configure = nullptr;
+  std::atomic<bool> keyboard_running{false};
+  GThread* keyboard_thread = nullptr;
+  int key_code = 0;
+  bool key_need_ctrl = false;
+  bool key_need_alt = false;
+  bool key_need_shift = false;
+  bool key_ctrl_down = false;
+  bool key_alt_down = false;
+  bool key_shift_down = false;
+  bool key_meta_down = false;
+  bool key_main_down = false;
+  bool key_active = false;
   std::atomic<bool> mouse_running{false};
   GThread* mouse_thread = nullptr;
   int mouse_code = 0;
@@ -118,6 +138,76 @@ std::string portal_request_path(const std::string& token) {
   return "/org/freedesktop/portal/desktop/request/" + sender + "/" + token;
 }
 
+GDBusConnection* ensure_session_bus(const char* purpose) {
+  if (input == nullptr) return nullptr;
+  if (input->bus != nullptr) return input->bus;
+  g_autoptr(GError) error = nullptr;
+  input->bus = g_bus_get_sync(G_BUS_TYPE_SESSION, nullptr, &error);
+  if (input->bus == nullptr) {
+    g_warning("[ptt/linux] session bus unavailable for %s: %s", purpose,
+              error == nullptr ? "unknown" : error->message);
+  }
+  return input->bus;
+}
+
+bool arg_bool(FlValue* arguments, const char* key) {
+  FlValue* value = fl_value_lookup_string(arguments, key);
+  return value != nullptr && fl_value_get_bool(value);
+}
+
+int evdev_code_for_hid_usage(guint64 usage) {
+  const guint32 page = static_cast<guint32>(usage) & 0xffff0000;
+  const guint32 id = static_cast<guint32>(usage) & 0xffff;
+  if (page == 0x000c0000) {
+    if (id == 0xe2) return KEY_MUTE;
+    if (id == 0xe9) return KEY_VOLUMEUP;
+    if (id == 0xea) return KEY_VOLUMEDOWN;
+    return 0;
+  }
+  if (page != 0 && page != 0x00070000) return 0;
+  if (id >= 0x04 && id <= 0x1d) return KEY_A + id - 0x04;
+  if (id >= 0x1e && id <= 0x26) return KEY_1 + id - 0x1e;
+  if (id == 0x27) return KEY_0;
+  if (id == 0x28) return KEY_ENTER;
+  if (id == 0x29) return KEY_ESC;
+  if (id == 0x2a) return KEY_BACKSPACE;
+  if (id == 0x2b) return KEY_TAB;
+  if (id == 0x2c) return KEY_SPACE;
+  if (id == 0x2d) return KEY_MINUS;
+  if (id == 0x2e) return KEY_EQUAL;
+  if (id == 0x2f) return KEY_LEFTBRACE;
+  if (id == 0x30) return KEY_RIGHTBRACE;
+  if (id == 0x31) return KEY_BACKSLASH;
+  if (id == 0x32) return KEY_102ND;
+  if (id == 0x33) return KEY_SEMICOLON;
+  if (id == 0x34) return KEY_APOSTROPHE;
+  if (id == 0x35) return KEY_GRAVE;
+  if (id == 0x36) return KEY_COMMA;
+  if (id == 0x37) return KEY_DOT;
+  if (id == 0x38) return KEY_SLASH;
+  if (id == 0x39) return KEY_CAPSLOCK;
+  if (id >= 0x3a && id <= 0x45) return KEY_F1 + id - 0x3a;
+  if (id == 0x46) return KEY_SYSRQ;
+  if (id == 0x47) return KEY_SCROLLLOCK;
+  if (id == 0x48) return KEY_PAUSE;
+  if (id == 0x49) return KEY_INSERT;
+  if (id == 0x4a) return KEY_HOME;
+  if (id == 0x4b) return KEY_PAGEUP;
+  if (id == 0x4c) return KEY_DELETE;
+  if (id == 0x4d) return KEY_END;
+  if (id == 0x4e) return KEY_PAGEDOWN;
+  if (id == 0x4f) return KEY_RIGHT;
+  if (id == 0x50) return KEY_LEFT;
+  if (id == 0x51) return KEY_DOWN;
+  if (id == 0x52) return KEY_UP;
+  if (id >= 0x59 && id <= 0x61) return KEY_KP1 + id - 0x59;
+  if (id == 0x62) return KEY_KP0;
+  if (id == 0x63) return KEY_KPDOT;
+  if (id == 0x64) return KEY_102ND;
+  if (id >= 0x68 && id <= 0x73) return KEY_F13 + id - 0x68;
+  return 0;
+}
+
 int evdev_code_for_mouse_button(int button) {
   switch (button) {
     case 4:
@@ -161,6 +251,176 @@ std::vector<int> open_mouse_devices() {
   udev_enumerate_unref(enumerate);
   udev_unref(udev_context);
   return result;
+}
+
+std::vector<int> open_keyboard_devices() {
+  std::vector<int> result;
+  udev* udev_context = udev_new();
+  if (udev_context == nullptr) {
+    g_message("[ptt/linux] keyboard devices: udev unavailable");
+    return result;
+  }
+  udev_enumerate* enumerate = udev_enumerate_new(udev_context);
+  udev_enumerate_add_match_subsystem(enumerate, "input");
+  udev_enumerate_scan_devices(enumerate);
+  udev_list_entry* devices = udev_enumerate_get_list_entry(enumerate);
+  udev_list_entry* entry = nullptr;
+  udev_list_entry_foreach(entry, devices) {
+    udev_device* device = udev_device_new_from_syspath(
+        udev_context, udev_list_entry_get_name(entry));
+    const char* devnode = udev_device_get_devnode(device);
+    const char* is_keyboard =
+        udev_device_get_property_value(device, "ID_INPUT_KEYBOARD");
+    if (devnode != nullptr && g_strcmp0(is_keyboard, "1") == 0) {
+      const int fd = open(devnode, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
+      if (fd >= 0) {
+        result.push_back(fd);
+      } else {
+        g_message("[ptt/linux] keyboard device open failed devnode=%s",
+                  devnode);
+      }
+    }
+    udev_device_unref(device);
+  }
+  udev_enumerate_unref(enumerate);
+  udev_unref(udev_context);
+  return result;
+}
+
+bool key_modifiers_exact() {
+  return input->key_ctrl_down == input->key_need_ctrl &&
+         input->key_alt_down == input->key_need_alt &&
+         input->key_shift_down == input->key_need_shift;
+}
+
+bool key_engaged() {
+  const bool main_satisfied = input->key_code == 0 || input->key_main_down;
+  return main_satisfied && key_modifiers_exact() && !input->key_meta_down;
+}
+
+void update_keyboard_event(int code, bool down) {
+  if (code == KEY_LEFTCTRL || code == KEY_RIGHTCTRL) {
+    input->key_ctrl_down = down;
+  } else if (code == KEY_LEFTALT || code == KEY_RIGHTALT) {
+    input->key_alt_down = down;
+  } else if (code == KEY_LEFTSHIFT || code == KEY_RIGHTSHIFT) {
+    input->key_shift_down = down;
+  } else if (code == KEY_LEFTMETA || code == KEY_RIGHTMETA) {
+    input->key_meta_down = down;
+  } else if (input->key_code != 0 && code == input->key_code) {
+    input->key_main_down = down;
+  } else {
+    return;
+  }
+
+  const bool engaged = key_engaged();
+  if (engaged == input->key_active) return;
+  input->key_active = engaged;
+  g_message(
+      "[ptt/linux] keyboard evdev state changed state=%s code=%d "
+      "ctrl=%d alt=%d shift=%d meta=%d main=%d",
+      engaged ? "pressed" : "released", code, input->key_ctrl_down,
+      input->key_alt_down, input->key_shift_down, input->key_meta_down,
+      input->key_main_down);
+  send_event_from_worker(engaged ? "pressed" : "released");
+}
+
+gpointer keyboard_thread_main(gpointer) {
+  g_message("[ptt/linux] keyboard thread started code=%d ctrl=%d alt=%d shift=%d",
+            input->key_code, input->key_need_ctrl, input->key_need_alt,
+            input->key_need_shift);
+  std::vector<int> fds = open_keyboard_devices();
+  g_message("[ptt/linux] keyboard thread initial devices=%zu", fds.size());
+  bool logged_empty = fds.empty();
+  while (input != nullptr && input->keyboard_running) {
+    if (fds.empty()) {
+      if (!logged_empty) {
+        g_message("[ptt/linux] keyboard thread lost devices; retrying");
+        logged_empty = true;
+      }
+      g_usleep(500000);
+      fds = open_keyboard_devices();
+      if (!fds.empty()) {
+        g_message("[ptt/linux] keyboard thread devices reopened=%zu",
+                  fds.size());
+        logged_empty = false;
+      }
+      continue;
+    }
+    std::vector<pollfd> poll_fds;
+    for (const int fd : fds) poll_fds.push_back({fd, POLLIN, 0});
+    poll(poll_fds.data(), poll_fds.size(), 150);
+    for (const auto& poll_fd : poll_fds) {
+      if ((poll_fd.revents & POLLIN) == 0) continue;
+      input_event event{};
+      while (read(poll_fd.fd, &event, sizeof(event)) == sizeof(event)) {
+        if (event.type == EV_KEY && (event.value == 0 || event.value == 1)) {
+          update_keyboard_event(event.code, event.value == 1);
+        }
+      }
+    }
+  }
+  for (const int fd : fds) close(fd);
+  g_message("[ptt/linux] keyboard thread stopped");
+  return nullptr;
+}
+
+void stop_keyboard_listener() {
+  if (input == nullptr || input->keyboard_thread == nullptr) return;
+  g_message("[ptt/linux] keyboard listener stopping");
+  input->keyboard_running = false;
+  g_thread_join(input->keyboard_thread);
+  if (input->key_active) {
+    input->key_active = false;
+    send_event("released");
+  }
+  input->keyboard_thread = nullptr;
+  input->key_code = 0;
+  input->key_need_ctrl = false;
+  input->key_need_alt = false;
+  input->key_need_shift = false;
+  input->key_ctrl_down = false;
+  input->key_alt_down = false;
+  input->key_shift_down = false;
+  input->key_meta_down = false;
+  input->key_main_down = false;
+}
+
+bool configure_keyboard_evdev(FlValue* arguments) {
+  FlValue* physical_key = fl_value_lookup_string(arguments, "physicalKeyUsage");
+  const int code = physical_key == nullptr
+                       ? 0
+                       : evdev_code_for_hid_usage(fl_value_get_int(physical_key));
+  input->key_need_ctrl = arg_bool(arguments, "control");
+  input->key_need_alt = arg_bool(arguments, "alt");
+  input->key_need_shift = arg_bool(arguments, "shift");
+  g_message("[ptt/linux] configure keyboard evdev usage=%s code=%d ctrl=%d "
+            "alt=%d shift=%d",
+            physical_key == nullptr ? "<modifier-only>" : "set", code,
+            input->key_need_ctrl, input->key_need_alt, input->key_need_shift);
+  if (physical_key != nullptr && code == 0) {
+    g_message("[ptt/linux] configure keyboard evdev failed: unsupported key");
+    return false;
+  }
+  if (physical_key == nullptr &&
+      (!(input->key_need_ctrl || input->key_need_alt) ||
+       input->key_need_shift)) {
+    g_message("[ptt/linux] configure keyboard evdev failed: invalid modifier-only");
+    return false;
+  }
+  std::vector<int> fds = open_keyboard_devices();
+  g_message("[ptt/linux] configure keyboard evdev probe devices=%zu", fds.size());
+  for (const int fd : fds) close(fd);
+  if (fds.empty()) {
+    g_message("[ptt/linux] configure keyboard evdev failed: no readable devices");
+    return false;
+  }
+  input->key_code = code;
+  input->keyboard_running = true;
+  input->keyboard_thread =
+      g_thread_new("fourfun-ptt-keyboard", keyboard_thread_main, nullptr);
+  g_message("[ptt/linux] configure keyboard evdev success");
+  return true;
 }
 
 gpointer mouse_thread_main(gpointer) {
@@ -216,6 +476,39 @@ void stop_mouse_listener() {
   input->mouse_code = 0;
 }
 
+void stop_gnome_accelerator() {
+  if (input == nullptr || input->bus == nullptr) return;
+  if (input->gnome_activated_subscription != 0) {
+    g_dbus_connection_signal_unsubscribe(input->bus,
+                                         input->gnome_activated_subscription);
+    input->gnome_activated_subscription = 0;
+    g_message("[ptt/linux] gnome accelerator activated unsubscribed");
+  }
+  if (input->gnome_deactivated_subscription != 0) {
+    g_dbus_connection_signal_unsubscribe(
+        input->bus, input->gnome_deactivated_subscription);
+    input->gnome_deactivated_subscription = 0;
+    g_message("[ptt/linux] gnome accelerator deactivated unsubscribed");
+  }
+  if (input->gnome_action == 0) return;
+  g_autoptr(GError) error = nullptr;
+  g_autoptr(GVariant) reply = g_dbus_connection_call_sync(
+      input->bus, kGnomeShellBus, kGnomeShellPath, kGnomeShellInterface,
+      "UngrabAccelerator", g_variant_new("(u)", input->gnome_action),
+      G_VARIANT_TYPE("(b)"), G_DBUS_CALL_FLAGS_NONE, -1, nullptr, &error);
+  if (reply == nullptr) {
+    g_warning("[ptt/linux] gnome ungrab failed action=%u: %s",
+              input->gnome_action,
+              error == nullptr ? "unknown" : error->message);
+  } else {
+    gboolean success = FALSE;
+    g_variant_get(reply, "(b)", &success);
+    g_message("[ptt/linux] gnome ungrab action=%u success=%d",
+              input->gnome_action, success);
+  }
+  input->gnome_action = 0;
+}
+
 bool configure_mouse(int button) {
   const int code = evdev_code_for_mouse_button(button);
   g_message("[ptt/linux] configure mouse button=%d code=%d", button, code);
@@ -239,12 +532,15 @@ bool configure_mouse(int button) {
 void close_session() {
   if (input == nullptr) return;
   if (input->bus != nullptr || input->mouse_thread != nullptr ||
-      input->pending_configure != nullptr) {
+      input->keyboard_thread != nullptr || input->pending_configure != nullptr ||
+      input->gnome_action != 0) {
     g_message("[ptt/linux] close session");
   }
   cancel_pending_configure();
+  stop_keyboard_listener();
   stop_mouse_listener();
   if (input->bus == nullptr) return;
+  stop_gnome_accelerator();
   if (input->activated_subscription != 0) {
     g_dbus_connection_signal_unsubscribe(input->bus,
                                          input->activated_subscription);
@@ -289,13 +585,97 @@ std::string preferred_trigger(FlValue* arguments) {
                           ? nullptr
                           : fl_value_get_string(const_cast<FlValue*>(label_value));
   std::string trigger = portal_key(label);
-  const auto append = [&trigger](FlValue* value, const char* prefix) {
-    if (value != nullptr && fl_value_get_bool(value)) trigger = std::string(prefix) + "+" + trigger;
-  };
-  append(fl_value_lookup_string(arguments, "shift"), "SHIFT");
-  append(fl_value_lookup_string(arguments, "alt"), "ALT");
-  append(fl_value_lookup_string(arguments, "control"), "CTRL");
+  if (arg_bool(arguments, "shift")) trigger = "SHIFT+" + trigger;
+  if (arg_bool(arguments, "alt")) trigger = "ALT+" + trigger;
+  if (arg_bool(arguments, "control")) trigger = "CTRL+" + trigger;
   return trigger;
+}
+
+std::string gnome_accelerator(FlValue* arguments) {
+  if (fl_value_lookup_string(arguments, "physicalKeyUsage") == nullptr) {
+    g_message("[ptt/linux] configure gnome skipped: modifier-only binding");
+    return "";
+  }
+  const FlValue* label_value = fl_value_lookup_string(arguments, "label");
+  const char* label = label_value == nullptr
+                          ? nullptr
+                          : fl_value_get_string(const_cast<FlValue*>(label_value));
+  std::string trigger = portal_key(label);
+  if (trigger.empty()) return "";
+  std::string accelerator;
+  if (arg_bool(arguments, "control")) accelerator += "<Control>";
+  if (arg_bool(arguments, "alt")) accelerator += "<Alt>";
+  if (arg_bool(arguments, "shift")) accelerator += "<Shift>";
+  accelerator += trigger;
+  return accelerator;
+}
+
+void on_gnome_accelerator_signal(GDBusConnection*, const gchar*, const gchar*,
+                                 const gchar*, const gchar*, GVariant* parameters,
+                                 gpointer user_data) {
+  const bool pressed = GPOINTER_TO_INT(user_data) != 0;
+  guint action = 0;
+  g_autoptr(GVariant) options = nullptr;
+  g_variant_get(parameters, "(u@a{sv})", &action, &options);
+  if (input != nullptr && input->gnome_action != 0 &&
+      action == input->gnome_action) {
+    g_message("[ptt/linux] gnome accelerator signal state=%s action=%u",
+              pressed ? "pressed" : "released", action);
+    send_event(pressed ? "pressed" : "released");
+    return;
+  }
+  g_message("[ptt/linux] gnome accelerator signal ignored state=%s action=%u",
+            pressed ? "pressed" : "released", action);
+}
+
+void subscribe_gnome_accelerator_events() {
+  if (input == nullptr || input->bus == nullptr) return;
+  input->gnome_activated_subscription = g_dbus_connection_signal_subscribe(
+      input->bus, kGnomeShellBus, kGnomeShellInterface, "AcceleratorActivated",
+      kGnomeShellPath, nullptr, G_DBUS_SIGNAL_FLAGS_NONE,
+      on_gnome_accelerator_signal, GINT_TO_POINTER(1), nullptr);
+  input->gnome_deactivated_subscription = g_dbus_connection_signal_subscribe(
+      input->bus, kGnomeShellBus, kGnomeShellInterface, "AcceleratorDeactivated",
+      kGnomeShellPath, nullptr, G_DBUS_SIGNAL_FLAGS_NONE,
+      on_gnome_accelerator_signal, nullptr, nullptr);
+  g_message("[ptt/linux] gnome accelerator events subscribed active=%u "
+            "inactive=%u",
+            input->gnome_activated_subscription,
+            input->gnome_deactivated_subscription);
+}
+
+bool configure_gnome_shell(FlValue* arguments) {
+  const std::string accelerator = gnome_accelerator(arguments);
+  if (accelerator.empty()) {
+    g_message("[ptt/linux] configure gnome skipped: empty accelerator");
+    return false;
+  }
+  if (ensure_session_bus("gnome shell") == nullptr) return false;
+  g_message("[ptt/linux] configure gnome accelerator=%s mode=%u flags=%u",
+            accelerator.c_str(), kGnomeShellModeNormal,
+            kGnomeShellTriggerRelease);
+  g_autoptr(GError) error = nullptr;
+  g_autoptr(GVariant) reply = g_dbus_connection_call_sync(
+      input->bus, kGnomeShellBus, kGnomeShellPath, kGnomeShellInterface,
+      "GrabAccelerator",
+      g_variant_new("(suu)", accelerator.c_str(), kGnomeShellModeNormal,
+                    kGnomeShellTriggerRelease),
+      G_VARIANT_TYPE("(u)"), G_DBUS_CALL_FLAGS_NONE, -1, nullptr, &error);
+  if (reply == nullptr) {
+    g_message("[ptt/linux] configure gnome failed: %s",
+              error == nullptr ? "unknown" : error->message);
+    return false;
+  }
+  guint action = 0;
+  g_variant_get(reply, "(u)", &action);
+  if (action == 0) {
+    g_message("[ptt/linux] configure gnome failed: action=0");
+    return false;
+  }
+  input->gnome_action = action;
+  subscribe_gnome_accelerator_events();
+  g_message("[ptt/linux] configure gnome success action=%u", action);
+  return true;
 }
 
 void on_shortcut_signal(GDBusConnection*, const gchar*, const gchar*,
@@ -476,17 +856,15 @@ void create_response(GDBusConnection*, const gchar*, const gchar*, const gchar*,
   bind_shortcut(static_cast<const char*>(user_data));
 }
 
-void configure_keyboard(FlValue* arguments) {
-  g_message("[ptt/linux] configure keyboard start");
-  g_autoptr(GError) error = nullptr;
-  input->bus = g_bus_get_sync(G_BUS_TYPE_SESSION, nullptr, &error);
-  if (input->bus == nullptr) {
-    g_warning("[ptt/linux] portal unavailable: %s", error->message);
+void configure_keyboard_portal(FlValue* arguments) {
+  g_message("[ptt/linux] configure keyboard portal start");
+  if (ensure_session_bus("portal") == nullptr) {
     respond_pending_configure_error(
         "Portal de atalhos globais indisponível nesta sessão.");
     close_session();
     return;
   }
+  g_autoptr(GError) error = nullptr;
   GVariantBuilder options;
   g_variant_builder_init(&options, G_VARIANT_TYPE_VARDICT);
   const std::string handle_token = next_portal_token("fourfun_ptt");
@@ -525,6 +903,29 @@ void configure_keyboard(FlValue* arguments) {
     subscribe_request(request_path, create_response, g_strdup(trigger.c_str()),
                       g_free);
   }
+}
+
+void configure_keyboard(FlValue* arguments) {
+  g_message("[ptt/linux] configure keyboard start");
+  const bool modifier_only =
+      fl_value_lookup_string(arguments, "physicalKeyUsage") == nullptr;
+  const bool gnome_configured = configure_gnome_shell(arguments);
+  const bool evdev_configured = configure_keyboard_evdev(arguments);
+  if (gnome_configured || evdev_configured) {
+    g_message("[ptt/linux] configure keyboard global success gnome=%d evdev=%d",
+              gnome_configured, evdev_configured);
+    respond_pending_configure_success();
+    return;
+  }
+  if (modifier_only) {
+    respond_pending_configure_error(
+        "Atalhos só de modificadores no Linux exigem acesso global por evdev. "
+        "Execute linux/ptt/install-input-access.sh e entre novamente na sessão.");
+    close_session();
+    return;
+  }
+  g_message("[ptt/linux] configure keyboard falling back to portal");
+  configure_keyboard_portal(arguments);
 }
 
 FlMethodErrorResponse* on_listen(FlEventChannel*, FlValue*, gpointer) {

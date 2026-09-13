@@ -96,9 +96,10 @@ abstract class _MethodChannelPushToTalkBackend implements PushToTalkBackend {
 class LinuxPushToTalkBackend extends _MethodChannelPushToTalkBackend {
   const LinuxPushToTalkBackend();
 
-  /// Limitações explícitas do backend Linux (portal GlobalShortcuts + evdev):
-  /// sem mouse com modificadores (o leitor evdev não enxerga modificadores)
-  /// e sem atalhos só-modificadores (o portal exige uma tecla principal).
+  /// Limitação explícita do backend Linux: sem mouse com modificadores.
+  /// O leitor evdev de mouse não combina estado de teclado, então aceitar isso
+  /// salvaria um atalho que nunca dispararia.
+  /// Atalhos só de modificadores são enviados ao runner Linux, que tenta evdev.
   /// Recusar aqui impede salvar um atalho que nunca dispararia.
   @override
   Future<PushToTalkConfigResult> configure(PushToTalkBinding? binding) {
@@ -106,10 +107,9 @@ class LinuxPushToTalkBackend extends _MethodChannelPushToTalkBackend {
         binding != null &&
         binding.kind == PushToTalkBindingKind.mouse &&
         binding.hasModifiers;
-    if (binding != null && (mouseWithMods || binding.isModifierOnly)) {
-      final which = mouseWithMods
-          ? 'Botões do mouse com modificadores não são suportados no Linux'
-          : 'Atalhos só de modificadores (Ctrl/Alt isolados) não são suportados no Linux';
+    if (binding != null && mouseWithMods) {
+      const which =
+          'Botões do mouse com modificadores não são suportados no Linux';
       _logPttBackend(
         'LinuxPushToTalkBackend configure: recusado localmente '
         'binding=${_describePushToTalkBinding(binding)} reason=$which',

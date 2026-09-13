@@ -1,3 +1,0 @@
-# Permite ao grupo dedicado ler apenas dispositivos classificados como mouse.
-# O processo nunca abre dispositivos de teclado por esta regra.
-SUBSYSTEM=="input", KERNEL=="event*", ENV{ID_INPUT_MOUSE}=="1", GROUP="fourfun-ptt", MODE="0660"

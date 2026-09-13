@@ -1,9 +1,17 @@
-# Push to Talk por mouse no Linux
+# Push to Talk global no Linux
 
-O atalho global por teclado usa o portal do desktop. Para ler botões de mouse
-em segundo plano no Wayland, o cliente abre somente dispositivos classificados
-como `ID_INPUT_MOUSE=1`. Isso requer uma regra `udev` e associação explícita
-ao grupo dedicado `fourfun-ptt`.
+O atalho global por teclado tenta, nesta ordem:
+
+1. `org.gnome.Shell.GrabAccelerator` em sessoes GNOME.
+2. Leitura evdev de dispositivos `ID_INPUT_KEYBOARD=1`.
+3. Portal `org.freedesktop.portal.GlobalShortcuts` como fallback.
+
+Atalhos so de modificadores, como `Ctrl` ou `Ctrl + Alt`, dependem do caminho
+evdev. Botoes de mouse em segundo plano tambem usam evdev, lendo dispositivos
+`ID_INPUT_MOUSE=1`.
+
+O acesso evdev exige uma regra `udev` e associacao explicita ao grupo dedicado
+`fourfun-ptt`.
 
 Instale manualmente, após revisar os arquivos:
 
@@ -11,6 +19,6 @@ Instale manualmente, após revisar os arquivos:
 sudo ./install-input-access.sh "$USER"
 ```
 
-Em seguida, encerre a sessão gráfica e entre novamente. A regra não concede
-acesso a dispositivos de teclado, mas membros do grupo podem observar todos os
-eventos dos mouses conectados.
+Em seguida, encerre a sessao grafica e entre novamente. A regra concede leitura
+bruta aos dispositivos de teclado/mouse para membros do grupo, portanto deve ser
+instalada apenas na maquina de desenvolvimento/uso confiavel.

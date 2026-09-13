@@ -67,7 +67,8 @@ class PushToTalkConfigFailed extends PushToTalkConfigResult {
 ///   Qualquer ordem de pressionamento vale; a confirmação acontece ao soltar.
 /// - `kind == keyboard` com [physicalKeyUsage] nulo: SÓ modificadores
 ///   (`Ctrl`, `Alt` ou `Ctrl+Alt` isolados — `Shift` sozinho é rejeitado na
-///   captura). Suporte real depende do backend (Windows + fallback em foco).
+///   captura). Suporte real depende do backend (Windows, Linux evdev e
+///   fallback em foco).
 /// - `kind == mouse`: botão do meio/voltar/avançar, opcionalmente com
 ///   modificadores (Windows; o Linux recusa com erro explícito).
 ///

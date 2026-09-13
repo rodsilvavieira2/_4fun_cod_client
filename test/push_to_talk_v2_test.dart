@@ -462,43 +462,46 @@ void main() {
   });
 
   group('backends PTT v2', () {
-    test('Linux recusa mouse com modificadores e só-modificadores', () async {
-      const backend = LinuxPushToTalkBackend();
+    test(
+      'Linux recusa mouse com modificadores e aceita modifiers-only',
+      () async {
+        const backend = LinuxPushToTalkBackend();
 
-      final mouseMods = await backend.configure(
-        const PushToTalkBinding.mouse(
-          mouseButton: 8,
-          label: 'Botão voltar',
-          control: true,
-        ),
-      );
-      expect(mouseMods.isOk, isFalse);
-      expect(mouseMods.error, PushToTalkConfigError.unsupportedKey);
-      expect(mouseMods.message, contains('Linux'));
+        final mouseMods = await backend.configure(
+          const PushToTalkBinding.mouse(
+            mouseButton: 8,
+            label: 'Botão voltar',
+            control: true,
+          ),
+        );
+        expect(mouseMods.isOk, isFalse);
+        expect(mouseMods.error, PushToTalkConfigError.unsupportedKey);
+        expect(mouseMods.message, contains('Linux'));
 
-      final modsOnly = await backend.configure(
-        const PushToTalkBinding.keyboard(label: 'Ctrl', control: true),
-      );
-      expect(modsOnly.isOk, isFalse);
-      expect(modsOnly.error, PushToTalkConfigError.unsupportedKey);
+        final modsOnly = await backend.configure(
+          const PushToTalkBinding.keyboard(label: 'Ctrl', control: true),
+        );
+        expect(modsOnly.isOk, isFalse);
+        expect(modsOnly.error, PushToTalkConfigError.registrationFailed);
 
-      // Teclado comum e mouse puro passam ao portal (sem plugin no teste, a
-      // falha é de registro — não de "não suportado").
-      final keyboard = await backend.configure(
-        const PushToTalkBinding.keyboard(
-          physicalKeyUsage: _hidK,
-          label: 'K',
-          control: true,
-          alt: true,
-        ),
-      );
-      expect(keyboard.error, PushToTalkConfigError.registrationFailed);
+        // Teclado comum e mouse puro passam ao runner nativo (sem plugin no
+        // teste, a falha é de registro — não de "não suportado").
+        final keyboard = await backend.configure(
+          const PushToTalkBinding.keyboard(
+            physicalKeyUsage: _hidK,
+            label: 'K',
+            control: true,
+            alt: true,
+          ),
+        );
+        expect(keyboard.error, PushToTalkConfigError.registrationFailed);
 
-      final mouse = await backend.configure(
-        const PushToTalkBinding.mouse(mouseButton: 4, label: 'Botão do meio'),
-      );
-      expect(mouse.error, PushToTalkConfigError.registrationFailed);
-    });
+        final mouse = await backend.configure(
+          const PushToTalkBinding.mouse(mouseButton: 4, label: 'Botão do meio'),
+        );
+        expect(mouse.error, PushToTalkConfigError.registrationFailed);
+      },
+    );
 
     test('resultado tipado expõe erro e mensagem', () {
       const ok = PushToTalkConfigResult.ok();
