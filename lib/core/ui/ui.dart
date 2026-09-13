@@ -10,6 +10,7 @@ export 'feedback/app_badge.dart';
 export 'inputs/app_chat_input.dart';
 export 'inputs/app_text_field.dart';
 export 'invite_dialog.dart';
+export 'jump_to_present_pill.dart';
 export 'menus/app_menu.dart';
 export 'message_image_grid.dart';
 export 'overlay_icon_button.dart';

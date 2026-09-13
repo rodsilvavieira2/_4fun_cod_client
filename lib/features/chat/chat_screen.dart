@@ -255,7 +255,12 @@ class _MessageList extends StatefulWidget {
 class _MessageListState extends State<_MessageList> {
   static const _loadMoreThreshold = 300.0;
 
+  /// Distância do presente (offset 0, lista `reverse: true`) a partir da
+  /// qual o pill "voltar ao presente" aparece.
+  static const _awayFromPresentThreshold = 400.0;
+
   final ScrollController _scrollController = ScrollController();
+  bool _awayFromPresent = false;
 
   @override
   void initState() {
@@ -278,6 +283,19 @@ class _MessageListState extends State<_MessageList> {
         !state.loadingMore) {
       widget.onLoadMore();
     }
+    final away = position.pixels > _awayFromPresentThreshold;
+    if (away != _awayFromPresent) {
+      setState(() => _awayFromPresent = away);
+    }
+  }
+
+  void _jumpToPresent() {
+    if (!_scrollController.hasClients) return;
+    _scrollController.animateTo(
+      0,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOut,
+    );
   }
 
   @override
@@ -342,56 +360,75 @@ class _MessageListState extends State<_MessageList> {
     );
     final mentionTargets = _mentionTargetsFor(widget.members);
 
-    return ListView.builder(
-      controller: _scrollController,
-      reverse: true,
-      padding: const EdgeInsets.fromLTRB(0, 12, 0, 12),
-      itemCount: messages.length + (state.loadingMore ? 1 : 0),
-      itemBuilder: (context, index) {
-        if (index == messages.length && state.loadingMore) {
-          return const Padding(
-            padding: EdgeInsets.symmetric(vertical: 12),
-            child: Center(
-              child: SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(strokeWidth: 2),
+    return Stack(
+      children: [
+        ListView.builder(
+          controller: _scrollController,
+          reverse: true,
+          padding: const EdgeInsets.fromLTRB(0, 12, 0, 12),
+          itemCount: messages.length + (state.loadingMore ? 1 : 0),
+          itemBuilder: (context, index) {
+            if (index == messages.length && state.loadingMore) {
+              return const Padding(
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: Center(
+                  child: SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+              );
+            }
+            final message = messages[messages.length - 1 - index];
+            final chronologicalIndex = messages.length - 1 - index;
+            final previous = chronologicalIndex > 0
+                ? messages[chronologicalIndex - 1]
+                : null;
+            final showDayDivider = ChatGrouping.shouldShowDayDivider(
+              current: message,
+              previous: previous,
+            );
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (showDayDivider) _DayDivider(time: message.createdAt),
+                _MessageTile(
+                  message: message,
+                  showHeader: ChatGrouping.shouldStartNewGroup(
+                    current: message,
+                    previous: previous,
+                  ),
+                  myUserId: widget.myUserId,
+                  mentionTargets: mentionTargets,
+                  quickReactionEmojis: quickReactionEmojis,
+                  onReply: widget.onReply,
+                  onReact: widget.onReact,
+                  onEdit: widget.onEdit,
+                  onDelete: widget.onDelete,
+                  onRetryAttachment: widget.onRetryAttachment,
+                ),
+              ],
+            );
+          },
+        ),
+        Positioned(
+          bottom: 12,
+          left: 0,
+          right: 0,
+          child: Center(
+            child: AnimatedOpacity(
+              opacity: _awayFromPresent ? 1 : 0,
+              duration: const Duration(milliseconds: 200),
+              child: IgnorePointer(
+                ignoring: !_awayFromPresent,
+                child: JumpToPresentPill(onPressed: _jumpToPresent),
               ),
             ),
-          );
-        }
-        final message = messages[messages.length - 1 - index];
-        final chronologicalIndex = messages.length - 1 - index;
-        final previous = chronologicalIndex > 0
-            ? messages[chronologicalIndex - 1]
-            : null;
-        final showDayDivider = ChatGrouping.shouldShowDayDivider(
-          current: message,
-          previous: previous,
-        );
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (showDayDivider) _DayDivider(time: message.createdAt),
-            _MessageTile(
-              message: message,
-              showHeader: ChatGrouping.shouldStartNewGroup(
-                current: message,
-                previous: previous,
-              ),
-              myUserId: widget.myUserId,
-              mentionTargets: mentionTargets,
-              quickReactionEmojis: quickReactionEmojis,
-              onReply: widget.onReply,
-              onReact: widget.onReact,
-              onEdit: widget.onEdit,
-              onDelete: widget.onDelete,
-              onRetryAttachment: widget.onRetryAttachment,
-            ),
-          ],
-        );
-      },
+          ),
+        ),
+      ],
     );
   }
 }
