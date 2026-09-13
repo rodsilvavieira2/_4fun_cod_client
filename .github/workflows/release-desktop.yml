@@ -73,6 +73,15 @@ jobs:
 
           echo "Release version: $VERSION"
 
+      - name: Stamp pubspec version (exe == feed)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # O updater compara a versão do binário com a do feed: sem carimbo,
+          # o exe reportaria o fallback do pubspec e nunca veria update.
+          sed -i -E "s/^version: .*/version: $APP_VERSION+${{ github.run_number }}/" pubspec.yaml
+          grep '^version:' pubspec.yaml
+
       - name: Build Linux
         env:
           API_URL: ${{ vars.API_URL }}
@@ -274,6 +283,14 @@ jobs:
           echo "APP_VERSION=$version" >> $env:GITHUB_ENV
 
           Write-Host "Release version: $version"
+
+      - name: Stamp pubspec version (exe == feed)
+        shell: pwsh
+        run: |
+          # O updater compara a versão do binário com a do feed: sem carimbo,
+          # o exe reportaria o fallback do pubspec e nunca veria update.
+          (Get-Content pubspec.yaml) -replace '^version: .*', "version: $env:APP_VERSION+${{ github.run_number }}" | Set-Content pubspec.yaml
+          Select-String '^version:' pubspec.yaml
 
       - name: Build Windows
         shell: pwsh
