@@ -461,9 +461,19 @@ jobs:
           UPDATER_PASSPHRASE: ${{ secrets.DESKTOP_UPDATER_KEY_PASSPHRASE }}
         shell: pwsh
         run: |
-          [IO.File]::WriteAllBytes("$env:RUNNER_TEMP\release-key.dukey", [Convert]::FromBase64String($env:UPDATER_BUNDLE_B64))
-          dart run desktop_updater:release keys import --input "$env:RUNNER_TEMP\release-key.dukey" --passphrase-env UPDATER_PASSPHRASE
-          Remove-Item "$env:RUNNER_TEMP\release-key.dukey" -Force
+          # DPAPI no runner Windows é flake (timeout esporádico) — import é
+          # idempotente, então retry com backoff.
+          $attempt = 0
+          while ($true) {
+            $attempt++
+            [IO.File]::WriteAllBytes("$env:RUNNER_TEMP\release-key.dukey", [Convert]::FromBase64String($env:UPDATER_BUNDLE_B64))
+            dart run desktop_updater:release keys import --input "$env:RUNNER_TEMP\release-key.dukey" --passphrase-env UPDATER_PASSPHRASE
+            if ($LASTEXITCODE -eq 0) { break }
+            if ($attempt -ge 5) { throw "keys import failed after $attempt attempts" }
+            Remove-Item "$env:RUNNER_TEMP\release-key.dukey" -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds (15 * $attempt)
+          }
+          Remove-Item "$env:RUNNER_TEMP\release-key.dukey" -Force -ErrorAction SilentlyContinue
 
       - name: Package updater files (Windows)
         shell: pwsh
