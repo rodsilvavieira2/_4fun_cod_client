@@ -254,7 +254,11 @@ jobs:
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
-          cache: true
+          # Sem cache: releases por tag são esporádicas e o cache expira
+          # entre runs — no Windows o save do SDK (~7min) + pub (~2,5min)
+          # no Post Setup custava mais do que o download fresco no Setup.
+          cache: false
+          pub-cache: false
 
       - name: Flutter version
         run: flutter --version
