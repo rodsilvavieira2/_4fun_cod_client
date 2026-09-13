@@ -643,6 +643,8 @@ jobs:
             updater/feed/app-archive.json
           # Verificação hospedada via API (funciona com repo privado ou
           # público). Retry cobre propagação eventual dos assets.
+          # O verify procura desktop_updater.keys.json no CWD (=dist).
+          cp "$GITHUB_WORKSPACE/desktop_updater.keys.json" ./desktop_updater.keys.json
           fetch_retry() { # $1=pattern $2=dest-dir
             for i in $(seq 1 12); do
               if gh release download "$GITHUB_REF_NAME" -p "$1" -D "$2" --clobber; then return 0; fi
