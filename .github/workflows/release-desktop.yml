@@ -577,6 +577,8 @@ jobs:
           if curl -sfL "https://github.com/rodsilvavieira2/_4fun_cod_client/releases/latest/download/app-archive.json" \
               -o dist/updater/feed/app-archive.json; then
             echo "extending published feed"
+            # upsert só aceita archive NÃO assinado; o sign final re-assina.
+            python3 -c "import json; p='dist/updater/feed/app-archive.json'; d=json.load(open(p)); d.pop('signature', None); json.dump(d, open(p, 'w'), indent=2)"
           else
             echo "first feed release"
             rm -f dist/updater/feed/app-archive.json
