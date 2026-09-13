@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../ds_tokens.dart';
+import '../../theme/appearance_theme.dart';
 
 /// Exibe um modal tipo janela macOS com backdrop blur e animação suave
 Future<T?> showMacModalWindow<T>({
@@ -58,6 +59,7 @@ class _MacModalWindowHost extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     return CallbackShortcuts(
       bindings: {
         const SingleActivator(LogicalKeyboardKey.escape): () {
@@ -81,12 +83,9 @@ class _MacModalWindowHost extends StatelessWidget {
                   filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
                   child: Container(
                     decoration: BoxDecoration(
-                      color: AppTokens.surface2.withValues(alpha: 0.95),
+                      color: colors.surface2.withValues(alpha: 0.95),
                       borderRadius: BorderRadius.circular(AppRadius.xl),
-                      border: Border.all(
-                        color: AppTokens.borderSubtle,
-                        width: 1,
-                      ),
+                      border: Border.all(color: colors.borderSubtle, width: 1),
                       boxShadow: AppShadows.modalWindow,
                     ),
                     child: Column(
@@ -97,10 +96,10 @@ class _MacModalWindowHost extends StatelessWidget {
                           Container(
                             height: 44,
                             padding: const EdgeInsets.symmetric(horizontal: 16),
-                            decoration: const BoxDecoration(
+                            decoration: BoxDecoration(
                               border: Border(
                                 bottom: BorderSide(
-                                  color: AppTokens.borderHairline,
+                                  color: colors.borderHairline,
                                 ),
                               ),
                             ),
@@ -108,11 +107,11 @@ class _MacModalWindowHost extends StatelessWidget {
                               children: [
                                 Text(
                                   title!,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontFamily: 'Geist',
                                     fontSize: 14,
                                     fontWeight: FontWeight.w600,
-                                    color: AppTokens.textPrimary,
+                                    color: colors.textPrimary,
                                   ),
                                 ),
                                 const Spacer(),

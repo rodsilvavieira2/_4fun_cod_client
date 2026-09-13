@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../theme/appearance_theme.dart';
 import 'ds_tokens.dart';
 
 class SettingsStack extends StatelessWidget {
@@ -37,6 +38,7 @@ class SettingsGroup extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     final hasHeader = title != null || trailing != null;
     final rows = <Widget>[];
     for (var index = 0; index < children.length; index++) {
@@ -48,9 +50,9 @@ class SettingsGroup extends StatelessWidget {
       borderRadius: BorderRadius.circular(AppRadius.md),
       child: Container(
         decoration: BoxDecoration(
-          color: AppTokens.surface1,
+          color: colors.surface1,
           borderRadius: BorderRadius.circular(AppRadius.md),
-          border: Border.all(color: AppTokens.borderHairline, width: 1),
+          border: Border.all(color: colors.borderHairline, width: 1),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -60,7 +62,7 @@ class SettingsGroup extends StatelessWidget {
                 height: 34,
                 padding: const EdgeInsets.fromLTRB(12, 0, 8, 0),
                 alignment: Alignment.center,
-                color: AppTokens.surfaceBase.withValues(alpha: 0.34),
+                color: colors.surfaceBase.withValues(alpha: 0.34),
                 child: Row(
                   children: [
                     if (title case final groupTitle?)
@@ -68,11 +70,11 @@ class SettingsGroup extends StatelessWidget {
                         child: Text(
                           groupTitle,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontFamily: 'Geist',
                             fontSize: 12.5,
                             fontWeight: FontWeight.w600,
-                            color: AppTokens.textSecondary,
+                            color: colors.textSecondary,
                             letterSpacing: 0,
                           ),
                         ),
@@ -208,11 +210,12 @@ class SettingsNotice extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     final (foreground, background, border) = switch (tone) {
       SettingsNoticeTone.neutral => (
-        AppTokens.textSecondary,
-        AppTokens.surface1,
-        AppTokens.borderHairline,
+        colors.textSecondary,
+        colors.surface1,
+        colors.borderHairline,
       ),
       SettingsNoticeTone.success => (
         AppTokens.accentGreen,
@@ -265,16 +268,17 @@ class SettingsValueText extends StatelessWidget {
   const SettingsValueText(
     this.value, {
     super.key,
-    this.color = AppTokens.textPrimary,
+    this.color,
     this.monospace = false,
   });
 
   final String value;
-  final Color color;
+  final Color? color;
   final bool monospace;
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     return Text(
       value,
       overflow: TextOverflow.ellipsis,
@@ -283,7 +287,7 @@ class SettingsValueText extends StatelessWidget {
         fontFamily: monospace ? 'Geist Mono' : 'Geist',
         fontSize: monospace ? 11.5 : 13,
         fontWeight: FontWeight.w500,
-        color: color,
+        color: color ?? colors.textPrimary,
         letterSpacing: 0,
       ),
     );
@@ -298,17 +302,16 @@ class _SettingsRowIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = destructive
-        ? AppTokens.accentPurple
-        : AppTokens.textSecondary;
+    final colors = context.appColors;
+    final color = destructive ? AppTokens.accentPurple : colors.textSecondary;
     return Container(
       width: 28,
       height: 28,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: AppTokens.surface2,
+        color: colors.surface2,
         borderRadius: BorderRadius.circular(AppRadius.sm),
-        border: Border.all(color: AppTokens.borderHairline, width: 1),
+        border: Border.all(color: colors.borderHairline, width: 1),
       ),
       child: Icon(icon, size: 15, color: color),
     );
@@ -330,6 +333,7 @@ class _SettingsRowText extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -341,7 +345,7 @@ class _SettingsRowText extends StatelessWidget {
             fontFamily: 'Geist',
             fontSize: 13,
             fontWeight: FontWeight.w600,
-            color: destructive ? AppTokens.accentPurple : AppTokens.textPrimary,
+            color: destructive ? AppTokens.accentPurple : colors.textPrimary,
             letterSpacing: 0,
           ),
         ),
@@ -355,7 +359,7 @@ class _SettingsRowText extends StatelessWidget {
               fontFamily: 'Geist',
               fontSize: 12,
               height: 1.25,
-              color: subtitleColor ?? AppTokens.textMuted,
+              color: subtitleColor ?? colors.textMuted,
               letterSpacing: 0,
             ),
           ),

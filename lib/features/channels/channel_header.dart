@@ -26,6 +26,7 @@ class ChannelHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     final icon = channelType == ChannelType.text
         ? Icons.tag
         : Icons.volume_up_outlined;
@@ -36,10 +37,10 @@ class ChannelHeader extends StatelessWidget {
         child: Container(
           height: AppLayout.headerHeight,
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          decoration: const BoxDecoration(
-            color: Color(0xCC000000), // ~80% black glass
+          decoration: BoxDecoration(
+            color: colors.background.withValues(alpha: 0.80),
             border: Border(
-              bottom: BorderSide(color: AppTokens.borderHairline, width: 1),
+              bottom: BorderSide(color: colors.borderHairline, width: 1),
             ),
           ),
           child: Row(
@@ -52,7 +53,7 @@ class ChannelHeader extends StatelessWidget {
                 ),
                 const SizedBox(width: 6),
               ],
-              Icon(icon, size: 16, color: AppTokens.textSecondary),
+              Icon(icon, size: 16, color: colors.textSecondary),
               const SizedBox(width: 8),
               Expanded(
                 child: Row(
@@ -61,20 +62,20 @@ class ChannelHeader extends StatelessWidget {
                       child: Text(
                         channelName,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontFamily: 'Geist',
                           fontSize: 14.5,
                           fontWeight: FontWeight.w600,
-                          color: AppTokens.textPrimary,
-                          letterSpacing: -0.2,
+                          color: colors.textPrimary,
+                          letterSpacing: 0,
                         ),
                       ),
                     ),
                     const SizedBox(width: 12),
-                    const SizedBox(
+                    SizedBox(
                       height: 18,
                       child: VerticalDivider(
-                        color: AppTokens.borderStrong,
+                        color: colors.borderStrong,
                         width: 1,
                       ),
                     ),
@@ -85,10 +86,10 @@ class ChannelHeader extends StatelessWidget {
                             ? 'Conversa do servidor'
                             : 'Sala de voz e vídeo',
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontFamily: 'Geist',
                           fontSize: 12.5,
-                          color: AppTokens.textMuted,
+                          color: colors.textMuted,
                         ),
                       ),
                     ),

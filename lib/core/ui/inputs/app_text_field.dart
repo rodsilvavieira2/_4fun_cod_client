@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../theme/appearance_theme.dart';
 import '../ds_tokens.dart';
 
 /// Campo de texto elegante no estilo Vercel Dark (borda 1px, background refinado, foco nítido)
@@ -67,6 +68,7 @@ class _AppTextFieldState extends State<AppTextField> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
@@ -74,11 +76,11 @@ class _AppTextFieldState extends State<AppTextField> {
         if (widget.label != null) ...[
           Text(
             widget.label!,
-            style: const TextStyle(
+            style: TextStyle(
               fontFamily: 'Geist',
               fontSize: 12.5,
               fontWeight: FontWeight.w500,
-              color: AppTokens.textSecondary,
+              color: colors.textSecondary,
             ),
           ),
           const SizedBox(height: 6),
@@ -86,12 +88,12 @@ class _AppTextFieldState extends State<AppTextField> {
         AnimatedContainer(
           duration: const Duration(milliseconds: 150),
           decoration: BoxDecoration(
-            color: AppTokens.surface2,
+            color: colors.surface2,
             borderRadius: BorderRadius.circular(AppRadius.sm),
             border: Border.all(
               color: widget.errorText != null
                   ? AppTokens.accentPurple
-                  : (_focused ? AppTokens.borderFocus : AppTokens.borderStrong),
+                  : (_focused ? colors.borderFocus : colors.borderStrong),
               width: _focused ? 1.2 : 1.0,
             ),
           ),
@@ -109,18 +111,18 @@ class _AppTextFieldState extends State<AppTextField> {
             onFieldSubmitted: widget.onFieldSubmitted,
             maxLines: widget.maxLines,
             minLines: widget.minLines,
-            style: const TextStyle(
+            style: TextStyle(
               fontFamily: 'Geist',
               fontSize: 13.5,
-              color: AppTokens.textPrimary,
+              color: colors.textPrimary,
             ),
             decoration: InputDecoration(
               isDense: true,
               hintText: widget.hintText,
-              hintStyle: const TextStyle(
+              hintStyle: TextStyle(
                 fontFamily: 'Geist',
                 fontSize: 13.5,
-                color: AppTokens.textMuted,
+                color: colors.textMuted,
               ),
               prefixIcon: widget.prefixIcon,
               suffixIcon: widget.suffixIcon,

@@ -86,30 +86,31 @@ class _HomeNavigation extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     return ColoredBox(
-      color: AppTokens.surface1,
+      color: colors.surface1,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Container(
             height: AppLayout.headerHeight,
             padding: const EdgeInsets.symmetric(horizontal: 14),
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               border: Border(
-                bottom: BorderSide(color: AppTokens.borderHairline, width: 1),
+                bottom: BorderSide(color: colors.borderHairline, width: 1),
               ),
             ),
-            child: const Row(
+            child: Row(
               children: [
-                AppLogo(size: 24),
-                SizedBox(width: 10),
+                const AppLogo(size: 24),
+                const SizedBox(width: 10),
                 Text(
                   '4FunCode',
                   style: TextStyle(
                     fontFamily: 'Geist',
                     fontSize: 13.5,
                     fontWeight: FontWeight.w600,
-                    color: AppTokens.textPrimary,
+                    color: colors.textPrimary,
                     letterSpacing: 0,
                   ),
                 ),
@@ -145,15 +146,16 @@ class _HomeNavGroupLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 12, 4),
       child: Text(
         label,
-        style: const TextStyle(
+        style: TextStyle(
           fontFamily: 'Geist Mono',
           fontSize: 10.5,
           fontWeight: FontWeight.w600,
-          color: AppTokens.textMuted,
+          color: colors.textMuted,
           letterSpacing: 0,
         ),
       ),
@@ -183,6 +185,7 @@ class _HomeNavItemState extends State<_HomeNavItem> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     final highlighted = widget.selected || _hovered;
     return MouseRegion(
       cursor: widget.onTap == null
@@ -200,13 +203,11 @@ class _HomeNavItemState extends State<_HomeNavItem> {
           padding: const EdgeInsets.symmetric(horizontal: 7),
           decoration: BoxDecoration(
             color: widget.selected
-                ? AppTokens.surface2
-                : (_hovered ? AppTokens.hoverOverlay : Colors.transparent),
+                ? colors.surface2
+                : (_hovered ? colors.hoverOverlay : Colors.transparent),
             borderRadius: AppRadius.brSm,
             border: Border.all(
-              color: widget.selected
-                  ? AppTokens.borderSubtle
-                  : Colors.transparent,
+              color: widget.selected ? colors.borderSubtle : Colors.transparent,
               width: 1,
             ),
           ),
@@ -217,9 +218,7 @@ class _HomeNavItemState extends State<_HomeNavItem> {
                 width: 2,
                 height: 14,
                 decoration: BoxDecoration(
-                  color: widget.selected
-                      ? AppTokens.accentVercel
-                      : Colors.transparent,
+                  color: widget.selected ? colors.accent : Colors.transparent,
                   borderRadius: BorderRadius.circular(AppRadius.full),
                 ),
               ),
@@ -228,9 +227,7 @@ class _HomeNavItemState extends State<_HomeNavItem> {
                 widget.icon,
                 // Ícones da sidebar 20% maiores (14.5 → 17.4).
                 size: 17.4,
-                color: highlighted
-                    ? AppTokens.textPrimary
-                    : AppTokens.textSecondary,
+                color: highlighted ? colors.textPrimary : colors.textSecondary,
               ),
               const SizedBox(width: 7),
               Expanded(
@@ -245,8 +242,8 @@ class _HomeNavItemState extends State<_HomeNavItem> {
                         ? FontWeight.w600
                         : FontWeight.w400,
                     color: highlighted
-                        ? AppTokens.textPrimary
-                        : AppTokens.textSecondary,
+                        ? colors.textPrimary
+                        : colors.textSecondary,
                     letterSpacing: 0,
                   ),
                 ),
@@ -266,34 +263,35 @@ class _HomeContent extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.appColors;
     return ColoredBox(
-      color: AppTokens.background,
+      color: colors.background,
       child: Column(
         children: [
           Container(
             height: AppLayout.headerHeight,
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            decoration: const BoxDecoration(
-              color: Color(0xCC000000),
+            decoration: BoxDecoration(
+              color: colors.background.withValues(alpha: 0.8),
               border: Border(
-                bottom: BorderSide(color: AppTokens.borderHairline, width: 1),
+                bottom: BorderSide(color: colors.borderHairline, width: 1),
               ),
             ),
             child: Row(
               children: [
-                const Icon(
+                Icon(
                   Icons.people_alt_outlined,
                   size: 18,
-                  color: AppTokens.textSecondary,
+                  color: colors.textSecondary,
                 ),
                 const SizedBox(width: 10),
-                const Text(
+                Text(
                   'Início',
                   style: TextStyle(
                     fontFamily: 'Geist',
                     fontSize: 14.5,
                     fontWeight: FontWeight.w600,
-                    color: AppTokens.textPrimary,
+                    color: colors.textPrimary,
                   ),
                 ),
                 const Spacer(),
@@ -340,13 +338,14 @@ class _HomeError extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Text(
+          Text(
             'Não foi possível carregar seus servidores.',
-            style: TextStyle(color: AppTokens.textSecondary),
+            style: TextStyle(color: colors.textSecondary),
           ),
           const SizedBox(height: 16),
           AppButton(
@@ -365,6 +364,7 @@ class _EmptyHome extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
       child: SettingsStack(
@@ -379,7 +379,7 @@ class _EmptyHome extends StatelessWidget {
                   children: [
                     const AppLogo(size: 32),
                     const SizedBox(width: 12),
-                    const Expanded(
+                    Expanded(
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -391,7 +391,7 @@ class _EmptyHome extends StatelessWidget {
                               fontFamily: 'Geist',
                               fontSize: 13,
                               fontWeight: FontWeight.w600,
-                              color: AppTokens.textPrimary,
+                              color: colors.textPrimary,
                               letterSpacing: 0,
                             ),
                           ),
@@ -403,7 +403,7 @@ class _EmptyHome extends StatelessWidget {
                               fontFamily: 'Geist',
                               fontSize: 12,
                               height: 1.25,
-                              color: AppTokens.textMuted,
+                              color: colors.textMuted,
                               letterSpacing: 0,
                             ),
                           ),
@@ -474,6 +474,7 @@ class _ServerRowState extends State<_ServerRow> {
   @override
   Widget build(BuildContext context) {
     final server = widget.server;
+    final colors = context.appColors;
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => _hovered = true),
@@ -484,7 +485,7 @@ class _ServerRowState extends State<_ServerRow> {
           duration: const Duration(milliseconds: 120),
           constraints: const BoxConstraints(minHeight: 54),
           padding: const EdgeInsets.fromLTRB(12, 8, 10, 8),
-          color: _hovered ? AppTokens.hoverOverlay : Colors.transparent,
+          color: _hovered ? colors.hoverOverlay : Colors.transparent,
           child: Row(
             children: [
               _ServerAvatar(server: server, size: 32),
@@ -498,21 +499,21 @@ class _ServerRowState extends State<_ServerRow> {
                       server.name,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontFamily: 'Geist',
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
-                        color: AppTokens.textPrimary,
+                        color: colors.textPrimary,
                         letterSpacing: 0,
                       ),
                     ),
                     const SizedBox(height: 2),
                     Text(
                       '${server.channels.length} ${server.channels.length == 1 ? 'canal' : 'canais'}',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontFamily: 'Geist',
                         fontSize: 12,
-                        color: AppTokens.textMuted,
+                        color: colors.textMuted,
                         letterSpacing: 0,
                       ),
                     ),
@@ -523,10 +524,10 @@ class _ServerRowState extends State<_ServerRow> {
               AnimatedOpacity(
                 duration: const Duration(milliseconds: 120),
                 opacity: _hovered ? 1 : 0.55,
-                child: const Icon(
+                child: Icon(
                   Icons.chevron_right,
                   size: 18,
-                  color: AppTokens.textSecondary,
+                  color: colors.textSecondary,
                 ),
               ),
             ],
@@ -545,13 +546,14 @@ class _ServerAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     return Container(
       width: size,
       height: size,
       alignment: Alignment.center,
       clipBehavior: Clip.antiAlias,
-      decoration: const BoxDecoration(
-        color: AppTokens.surface3,
+      decoration: BoxDecoration(
+        color: colors.surface3,
         borderRadius: AppRadius.brSm,
       ),
       child: AppFileImage(
@@ -564,7 +566,7 @@ class _ServerAvatar extends StatelessWidget {
             fontFamily: 'Geist',
             fontSize: size <= 32 ? 13 : 17,
             fontWeight: FontWeight.w700,
-            color: AppTokens.textPrimary,
+            color: colors.textPrimary,
             letterSpacing: 0,
           ),
         ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../theme/appearance_theme.dart';
 import '../app_icon_button.dart';
 import '../ds_tokens.dart';
 
@@ -23,7 +24,7 @@ class AppChatInput extends StatefulWidget {
     this.autofocus = false,
     this.maxLines = 5,
     this.sendTooltip = 'Enviar mensagem',
-    this.sendActiveColor = AppTokens.accentVercel,
+    this.sendActiveColor,
     this.leadingActions = const [],
     this.trailingActions = const [],
     this.topPanel,
@@ -43,7 +44,7 @@ class AppChatInput extends StatefulWidget {
   final bool autofocus;
   final int maxLines;
   final String sendTooltip;
-  final Color sendActiveColor;
+  final Color? sendActiveColor;
   final List<Widget> leadingActions;
   final List<Widget> trailingActions;
   final Widget? topPanel;
@@ -135,6 +136,7 @@ class _AppChatInputState extends State<AppChatInput> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     final canSubmit =
         widget.enabled &&
         (widget.controller.text.trim().isNotEmpty || widget.canSendEmpty);
@@ -153,12 +155,10 @@ class _AppChatInputState extends State<AppChatInput> {
               duration: const Duration(milliseconds: 150),
               constraints: const BoxConstraints(minHeight: 46),
               decoration: BoxDecoration(
-                color: AppTokens.surface2,
+                color: colors.surface2,
                 borderRadius: BorderRadius.circular(AppRadius.md),
                 border: Border.all(
-                  color: _focused
-                      ? AppTokens.borderFocus
-                      : AppTokens.borderStrong,
+                  color: _focused ? colors.borderFocus : colors.borderStrong,
                   width: _focused ? 1.2 : 1.0,
                 ),
                 boxShadow: const [
@@ -195,17 +195,17 @@ class _AppChatInputState extends State<AppChatInput> {
                         maxLines: widget.maxLines,
                         keyboardType: TextInputType.multiline,
                         textInputAction: TextInputAction.newline,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontFamily: 'Geist',
                           fontSize: 13.5,
-                          color: AppTokens.textPrimary,
+                          color: colors.textPrimary,
                         ),
                         decoration: InputDecoration(
                           hintText: widget.hintText,
-                          hintStyle: const TextStyle(
+                          hintStyle: TextStyle(
                             fontFamily: 'Geist',
                             fontSize: 13.5,
-                            color: AppTokens.textMuted,
+                            color: colors.textMuted,
                           ),
                           // Superfície única: só o container pinta.
                           filled: false,
@@ -242,7 +242,7 @@ class _AppChatInputState extends State<AppChatInput> {
                         minSize: 30,
                         iconSize: 16,
                         isActive: canSubmit,
-                        activeColor: widget.sendActiveColor,
+                        activeColor: widget.sendActiveColor ?? colors.accent,
                         onPressed: canSubmit ? _submit : null,
                       ),
                     ),

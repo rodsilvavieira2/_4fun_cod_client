@@ -1,6 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 
+import '../../theme/appearance_theme.dart';
 import '../ds_tokens.dart';
 
 /// Painel translúcido estilo Frosted Glass do macOS
@@ -9,8 +10,8 @@ class AppGlassPanel extends StatelessWidget {
     super.key,
     required this.child,
     this.blur = 16.0,
-    this.backgroundColor = AppTokens.surfaceGlass,
-    this.borderColor = AppTokens.borderHairline,
+    this.backgroundColor,
+    this.borderColor,
     this.borderRadius,
     this.padding,
     this.margin,
@@ -20,8 +21,8 @@ class AppGlassPanel extends StatelessWidget {
 
   final Widget child;
   final double blur;
-  final Color backgroundColor;
-  final Color borderColor;
+  final Color? backgroundColor;
+  final Color? borderColor;
   final BorderRadius? borderRadius;
   final EdgeInsetsGeometry? padding;
   final EdgeInsetsGeometry? margin;
@@ -30,7 +31,10 @@ class AppGlassPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     final effectiveRadius = borderRadius ?? BorderRadius.circular(AppRadius.lg);
+    final effectiveBackground = backgroundColor ?? colors.surfaceGlass;
+    final effectiveBorder = borderColor ?? colors.borderHairline;
 
     return Container(
       width: width,
@@ -43,9 +47,9 @@ class AppGlassPanel extends StatelessWidget {
           child: Container(
             padding: padding,
             decoration: BoxDecoration(
-              color: backgroundColor,
+              color: effectiveBackground,
               borderRadius: effectiveRadius,
-              border: Border.all(color: borderColor, width: 1),
+              border: Border.all(color: effectiveBorder, width: 1),
             ),
             child: child,
           ),
@@ -61,29 +65,33 @@ class AppCard extends StatelessWidget {
     super.key,
     required this.child,
     this.padding = const EdgeInsets.all(16),
-    this.backgroundColor = AppTokens.surface2,
-    this.borderColor = AppTokens.borderHairline,
+    this.backgroundColor,
+    this.borderColor,
     this.borderRadius,
     this.onTap,
   });
 
   final Widget child;
   final EdgeInsetsGeometry padding;
-  final Color backgroundColor;
-  final Color borderColor;
+  final Color? backgroundColor;
+  final Color? borderColor;
   final BorderRadius? borderRadius;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     final effectiveRadius = borderRadius ?? BorderRadius.circular(AppRadius.lg);
 
     final cardWidget = Container(
       padding: padding,
       decoration: BoxDecoration(
-        color: backgroundColor,
+        color: backgroundColor ?? colors.surface2,
         borderRadius: effectiveRadius,
-        border: Border.all(color: borderColor, width: 1),
+        border: Border.all(
+          color: borderColor ?? colors.borderHairline,
+          width: 1,
+        ),
       ),
       child: child,
     );

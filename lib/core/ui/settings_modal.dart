@@ -63,6 +63,7 @@ class _SettingsModalState extends State<_SettingsModal> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     final screenSize = MediaQuery.sizeOf(context);
     final maxWidth = math.min(920.0, math.max(320.0, screenSize.width - 32));
     final maxHeight = math.min(680.0, math.max(320.0, screenSize.height - 32));
@@ -83,9 +84,9 @@ class _SettingsModalState extends State<_SettingsModal> {
                 filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
                 child: Container(
                   decoration: BoxDecoration(
-                    color: AppTokens.surface2.withValues(alpha: 0.95),
+                    color: colors.surface2.withValues(alpha: 0.95),
                     borderRadius: BorderRadius.circular(AppRadius.xl),
-                    border: Border.all(color: AppTokens.borderSubtle, width: 1),
+                    border: Border.all(color: colors.borderSubtle, width: 1),
                     boxShadow: AppShadows.modalWindow,
                   ),
                   child: Row(
@@ -126,25 +127,26 @@ class _SettingsBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     return Column(
       children: [
         Container(
           height: 44,
           padding: const EdgeInsets.fromLTRB(16, 0, 10, 0),
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             border: Border(
-              bottom: BorderSide(color: AppTokens.borderHairline, width: 1),
+              bottom: BorderSide(color: colors.borderHairline, width: 1),
             ),
           ),
           child: Row(
             children: [
               Text(
                 section.title,
-                style: const TextStyle(
+                style: TextStyle(
                   fontFamily: 'Geist',
                   fontSize: 14.5,
                   fontWeight: FontWeight.w600,
-                  color: AppTokens.textPrimary,
+                  color: colors.textPrimary,
                   letterSpacing: 0,
                 ),
               ),

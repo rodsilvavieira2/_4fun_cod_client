@@ -131,6 +131,7 @@ class _GoLiveDialogState extends State<_GoLiveDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     final channelName = widget.channelName;
     final screenSize = MediaQuery.sizeOf(context);
     final maxWidth = (screenSize.width - 32).clamp(320.0, 460.0);
@@ -146,9 +147,9 @@ class _GoLiveDialogState extends State<_GoLiveDialog> {
               filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
               child: Container(
                 decoration: BoxDecoration(
-                  color: AppTokens.surface2.withValues(alpha: 0.95),
+                  color: colors.surface2.withValues(alpha: 0.95),
                   borderRadius: BorderRadius.circular(AppRadius.xl),
-                  border: Border.all(color: AppTokens.borderSubtle, width: 1),
+                  border: Border.all(color: colors.borderSubtle, width: 1),
                   boxShadow: AppShadows.modalWindow,
                 ),
                 child: Column(
@@ -219,17 +220,18 @@ class _GoLiveTitleBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     return Container(
       height: 44,
       padding: const EdgeInsets.fromLTRB(16, 0, 10, 0),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         border: Border(
-          bottom: BorderSide(color: AppTokens.borderHairline, width: 1),
+          bottom: BorderSide(color: colors.borderHairline, width: 1),
         ),
       ),
       child: Row(
         children: [
-          const Text(
+          Text(
             'Compartilhar tela',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -237,7 +239,7 @@ class _GoLiveTitleBar extends StatelessWidget {
               fontFamily: 'Geist',
               fontSize: 14.5,
               fontWeight: FontWeight.w600,
-              color: AppTokens.textPrimary,
+              color: colors.textPrimary,
               letterSpacing: 0,
             ),
           ),
@@ -266,12 +268,11 @@ class _GoLiveActions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
-      decoration: const BoxDecoration(
-        border: Border(
-          top: BorderSide(color: AppTokens.borderHairline, width: 1),
-        ),
+      decoration: BoxDecoration(
+        border: Border(top: BorderSide(color: colors.borderHairline, width: 1)),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.end,
@@ -303,6 +304,7 @@ class _AudioToggleRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -320,21 +322,18 @@ class _AudioToggleRow extends StatelessWidget {
                   height: 28,
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
-                    color: AppTokens.surface2,
+                    color: colors.surface2,
                     borderRadius: BorderRadius.circular(AppRadius.sm),
-                    border: Border.all(
-                      color: AppTokens.borderHairline,
-                      width: 1,
-                    ),
+                    border: Border.all(color: colors.borderHairline, width: 1),
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.volume_up_outlined,
                     size: 15,
-                    color: AppTokens.textSecondary,
+                    color: colors.textSecondary,
                   ),
                 ),
                 const SizedBox(width: 10),
-                const Expanded(
+                Expanded(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -346,7 +345,7 @@ class _AudioToggleRow extends StatelessWidget {
                           fontFamily: 'Geist',
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
-                          color: AppTokens.textPrimary,
+                          color: colors.textPrimary,
                           letterSpacing: 0,
                         ),
                       ),
@@ -359,7 +358,7 @@ class _AudioToggleRow extends StatelessWidget {
                           fontFamily: 'Geist',
                           fontSize: 12,
                           height: 1.25,
-                          color: AppTokens.textMuted,
+                          color: colors.textMuted,
                           letterSpacing: 0,
                         ),
                       ),
@@ -426,9 +425,8 @@ class _QualityRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final foreground = selected
-        ? AppTokens.textPrimary
-        : AppTokens.textSecondary;
+    final colors = context.appColors;
+    final foreground = selected ? colors.textPrimary : colors.textSecondary;
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -438,7 +436,7 @@ class _QualityRow extends StatelessWidget {
           duration: const Duration(milliseconds: 120),
           constraints: const BoxConstraints(minHeight: 42),
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-          color: selected ? AppTokens.surface2 : Colors.transparent,
+          color: selected ? colors.surface2 : Colors.transparent,
           child: Row(
             children: [
               SizedBox(
@@ -451,15 +449,15 @@ class _QualityRow extends StatelessWidget {
                   splashRadius: 16,
                   fillColor: WidgetStateProperty.resolveWith((states) {
                     if (states.contains(WidgetState.selected)) {
-                      return AppTokens.accentVercel;
+                      return colors.accent;
                     }
                     if (states.contains(WidgetState.hovered) ||
                         states.contains(WidgetState.focused)) {
-                      return AppTokens.textSecondary;
+                      return colors.textSecondary;
                     }
-                    return AppTokens.textMuted;
+                    return colors.textMuted;
                   }),
-                  overlayColor: WidgetStateProperty.all(AppTokens.hoverOverlay),
+                  overlayColor: WidgetStateProperty.all(colors.hoverOverlay),
                 ),
               ),
               const SizedBox(width: 10),
@@ -481,9 +479,7 @@ class _QualityRow extends StatelessWidget {
               Flexible(
                 child: SettingsValueText(
                   spec,
-                  color: selected
-                      ? AppTokens.textSecondary
-                      : AppTokens.textMuted,
+                  color: selected ? colors.textSecondary : colors.textMuted,
                   monospace: true,
                 ),
               ),
@@ -491,11 +487,7 @@ class _QualityRow extends StatelessWidget {
               SizedBox(
                 width: 16,
                 child: selected
-                    ? const Icon(
-                        Icons.check,
-                        size: 16,
-                        color: AppTokens.textPrimary,
-                      )
+                    ? Icon(Icons.check, size: 16, color: colors.textPrimary)
                     : null,
               ),
             ],

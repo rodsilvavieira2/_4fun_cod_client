@@ -90,7 +90,7 @@ class _NoiseSuppressionField extends ConsumerWidget {
       icon: Icons.graphic_eq_outlined,
       title: 'Supressão de ruído',
       subtitle: state.errorMessage,
-      subtitleColor: AppTokens.accentPurple,
+      subtitleColor: context.appColors.accent,
       trailing: SettingsSwitch(
         value: state.isNoiseSuppressionEnabled,
         onChanged: state.isApplying
@@ -135,12 +135,12 @@ class _AudioDeviceField extends StatelessWidget {
         initialValue: value,
         isExpanded: true,
         menuMaxHeight: 280,
-        style: const TextStyle(
+        style: TextStyle(
           fontFamily: 'Geist',
           fontSize: 12.5,
-          color: AppTokens.textPrimary,
+          color: context.appColors.textPrimary,
         ),
-        decoration: _compactFieldDecoration(),
+        decoration: _compactFieldDecoration(context),
         onChanged: loading
             ? null
             : (value) => onChanged(value == _systemDefault ? null : value),
@@ -192,12 +192,12 @@ class _CameraField extends StatelessWidget {
         initialValue: value,
         isExpanded: true,
         menuMaxHeight: 280,
-        style: const TextStyle(
+        style: TextStyle(
           fontFamily: 'Geist',
           fontSize: 12.5,
-          color: AppTokens.textPrimary,
+          color: context.appColors.textPrimary,
         ),
-        decoration: _compactFieldDecoration(),
+        decoration: _compactFieldDecoration(context),
         hint: const Text('Padrão do sistema', overflow: TextOverflow.ellipsis),
         onChanged: loading || devices.isEmpty
             ? null
@@ -363,21 +363,22 @@ class _DeviceFieldShell extends StatelessWidget {
   }
 }
 
-InputDecoration _compactFieldDecoration() {
-  const border = OutlineInputBorder(
+InputDecoration _compactFieldDecoration(BuildContext context) {
+  final colors = context.appColors;
+  final border = OutlineInputBorder(
     borderRadius: AppRadius.brSm,
-    borderSide: BorderSide(color: AppTokens.borderStrong, width: 1),
+    borderSide: BorderSide(color: colors.borderStrong, width: 1),
   );
-  return const InputDecoration(
+  return InputDecoration(
     isDense: true,
     filled: true,
-    fillColor: AppTokens.surface2,
+    fillColor: colors.surface2,
     contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
     border: border,
     enabledBorder: border,
     focusedBorder: OutlineInputBorder(
       borderRadius: AppRadius.brSm,
-      borderSide: BorderSide(color: AppTokens.borderFocus, width: 1.2),
+      borderSide: BorderSide(color: colors.borderFocus, width: 1.2),
     ),
   );
 }

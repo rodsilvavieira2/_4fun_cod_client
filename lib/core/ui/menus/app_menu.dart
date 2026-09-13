@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../theme/appearance_theme.dart';
 import '../ds_tokens.dart';
 
 /// Padrão compacto de menus popup do app (Discord-like, dark-only).
@@ -66,7 +67,7 @@ class AppMenuButton<T> extends StatelessWidget {
     this.onCanceled,
     this.minWidth = AppMenu.minWidth,
     this.maxWidth = AppMenu.maxWidth,
-    this.color = AppTokens.surface2,
+    this.color,
     this.elevation = 12,
   }) : assert(
          icon != null || child != null,
@@ -86,11 +87,12 @@ class AppMenuButton<T> extends StatelessWidget {
   final VoidCallback? onCanceled;
   final double minWidth;
   final double maxWidth;
-  final Color color;
+  final Color? color;
   final double elevation;
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     return PopupMenuButton<T>(
       tooltip: tooltip,
       padding: padding,
@@ -103,11 +105,11 @@ class AppMenuButton<T> extends StatelessWidget {
       onCanceled: onCanceled,
       menuPadding: AppMenu.menuPadding,
       constraints: BoxConstraints(minWidth: minWidth, maxWidth: maxWidth),
-      color: color,
+      color: color ?? colors.surface2,
       elevation: elevation,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(AppRadius.md),
-        side: const BorderSide(color: AppTokens.borderSubtle, width: 1),
+        side: BorderSide(color: colors.borderSubtle, width: 1),
       ),
       itemBuilder: itemBuilder,
       child: child,
@@ -211,28 +213,22 @@ class _LabeledMenuChild extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     final icon = this.icon;
+    final textStyle = AppMenu.itemTextStyle.copyWith(color: colors.textPrimary);
     if (icon == null) {
-      return Text(
-        label,
-        overflow: TextOverflow.ellipsis,
-        style: AppMenu.itemTextStyle,
-      );
+      return Text(label, overflow: TextOverflow.ellipsis, style: textStyle);
     }
     return Row(
       children: [
         Icon(
           icon,
           size: 16,
-          color: selected ? AppTokens.textPrimary : AppTokens.textSecondary,
+          color: selected ? colors.textPrimary : colors.textSecondary,
         ),
         const SizedBox(width: 10),
         Expanded(
-          child: Text(
-            label,
-            overflow: TextOverflow.ellipsis,
-            style: AppMenu.itemTextStyle,
-          ),
+          child: Text(label, overflow: TextOverflow.ellipsis, style: textStyle),
         ),
       ],
     );

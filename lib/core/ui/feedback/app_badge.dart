@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../theme/appearance_theme.dart';
 import '../ds_tokens.dart';
 
 enum AppBadgeVariant { neutral, accent, success, warning, danger }
@@ -19,16 +20,17 @@ class AppBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     final (bgColor, fgColor, borderColor) = switch (variant) {
       AppBadgeVariant.neutral => (
-        AppTokens.surface3,
-        AppTokens.textSecondary,
-        AppTokens.borderHairline,
+        colors.surface3,
+        colors.textSecondary,
+        colors.borderHairline,
       ),
       AppBadgeVariant.accent => (
-        const Color(0x1F0070F3),
-        AppTokens.accentVercel,
-        const Color(0x4D0070F3),
+        colors.accent.withValues(alpha: 0.14),
+        colors.accent,
+        colors.accent.withValues(alpha: 0.30),
       ),
       AppBadgeVariant.success => (
         const Color(0x1F46A758),

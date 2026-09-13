@@ -43,9 +43,9 @@ class MembersScreen extends ConsumerWidget {
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
                 const SizedBox(height: 6),
-                const Text(
+                Text(
                   'Cada cargo define o que a pessoa pode administrar. O backend valida a mesma hierarquia em todas as ações.',
-                  style: TextStyle(color: AppTokens.textSecondary),
+                  style: TextStyle(color: context.appColors.textSecondary),
                 ),
                 const SizedBox(height: 16),
                 _PermissionOverview(currentRole: actorRole),
@@ -175,10 +175,10 @@ class _PermissionOverview extends StatelessWidget {
                       const SizedBox(height: 10),
                       Text(
                         role.description,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontFamily: 'Geist',
                           fontSize: 12.5,
-                          color: AppTokens.textSecondary,
+                          color: context.appColors.textSecondary,
                         ),
                       ),
                     ],
@@ -211,22 +211,23 @@ class _MemberAdminTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     final canChangeRole =
         actorRole.canManageRoles && !member.isOwner && !isCurrentUser;
     final canRemove = !isCurrentUser && actorRole.canRemove(member.role);
     return Container(
       margin: const EdgeInsets.only(bottom: 4),
       decoration: BoxDecoration(
-        color: AppTokens.surface1,
+        color: colors.surface1,
         borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(color: AppTokens.borderHairline),
+        border: Border.all(color: colors.borderHairline),
       ),
       child: ListTile(
         leading: Stack(
           clipBehavior: Clip.none,
           children: [
             CircleAvatar(
-              backgroundColor: AppTokens.surface3,
+              backgroundColor: colors.surface3,
               child: member.user.avatarUrl == null
                   ? Text(
                       member.user.name.isEmpty

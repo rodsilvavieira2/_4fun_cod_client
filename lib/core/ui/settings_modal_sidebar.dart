@@ -34,6 +34,7 @@ class SettingsModalSidebar extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.appColors;
     final groups = <_SidebarGroup>[
       const _SidebarGroup('Perfil', [SettingsSection.account]),
       const _SidebarGroup('Comunicação', [
@@ -46,16 +47,16 @@ class SettingsModalSidebar extends ConsumerWidget {
     ];
 
     return Container(
-      decoration: const BoxDecoration(
-        color: AppTokens.surfaceBase,
+      decoration: BoxDecoration(
+        color: colors.surfaceBase,
         border: Border(
-          right: BorderSide(color: AppTokens.borderHairline, width: 1),
+          right: BorderSide(color: colors.borderHairline, width: 1),
         ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Padding(
+          Padding(
             padding: EdgeInsets.fromLTRB(16, 14, 16, 10),
             child: Text(
               'Configurações',
@@ -63,14 +64,14 @@ class SettingsModalSidebar extends ConsumerWidget {
                 fontFamily: 'Geist',
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
-                color: AppTokens.textPrimary,
+                color: colors.textPrimary,
                 letterSpacing: 0,
               ),
             ),
           ),
-          const Padding(
+          Padding(
             padding: EdgeInsets.symmetric(horizontal: 12),
-            child: Divider(height: 1, color: AppTokens.borderHairline),
+            child: Divider(height: 1, color: colors.borderHairline),
           ),
           const SizedBox(height: 6),
           for (final group in groups) ...[
@@ -84,9 +85,9 @@ class SettingsModalSidebar extends ConsumerWidget {
             const SizedBox(height: 4),
           ],
           const Spacer(),
-          const Padding(
+          Padding(
             padding: EdgeInsets.symmetric(horizontal: 12),
-            child: Divider(height: 1, color: AppTokens.borderHairline),
+            child: Divider(height: 1, color: colors.borderHairline),
           ),
           const SizedBox(height: 6),
           _SignOutButton(onTap: () => _confirmSignOut(context, ref)),
@@ -124,15 +125,16 @@ class _SidebarGroupLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 12, 4),
       child: Text(
         label,
-        style: const TextStyle(
+        style: TextStyle(
           fontFamily: 'Geist Mono',
           fontSize: 10.5,
           fontWeight: FontWeight.w600,
-          color: AppTokens.textMuted,
+          color: colors.textMuted,
           letterSpacing: 0,
         ),
       ),
@@ -160,10 +162,11 @@ class _SidebarItemState extends State<_SidebarItem> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     final selected = widget.selected;
     final fgColor = selected
-        ? AppTokens.textPrimary
-        : (_hovered ? AppTokens.textPrimary : AppTokens.textSecondary);
+        ? colors.textPrimary
+        : (_hovered ? colors.textPrimary : colors.textSecondary);
 
     return MouseRegion(
       cursor: SystemMouseCursors.click,
@@ -178,11 +181,11 @@ class _SidebarItemState extends State<_SidebarItem> {
           padding: const EdgeInsets.symmetric(horizontal: 7),
           decoration: BoxDecoration(
             color: selected
-                ? AppTokens.surface2
-                : (_hovered ? AppTokens.hoverOverlay : Colors.transparent),
+                ? colors.surface2
+                : (_hovered ? colors.hoverOverlay : Colors.transparent),
             borderRadius: BorderRadius.circular(AppRadius.sm),
             border: Border.all(
-              color: selected ? AppTokens.borderSubtle : Colors.transparent,
+              color: selected ? colors.borderSubtle : Colors.transparent,
               width: 1,
             ),
           ),
@@ -193,7 +196,7 @@ class _SidebarItemState extends State<_SidebarItem> {
                 width: 2,
                 height: 14,
                 decoration: BoxDecoration(
-                  color: selected ? AppTokens.accentVercel : Colors.transparent,
+                  color: selected ? colors.accent : Colors.transparent,
                   borderRadius: BorderRadius.circular(AppRadius.full),
                 ),
               ),

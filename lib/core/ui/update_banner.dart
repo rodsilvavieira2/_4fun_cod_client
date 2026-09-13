@@ -5,6 +5,7 @@ import '../updates/app_update_state.dart';
 import '../updates/update_providers.dart';
 import 'buttons/app_button.dart';
 import 'ds_tokens.dart';
+import '../theme/appearance_theme.dart';
 
 /// Toast de update (overlay, reutilizável): aparece só em
 /// [AppUpdateStatus.available] (não dispensado), `.downloading` e
@@ -32,6 +33,7 @@ class UpdateBanner extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.appColors;
     final backend = ref.watch(appUpdateBackendProvider);
     final status = backend.status;
 
@@ -54,9 +56,9 @@ class UpdateBanner extends ConsumerWidget {
       child: Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: AppTokens.surface2,
+          color: colors.surface2,
           borderRadius: BorderRadius.circular(AppRadius.lg),
-          border: Border.all(color: AppTokens.borderSubtle, width: 1),
+          border: Border.all(color: colors.borderSubtle, width: 1),
           boxShadow: AppShadows.popover,
         ),
         child: body,
@@ -78,6 +80,7 @@ class _AvailableBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     final version = backend.latestVersion ?? 'nova';
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -85,11 +88,7 @@ class _AvailableBody extends StatelessWidget {
       children: [
         Row(
           children: [
-            const Icon(
-              Icons.system_update_alt,
-              size: 18,
-              color: AppTokens.accentVercel,
-            ),
+            Icon(Icons.system_update_alt, size: 18, color: colors.accent),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
@@ -162,6 +161,7 @@ class _ReadyBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -177,7 +177,7 @@ class _ReadyBody extends StatelessWidget {
           'O app será reiniciado para concluir.',
           style: Theme.of(
             context,
-          ).textTheme.bodySmall?.copyWith(color: AppTokens.textSecondary),
+          ).textTheme.bodySmall?.copyWith(color: colors.textSecondary),
         ),
         const SizedBox(height: 10),
         Row(

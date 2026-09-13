@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'ds_tokens.dart';
+import '../theme/appearance_theme.dart';
 
 enum PresenceStatus { online, idle, dnd, offline }
 
@@ -22,6 +23,7 @@ class PresenceDot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     final effectiveStatus =
         status ??
         ((online ?? false) ? PresenceStatus.online : PresenceStatus.offline);
@@ -42,10 +44,7 @@ class PresenceDot extends StatelessWidget {
           color: color,
           shape: BoxShape.circle,
           border: withBorder
-              ? Border.all(
-                  color: AppTokens.surface1,
-                  width: size > 10 ? 2 : 1.5,
-                )
+              ? Border.all(color: colors.surface1, width: size > 10 ? 2 : 1.5)
               : null,
         ),
       ),

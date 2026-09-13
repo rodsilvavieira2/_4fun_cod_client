@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:fourfun_cod_client/app.dart';
 import 'package:fourfun_cod_client/core/auth/auth_controller.dart';
 import 'package:fourfun_cod_client/core/auth/auth_state.dart';
+import 'package:fourfun_cod_client/core/theme/app_theme.dart';
 import 'package:fourfun_cod_client/core/ui/server_entry_dialog.dart';
 import 'package:fourfun_cod_client/features/servers/server_rail.dart';
 import 'package:fourfun_cod_client/features/servers/servers_providers.dart';
@@ -40,6 +42,10 @@ class _FakeServersController extends ServersController {
 }
 
 void main() {
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+  });
+
   testWidgets('App renderiza login quando deslogado', (
     WidgetTester tester,
   ) async {
@@ -128,5 +134,31 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Informe o nome do servidor.'), findsOneWidget);
+  });
+
+  testWidgets('App aplica ThemeExtension da preferência local', (
+    WidgetTester tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({
+      appearanceThemeModeKey: 'custom',
+      appearanceThemeCustomSeedArgbKey: 0xFFFF7100,
+    });
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          authControllerProvider.overrideWith(
+            () => _FakeAuthController(const Unauthenticated()),
+          ),
+          serversProvider.overrideWith(() => _FakeServersController(const [])),
+        ],
+        child: const App(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final app = tester.widget<MaterialApp>(find.byType(MaterialApp));
+    final palette = app.theme!.extension<AppThemePalette>()!;
+    expect(palette.accent.toARGB32(), 0xFFFF7100);
   });
 }

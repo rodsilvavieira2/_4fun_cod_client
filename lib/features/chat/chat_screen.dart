@@ -587,6 +587,7 @@ class _MessageTileState extends State<_MessageTile> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     final author = widget.message.author;
     final mentionTargets = _mergeMentionTargets(
       widget.mentionTargets,
@@ -607,7 +608,7 @@ class _MessageTileState extends State<_MessageTile> {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 120),
         decoration: BoxDecoration(
-          color: _hovered ? AppTokens.chatRowHover : Colors.transparent,
+          color: _hovered ? colors.chatRowHover : Colors.transparent,
         ),
         padding: EdgeInsets.fromLTRB(16, widget.showHeader ? 6 : 2, 16, 2),
         child: Stack(
@@ -633,27 +634,27 @@ class _MessageTileState extends State<_MessageTile> {
                               fontFamily: 'Geist',
                               fontSize: 14.5,
                               fontWeight: FontWeight.w700,
-                              color: AppTokens.authorColors[authorColorIndex],
+                              color: colors.authorColors[authorColorIndex],
                             ),
                           ),
                         ),
                         const SizedBox(width: 8),
                         Text(
                           _formatTime(widget.message.createdAt),
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontFamily: 'Geist Mono',
                             fontSize: 11,
-                            color: AppTokens.textMuted,
+                            color: colors.textMuted,
                           ),
                         ),
                         if (edited) ...[
                           const SizedBox(width: 6),
-                          const Text(
+                          Text(
                             '(editada)',
                             style: TextStyle(
                               fontFamily: 'Geist',
                               fontSize: 11,
-                              color: AppTokens.textMuted,
+                              color: colors.textMuted,
                             ),
                           ),
                         ],
@@ -670,10 +671,10 @@ class _MessageTileState extends State<_MessageTile> {
                             ? Text(
                                 _formatCompactTime(widget.message.createdAt),
                                 textAlign: TextAlign.left,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontFamily: 'Geist Mono',
                                   fontSize: 10.5,
-                                  color: AppTokens.textMuted,
+                                  color: colors.textMuted,
                                 ),
                               )
                             : null,
@@ -821,13 +822,14 @@ class _Avatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     return Container(
       width: 36,
       height: 36,
       decoration: BoxDecoration(
-        color: AppTokens.surface2,
+        color: colors.surface2,
         shape: BoxShape.circle,
-        border: Border.all(color: AppTokens.borderHairline, width: 1),
+        border: Border.all(color: colors.borderHairline, width: 1),
       ),
       alignment: Alignment.center,
       clipBehavior: Clip.antiAlias,
@@ -836,20 +838,20 @@ class _Avatar extends StatelessWidget {
               path: author.avatarUrl,
               width: 36,
               height: 36,
-              fallback: _avatarInitial(author),
+              fallback: _avatarInitial(author, colors),
             )
-          : _avatarInitial(author),
+          : _avatarInitial(author, colors),
     );
   }
 
-  Widget _avatarInitial(User author) {
+  Widget _avatarInitial(User author, AppThemePalette colors) {
     return Text(
       author.name.isEmpty ? '?' : author.name[0].toUpperCase(),
-      style: const TextStyle(
+      style: TextStyle(
         fontFamily: 'Geist',
         fontSize: 14,
         fontWeight: FontWeight.w700,
-        color: AppTokens.textPrimary,
+        color: colors.textPrimary,
       ),
     );
   }
@@ -863,11 +865,12 @@ class _MentionMessageText extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const baseStyle = TextStyle(
+    final colors = context.appColors;
+    final baseStyle = TextStyle(
       fontFamily: 'Geist',
       fontSize: 14.5,
       height: 1.42,
-      color: AppTokens.textPrimary,
+      color: colors.textPrimary,
     );
     final parts = buildMentionTextParts(text, targets);
     if (parts.length == 1 && !parts.first.isMention) {
@@ -882,10 +885,10 @@ class _MentionMessageText extends StatelessWidget {
             TextSpan(
               text: part.text,
               style: part.isMention
-                  ? const TextStyle(
-                      color: Color(0xFF7AB7FF),
+                  ? TextStyle(
+                      color: colors.accent,
                       fontWeight: FontWeight.w700,
-                      backgroundColor: Color(0x330070F3),
+                      backgroundColor: colors.accent.withValues(alpha: 0.20),
                     )
                   : null,
             ),

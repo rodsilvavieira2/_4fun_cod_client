@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/rtc/rtc_service.dart';
 import '../../features/voice/voice_volume_controller.dart';
+import '../theme/appearance_theme.dart';
 import 'ds_tokens.dart';
 
 class ParticipantVolumeButton extends ConsumerWidget {
@@ -12,7 +13,7 @@ class ParticipantVolumeButton extends ConsumerWidget {
     required this.identity,
     required this.displayName,
     this.source = RtcAudioSource.microphone,
-    this.iconColor = AppTokens.textSecondary,
+    this.iconColor,
     this.iconSize = 14,
     this.padding,
     this.constraints,
@@ -30,7 +31,7 @@ class ParticipantVolumeButton extends ConsumerWidget {
   /// Tile de tela sem track de `screenShareAudio` passa false → ícone mutado
   /// (regra 6 da SPEC de áudio de sistema).
   final bool? audioAvailable;
-  final Color iconColor;
+  final Color? iconColor;
   final double iconSize;
 
   /// Padding/constraints do IconButton (default = padrão do Material).
@@ -40,6 +41,7 @@ class ParticipantVolumeButton extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.appColors;
     return ParticipantVolumeMenuAnchor(
       identity: identity,
       displayName: displayName,
@@ -66,7 +68,7 @@ class ParticipantVolumeButton extends ConsumerWidget {
                 : Icons.volume_down,
             size: iconSize,
           ),
-          color: iconColor,
+          color: iconColor ?? colors.textSecondary,
           onPressed: () {
             if (controller.isOpen) {
               controller.close();
@@ -199,6 +201,7 @@ class _ParticipantVolumeMenuAnchorState
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     final state = ref.watch(voiceVolumeProvider);
     final percent = state.percentOf(widget.identity, source: widget.source);
     final muted = state.isParticipantMuted(
@@ -211,7 +214,7 @@ class _ParticipantVolumeMenuAnchorState
       useRootOverlay: true,
       consumeOutsideTap: true,
       clipBehavior: Clip.none,
-      style: _menuStyle(width: 228),
+      style: _menuStyle(width: 228, colors: colors),
       menuChildren: [
         _ParticipantVolumePanel(
           identity: widget.identity,
@@ -241,6 +244,7 @@ class _ParticipantVolumePanel extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.appColors;
     final state = ref.watch(voiceVolumeProvider);
     final percent = state.percentOf(identity, source: source);
     final muted = state.isParticipantMuted(identity, source: source);
@@ -257,11 +261,11 @@ class _ParticipantVolumePanel extends ConsumerWidget {
             Text(
               displayName,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
+              style: TextStyle(
                 fontFamily: 'Geist',
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
-                color: AppTokens.textMuted,
+                color: colors.textMuted,
               ),
             ),
             const SizedBox(height: 10),
@@ -279,7 +283,7 @@ class _ParticipantVolumePanel extends ConsumerWidget {
                   : () => controller.resetParticipant(identity, source: source),
             ),
             const SizedBox(height: 8),
-            const Divider(height: 1, color: AppTokens.borderHairline),
+            Divider(height: 1, color: colors.borderHairline),
             const SizedBox(height: 6),
             _MuteRow(
               label: isScreen ? 'Silenciar transmissão' : 'Silenciar para mim',
@@ -314,6 +318,7 @@ class _VolumeRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -322,10 +327,10 @@ class _VolumeRow extends StatelessWidget {
             Expanded(
               child: Text(
                 label,
-                style: const TextStyle(
+                style: TextStyle(
                   fontFamily: 'Geist',
                   fontSize: 12.5,
-                  color: AppTokens.textPrimary,
+                  color: colors.textPrimary,
                 ),
               ),
             ),
@@ -343,10 +348,10 @@ class _VolumeRow extends StatelessWidget {
         SliderTheme(
           data: SliderTheme.of(context).copyWith(
             trackHeight: 4,
-            activeTrackColor: AppTokens.accentVercel,
-            inactiveTrackColor: AppTokens.borderStrong,
-            thumbColor: AppTokens.textPrimary,
-            overlayColor: AppTokens.accentVercel.withValues(alpha: 0.16),
+            activeTrackColor: colors.accent,
+            inactiveTrackColor: colors.borderStrong,
+            thumbColor: colors.textPrimary,
+            overlayColor: colors.accent.withValues(alpha: 0.16),
             thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
             overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
           ),
@@ -377,6 +382,7 @@ class _MuteRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     return InkWell(
       borderRadius: BorderRadius.circular(AppRadius.sm),
       onTap: () => onChanged(!muted),
@@ -387,10 +393,10 @@ class _MuteRow extends StatelessWidget {
             Expanded(
               child: Text(
                 label,
-                style: const TextStyle(
+                style: TextStyle(
                   fontFamily: 'Geist',
                   fontSize: 12.5,
-                  color: AppTokens.textPrimary,
+                  color: colors.textPrimary,
                 ),
               ),
             ),
@@ -409,11 +415,11 @@ class _MuteRow extends StatelessWidget {
   }
 }
 
-MenuStyle _menuStyle({required double width}) {
+MenuStyle _menuStyle({required double width, required AppThemePalette colors}) {
   return MenuStyle(
     minimumSize: WidgetStatePropertyAll(Size(width, 0)),
     maximumSize: WidgetStatePropertyAll(Size(width, double.infinity)),
-    backgroundColor: const WidgetStatePropertyAll(AppTokens.surface2),
+    backgroundColor: WidgetStatePropertyAll(colors.surface2),
     surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
     shadowColor: const WidgetStatePropertyAll(Colors.black87),
     elevation: const WidgetStatePropertyAll(16),
@@ -421,7 +427,7 @@ MenuStyle _menuStyle({required double width}) {
     shape: WidgetStatePropertyAll(
       RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(AppRadius.md),
-        side: const BorderSide(color: AppTokens.borderSubtle, width: 1),
+        side: BorderSide(color: colors.borderSubtle, width: 1),
       ),
     ),
   );

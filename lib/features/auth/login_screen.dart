@@ -67,8 +67,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     return Scaffold(
-      backgroundColor: AppTokens.background,
+      backgroundColor: colors.background,
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
@@ -77,8 +78,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               constraints: const BoxConstraints(maxWidth: 380),
               child: AppCard(
                 padding: const EdgeInsets.all(32),
-                backgroundColor: AppTokens.surface1,
-                borderColor: AppTokens.borderStrong,
+                backgroundColor: colors.surface1,
+                borderColor: colors.borderStrong,
                 borderRadius: BorderRadius.circular(AppRadius.xl),
                 child: Form(
                   key: _formKey,
@@ -88,25 +89,25 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     children: [
                       const Center(child: AppLogo(size: 44)),
                       const SizedBox(height: 20),
-                      const Text(
+                      Text(
                         '4FunCode',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontFamily: 'Geist',
                           fontSize: 22,
                           fontWeight: FontWeight.w700,
-                          letterSpacing: -0.6,
-                          color: AppTokens.textPrimary,
+                          letterSpacing: 0,
+                          color: colors.textPrimary,
                         ),
                       ),
                       const SizedBox(height: 6),
-                      const Text(
+                      Text(
                         'Entre na sua conta para continuar',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontFamily: 'Geist',
                           fontSize: 13,
-                          color: AppTokens.textSecondary,
+                          color: colors.textSecondary,
                         ),
                       ),
                       const SizedBox(height: 28),

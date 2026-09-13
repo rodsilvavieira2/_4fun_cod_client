@@ -560,8 +560,9 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
     required VoiceState? activeVoiceState,
     double? floatingOverlayReserve,
   }) {
+    final colors = context.appColors;
     return Container(
-      color: AppThemeColors.card,
+      color: colors.surface1,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -619,8 +620,9 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
     VoidCallback? onBack,
   }) {
     final channel = selectedChannel;
+    final colors = context.appColors;
     return Container(
-      color: AppThemeColors.canvas,
+      color: colors.background,
       child: Column(
         children: [
           if (channel != null)

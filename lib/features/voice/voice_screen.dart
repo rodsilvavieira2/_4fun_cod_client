@@ -788,23 +788,24 @@ class _EmptyVoiceStage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     return Center(
       child: Container(
         constraints: const BoxConstraints(maxWidth: 320),
         margin: const EdgeInsets.fromLTRB(20, 14, 20, 16),
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 22),
         decoration: BoxDecoration(
-          color: AppTokens.surface1,
+          color: colors.surface1,
           borderRadius: AppRadius.brLg,
-          border: Border.all(color: AppTokens.borderSubtle),
+          border: Border.all(color: colors.borderSubtle),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(
+            Icon(
               Icons.videocam_off_outlined,
               size: 30,
-              color: AppTokens.textSecondary,
+              color: colors.textSecondary,
             ),
             const SizedBox(height: 10),
             Text(
@@ -813,14 +814,14 @@ class _EmptyVoiceStage extends StatelessWidget {
               style: Theme.of(context).textTheme.titleMedium,
             ),
             const SizedBox(height: 4),
-            const Text(
+            Text(
               'Quando uma câmera ou tela for compartilhada, a prévia aparecerá aqui.',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontFamily: 'Geist',
                 fontSize: 12,
                 height: 1.35,
-                color: AppTokens.textMuted,
+                color: colors.textMuted,
               ),
             ),
           ],
@@ -937,9 +938,9 @@ class _SpotlightLayout extends StatelessWidget {
                   others.length == 1
                       ? '1 participante'
                       : '${others.length} participantes',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.labelSmall?.copyWith(color: AppTokens.textMuted),
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: context.appColors.textMuted,
+                  ),
                 ),
                 const Spacer(),
                 IconButton(
@@ -948,7 +949,7 @@ class _SpotlightLayout extends StatelessWidget {
                   visualDensity: VisualDensity.compact,
                   style: IconButton.styleFrom(
                     minimumSize: const Size.square(32),
-                    foregroundColor: AppTokens.textSecondary,
+                    foregroundColor: context.appColors.textSecondary,
                   ),
                   icon: const Icon(Icons.visibility_off, size: 18),
                 ),
@@ -1027,6 +1028,7 @@ class _Controls extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     final connected = state.status == VoiceSessionStatus.connected;
     final connecting = state.status == VoiceSessionStatus.connecting;
     if (!connected) {
@@ -1051,9 +1053,9 @@ class _Controls extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(8),
         decoration: BoxDecoration(
-          color: AppTokens.surfaceGlass,
+          color: colors.surfaceGlass,
           borderRadius: AppRadius.brFull,
-          border: Border.all(color: AppTokens.borderSubtle),
+          border: Border.all(color: colors.borderSubtle),
           boxShadow: AppShadows.popover,
         ),
         child: Wrap(
@@ -1062,6 +1064,7 @@ class _Controls extends StatelessWidget {
           runSpacing: 8,
           children: [
             _mediaToggleButton(
+              colors: colors,
               icon: state.isCameraEnabled ? Icons.videocam : Icons.videocam_off,
               active: state.isCameraEnabled,
               activeColor: AppTokens.accentDanger,
@@ -1071,6 +1074,7 @@ class _Controls extends StatelessWidget {
               onPressed: onToggleCamera,
             ),
             _mediaToggleButton(
+              colors: colors,
               icon: Icons.present_to_all,
               active: state.isScreenSharing,
               activeColor: AppTokens.accentDanger,
@@ -1081,6 +1085,7 @@ class _Controls extends StatelessWidget {
             ),
             if (isSpotlight)
               _mediaToggleButton(
+                colors: colors,
                 icon: state.filmstripVisible
                     ? Icons.visibility_off
                     : Icons.visibility,
@@ -1110,6 +1115,7 @@ class _Controls extends StatelessWidget {
   /// Botão circular de mídia: o dock usa o mesmo controle compacto (40px) em
   /// qualquer largura, quebrando linhas só quando a janela fica estreita.
   Widget _mediaToggleButton({
+    required AppThemePalette colors,
     required IconData icon,
     required bool active,
     required Color activeColor,
@@ -1122,7 +1128,7 @@ class _Controls extends StatelessWidget {
       style: IconButton.styleFrom(
         minimumSize: const Size.square(40),
         backgroundColor: active ? activeColor : null,
-        foregroundColor: AppTokens.textPrimary,
+        foregroundColor: colors.textPrimary,
       ),
       icon: Icon(icon),
     );

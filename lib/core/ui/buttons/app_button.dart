@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../theme/appearance_theme.dart';
 import '../ds_tokens.dart';
 
 enum AppButtonVariant {
@@ -63,6 +64,7 @@ class _AppButtonState extends State<AppButton> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     final disabled = widget.onPressed == null || widget.loading;
 
     // Dimensões por tamanho
@@ -82,53 +84,53 @@ class _AppButtonState extends State<AppButton> {
     final (bgColor, fgColor, borderColor) = switch (widget.variant) {
       AppButtonVariant.primary => (
         disabled
-            ? AppTokens.surface3
+            ? colors.surface3
             : (_pressed
-                  ? const Color(0xFFD4D4D8)
+                  ? colors.accent.withValues(alpha: 0.82)
                   : (_hovered
-                        ? const Color(0xFFFFFFFF)
-                        : AppTokens.textPrimary)),
-        disabled ? AppTokens.textMuted : AppTokens.textInverse,
+                        ? colors.accent.withValues(alpha: 0.92)
+                        : colors.accent)),
+        disabled ? colors.textMuted : colors.onAccent,
         Colors.transparent,
       ),
       AppButtonVariant.secondary => (
         disabled
-            ? AppTokens.surface1
+            ? colors.surface1
             : (_pressed
-                  ? AppTokens.surface3
-                  : (_hovered ? const Color(0xFF1E1E1E) : AppTokens.surface2)),
-        disabled ? AppTokens.textMuted : AppTokens.textPrimary,
-        AppTokens.borderStrong,
+                  ? colors.surface3
+                  : (_hovered ? colors.hoverOverlay : colors.surface2)),
+        disabled ? colors.textMuted : colors.textPrimary,
+        colors.borderStrong,
       ),
       AppButtonVariant.accent => (
         disabled
-            ? AppTokens.surface3
+            ? colors.surface3
             : (_pressed
-                  ? const Color(0xFF0056B3)
+                  ? colors.accent.withValues(alpha: 0.82)
                   : (_hovered
-                        ? const Color(0xFF1A85FF)
-                        : AppTokens.accentVercel)),
-        disabled ? AppTokens.textMuted : Colors.white,
+                        ? colors.accent.withValues(alpha: 0.92)
+                        : colors.accent)),
+        disabled ? colors.textMuted : colors.onAccent,
         Colors.transparent,
       ),
       AppButtonVariant.ghost => (
         disabled
             ? Colors.transparent
             : (_pressed
-                  ? AppTokens.activeOverlay
-                  : (_hovered ? AppTokens.hoverOverlay : Colors.transparent)),
-        disabled ? AppTokens.textMuted : AppTokens.textPrimary,
+                  ? colors.activeOverlay
+                  : (_hovered ? colors.hoverOverlay : Colors.transparent)),
+        disabled ? colors.textMuted : colors.textPrimary,
         Colors.transparent,
       ),
       AppButtonVariant.danger => (
         disabled
-            ? AppTokens.surface1
+            ? colors.surface1
             : (_pressed
                   ? const Color(0xFF6D28D9)
                   : (_hovered
                         ? const Color(0xFF9333EA)
                         : AppTokens.accentPurple)),
-        disabled ? AppTokens.textMuted : Colors.white,
+        disabled ? colors.textMuted : Colors.white,
         Colors.transparent,
       ),
     };

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../theme/appearance_theme.dart';
 import '../ds_tokens.dart';
 
 class SegmentItem<T> {
@@ -27,6 +28,7 @@ class AppSegmentedControl<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     final selectedIndex = items.indexWhere(
       (item) => item.value == selectedValue,
     );
@@ -35,9 +37,9 @@ class AppSegmentedControl<T> extends StatelessWidget {
       height: height,
       padding: const EdgeInsets.all(2),
       decoration: BoxDecoration(
-        color: AppTokens.surface1,
+        color: colors.surface1,
         borderRadius: BorderRadius.circular(AppRadius.sm),
-        border: Border.all(color: AppTokens.borderStrong, width: 1),
+        border: Border.all(color: colors.borderStrong, width: 1),
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -56,12 +58,9 @@ class AppSegmentedControl<T> extends StatelessWidget {
                   width: itemWidth,
                   child: Container(
                     decoration: BoxDecoration(
-                      color: AppTokens.surface3,
+                      color: colors.surface3,
                       borderRadius: BorderRadius.circular(AppRadius.sm - 2),
-                      border: Border.all(
-                        color: AppTokens.borderSubtle,
-                        width: 1,
-                      ),
+                      border: Border.all(color: colors.borderSubtle, width: 1),
                       boxShadow: const [
                         BoxShadow(
                           color: Color(0x33000000),
@@ -114,9 +113,10 @@ class _SegmentButtonState<T> extends State<_SegmentButton<T>> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     final fgColor = widget.isSelected
-        ? AppTokens.textPrimary
-        : (_hovered ? AppTokens.textPrimary : AppTokens.textSecondary);
+        ? colors.textPrimary
+        : (_hovered ? colors.textPrimary : colors.textSecondary);
 
     return MouseRegion(
       cursor: SystemMouseCursors.click,

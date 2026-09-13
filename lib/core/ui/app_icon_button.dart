@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../theme/appearance_theme.dart';
 import 'ds_tokens.dart';
 
 /// Ícone de ação compacto estilo macOS com tooltip e feedback suave
@@ -36,11 +37,12 @@ class _AppIconButtonState extends State<AppIconButton> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     final effectiveColor = widget.isActive
-        ? (widget.activeColor ?? AppTokens.accentVercel)
+        ? (widget.activeColor ?? colors.accent)
         : (_hovered
-              ? AppTokens.textPrimary
-              : (widget.color ?? AppTokens.textSecondary));
+              ? colors.textPrimary
+              : (widget.color ?? colors.textSecondary));
 
     return Tooltip(
       message: widget.tooltip,
@@ -59,8 +61,8 @@ class _AppIconButtonState extends State<AppIconButton> {
             height: widget.minSize,
             decoration: BoxDecoration(
               color: widget.isActive
-                  ? AppTokens.activeOverlay
-                  : (_hovered ? AppTokens.hoverOverlay : Colors.transparent),
+                  ? colors.activeOverlay
+                  : (_hovered ? colors.hoverOverlay : Colors.transparent),
               borderRadius: BorderRadius.circular(AppRadius.sm),
             ),
             alignment: Alignment.center,

@@ -27,6 +27,7 @@ class _DmConversationListState extends ConsumerState<DmConversationList> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     final conversations = ref.watch(dmConversationsProvider(widget.serverId));
     final selectedUserId = ref.watch(selectedDmConversationProvider);
     final query = _query.trim().toLowerCase();
@@ -37,7 +38,7 @@ class _DmConversationListState extends ConsumerState<DmConversationList> {
               .toList();
 
     return Container(
-      color: AppTokens.surface1,
+      color: colors.surface1,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -45,18 +46,18 @@ class _DmConversationListState extends ConsumerState<DmConversationList> {
             height: AppLayout.headerHeight,
             padding: const EdgeInsets.symmetric(horizontal: 16),
             alignment: Alignment.centerLeft,
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               border: Border(
-                bottom: BorderSide(color: AppTokens.borderHairline, width: 1),
+                bottom: BorderSide(color: colors.borderHairline, width: 1),
               ),
             ),
-            child: const Text(
+            child: Text(
               'Mensagens diretas',
               style: TextStyle(
                 fontFamily: 'Geist',
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
-                color: AppTokens.textPrimary,
+                color: colors.textPrimary,
               ),
             ),
           ),
@@ -65,31 +66,31 @@ class _DmConversationListState extends ConsumerState<DmConversationList> {
             child: Container(
               height: 34,
               decoration: BoxDecoration(
-                color: AppTokens.surface2,
+                color: colors.surface2,
                 borderRadius: BorderRadius.circular(AppRadius.sm),
-                border: Border.all(color: AppTokens.borderStrong, width: 1),
+                border: Border.all(color: colors.borderStrong, width: 1),
               ),
               child: TextField(
                 controller: _searchController,
                 onChanged: (value) => setState(() => _query = value),
-                style: const TextStyle(
+                style: TextStyle(
                   fontFamily: 'Geist',
                   fontSize: 13,
-                  color: AppTokens.textPrimary,
+                  color: colors.textPrimary,
                 ),
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   hintText: 'Buscar conversas…',
                   hintStyle: TextStyle(
                     fontFamily: 'Geist',
                     fontSize: 13,
-                    color: AppTokens.textMuted,
+                    color: colors.textMuted,
                   ),
                   prefixIcon: Icon(
                     Icons.search,
                     size: 16,
-                    color: AppTokens.textSecondary,
+                    color: colors.textSecondary,
                   ),
-                  prefixIconConstraints: BoxConstraints(
+                  prefixIconConstraints: const BoxConstraints(
                     minWidth: 32,
                     minHeight: 32,
                   ),
@@ -97,7 +98,7 @@ class _DmConversationListState extends ConsumerState<DmConversationList> {
                   enabledBorder: InputBorder.none,
                   focusedBorder: InputBorder.none,
                   isDense: true,
-                  contentPadding: EdgeInsets.symmetric(
+                  contentPadding: const EdgeInsets.symmetric(
                     horizontal: 8,
                     vertical: 8,
                   ),
@@ -108,13 +109,13 @@ class _DmConversationListState extends ConsumerState<DmConversationList> {
           const SectionHeader('MENSAGENS'),
           Expanded(
             child: filtered.isEmpty
-                ? const Center(
+                ? Center(
                     child: Text(
                       'Nenhuma conversa.',
                       style: TextStyle(
                         fontFamily: 'Geist',
                         fontSize: 13,
-                        color: AppTokens.textMuted,
+                        color: colors.textMuted,
                       ),
                     ),
                   )
@@ -162,11 +163,12 @@ class _ConversationRowState extends State<_ConversationRow> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     final conversation = widget.conversation;
     final selected = widget.selected;
     final fgColor = selected
-        ? AppTokens.textPrimary
-        : (_hovered ? AppTokens.textPrimary : AppTokens.textSecondary);
+        ? colors.textPrimary
+        : (_hovered ? colors.textPrimary : colors.textSecondary);
 
     return MouseRegion(
       cursor: SystemMouseCursors.click,
@@ -181,11 +183,11 @@ class _ConversationRowState extends State<_ConversationRow> {
           padding: const EdgeInsets.symmetric(horizontal: 8),
           decoration: BoxDecoration(
             color: selected
-                ? AppTokens.surface3
-                : (_hovered ? AppTokens.hoverOverlay : Colors.transparent),
+                ? colors.surface3
+                : (_hovered ? colors.hoverOverlay : Colors.transparent),
             borderRadius: BorderRadius.circular(AppRadius.sm),
             border: Border.all(
-              color: selected ? AppTokens.borderSubtle : Colors.transparent,
+              color: selected ? colors.borderSubtle : Colors.transparent,
               width: 1,
             ),
           ),
@@ -195,9 +197,9 @@ class _ConversationRowState extends State<_ConversationRow> {
                 width: 26,
                 height: 26,
                 decoration: BoxDecoration(
-                  color: AppTokens.surface2,
+                  color: colors.surface2,
                   borderRadius: BorderRadius.circular(AppRadius.xs),
-                  border: Border.all(color: AppTokens.borderHairline, width: 1),
+                  border: Border.all(color: colors.borderHairline, width: 1),
                 ),
                 alignment: Alignment.center,
                 clipBehavior: Clip.antiAlias,
@@ -206,9 +208,9 @@ class _ConversationRowState extends State<_ConversationRow> {
                         path: conversation.avatarUrl,
                         width: 26,
                         height: 26,
-                        fallback: _initial(conversation.name),
+                        fallback: _initial(conversation.name, colors),
                       )
-                    : _initial(conversation.name),
+                    : _initial(conversation.name, colors),
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -236,14 +238,14 @@ class _ConversationRowState extends State<_ConversationRow> {
     );
   }
 
-  Widget _initial(String name) {
+  Widget _initial(String name, AppThemePalette colors) {
     return Text(
       name.isEmpty ? '?' : name[0].toUpperCase(),
-      style: const TextStyle(
+      style: TextStyle(
         fontFamily: 'Geist',
         fontSize: 11,
         fontWeight: FontWeight.w600,
-        color: AppTokens.textPrimary,
+        color: colors.textPrimary,
       ),
     );
   }

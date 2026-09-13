@@ -41,6 +41,7 @@ class UserPanel extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.appColors;
     final authState = ref.watch(authControllerProvider).valueOrNull;
     final user = authState is Authenticated ? authState.user : null;
     final name = user?.username ?? '…';
@@ -57,7 +58,7 @@ class UserPanel extends ConsumerWidget {
         !(activeVoiceState?.isReconnecting ?? false);
 
     return Container(
-      color: floating ? Colors.transparent : AppTokens.surface1,
+      color: floating ? Colors.transparent : colors.surface1,
       padding: floating
           ? EdgeInsets.zero
           : const EdgeInsets.fromLTRB(6, 0, 6, 6),
@@ -65,11 +66,11 @@ class UserPanel extends ConsumerWidget {
         key: const Key('user-panel-card'),
         padding: const EdgeInsets.all(8),
         decoration: BoxDecoration(
-          color: AppTokens.surface2,
+          color: colors.surface2,
           borderRadius: BorderRadius.circular(
             floating ? AppRadius.lg : AppRadius.md,
           ),
-          border: Border.all(color: AppTokens.borderSubtle, width: 1),
+          border: Border.all(color: colors.borderSubtle, width: 1),
           boxShadow: floating
               ? const [
                   BoxShadow(
@@ -106,10 +107,10 @@ class UserPanel extends ConsumerWidget {
                       width: 34,
                       height: 34,
                       decoration: BoxDecoration(
-                        color: AppTokens.surface2,
+                        color: colors.surface2,
                         shape: BoxShape.circle,
                         border: Border.all(
-                          color: AppTokens.borderHairline,
+                          color: colors.borderHairline,
                           width: 1,
                         ),
                       ),
@@ -143,11 +144,11 @@ class UserPanel extends ConsumerWidget {
                       Text(
                         name,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontFamily: 'Geist',
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
-                          color: AppTokens.textPrimary,
+                          color: colors.textPrimary,
                         ),
                       ),
                       const Text(
@@ -547,6 +548,7 @@ class _AudioQuickMenuState extends ConsumerState<_AudioQuickMenu> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     final volumeState = ref.watch(voiceVolumeProvider);
     final percent = widget.isInput
         ? volumeState.inputPercent
@@ -558,7 +560,7 @@ class _AudioQuickMenuState extends ConsumerState<_AudioQuickMenu> {
       consumeOutsideTap: true,
       clipBehavior: Clip.none,
       alignmentOffset: const Offset(-218, -4),
-      style: _quickMenuStyle(width: 260),
+      style: _quickMenuStyle(width: 260, colors: colors),
       menuChildren: [
         _AudioQuickPanel(
           devices: widget.devices,
@@ -581,7 +583,7 @@ class _AudioQuickMenuState extends ConsumerState<_AudioQuickMenu> {
           icon: Icon(
             controller.isOpen ? Icons.arrow_drop_up : Icons.arrow_drop_down,
             size: 16,
-            color: AppTokens.textSecondary,
+            color: colors.textSecondary,
           ),
           onPressed: () {
             if (controller.isOpen) {
@@ -623,6 +625,7 @@ class _AudioQuickPanel extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.appColors;
     final volumeController = ref.read(voiceVolumeProvider.notifier);
     final subtitle = _selectedDeviceLabel(
       devices: devices,
@@ -639,7 +642,7 @@ class _AudioQuickPanel extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             SubmenuButton(
-              menuStyle: _quickMenuStyle(width: 260),
+              menuStyle: _quickMenuStyle(width: 260, colors: colors),
               menuChildren: [
                 _DeviceMenuItem(
                   checked: selectedId == null,
@@ -675,16 +678,15 @@ class _AudioQuickPanel extends ConsumerWidget {
                     onPressed: () => _selectDevice(devices[index].id),
                   ),
               ],
-              style: _submenuButtonStyle(),
+              style: _submenuButtonStyle(colors),
               child: _MenuSummaryRow(
                 title: title,
                 subtitle: subtitle,
                 icon: deviceIcon,
-                trailing: Icons.chevron_right,
               ),
             ),
             const SizedBox(height: 8),
-            const Divider(height: 1, color: AppTokens.borderHairline),
+            Divider(height: 1, color: colors.borderHairline),
             const SizedBox(height: 10),
             _QuickVolumeSlider(
               label: isInput ? 'Volume de entrada' : 'Volume de saída',
@@ -738,21 +740,20 @@ class _MenuSummaryRow extends StatelessWidget {
     required this.title,
     required this.subtitle,
     required this.icon,
-    required this.trailing,
   });
 
   final String title;
   final String subtitle;
   final IconData icon;
-  final IconData trailing;
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     return SizedBox(
       height: 48,
       child: Row(
         children: [
-          Icon(icon, size: 17, color: AppTokens.textSecondary),
+          Icon(icon, size: 17, color: colors.textSecondary),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
@@ -762,25 +763,24 @@ class _MenuSummaryRow extends StatelessWidget {
                 Text(
                   title,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontFamily: 'Geist',
                     fontSize: 12.5,
-                    color: AppTokens.textPrimary,
+                    color: colors.textPrimary,
                   ),
                 ),
                 Text(
                   subtitle,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontFamily: 'Geist',
                     fontSize: 11,
-                    color: AppTokens.textMuted,
+                    color: colors.textMuted,
                   ),
                 ),
               ],
             ),
           ),
-          Icon(trailing, size: 18, color: AppTokens.textSecondary),
         ],
       ),
     );
@@ -804,21 +804,22 @@ class _DeviceMenuItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     return MenuItemButton(
       onPressed: enabled ? onPressed : null,
-      style: _menuItemStyle(),
+      style: _menuItemStyle(colors),
       leadingIcon: Icon(
         checked ? Icons.check : icon,
         size: 16,
-        color: checked ? AppTokens.accentVercel : AppTokens.textSecondary,
+        color: checked ? colors.accent : colors.textSecondary,
       ),
       child: Text(
         label,
         overflow: TextOverflow.ellipsis,
-        style: const TextStyle(
+        style: TextStyle(
           fontFamily: 'Geist',
           fontSize: 12.5,
-          color: AppTokens.textPrimary,
+          color: colors.textPrimary,
         ),
       ),
     );
@@ -842,6 +843,7 @@ class _QuickVolumeSlider extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -850,10 +852,10 @@ class _QuickVolumeSlider extends StatelessWidget {
             Expanded(
               child: Text(
                 label,
-                style: const TextStyle(
+                style: TextStyle(
                   fontFamily: 'Geist',
                   fontSize: 12.5,
-                  color: AppTokens.textPrimary,
+                  color: colors.textPrimary,
                 ),
               ),
             ),
@@ -871,10 +873,10 @@ class _QuickVolumeSlider extends StatelessWidget {
         SliderTheme(
           data: SliderTheme.of(context).copyWith(
             trackHeight: 4,
-            activeTrackColor: AppTokens.accentVercel,
-            inactiveTrackColor: AppTokens.borderStrong,
-            thumbColor: AppTokens.textPrimary,
-            overlayColor: AppTokens.accentVercel.withValues(alpha: 0.16),
+            activeTrackColor: colors.accent,
+            inactiveTrackColor: colors.borderStrong,
+            thumbColor: colors.textPrimary,
+            overlayColor: colors.accent.withValues(alpha: 0.16),
             thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
             overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
           ),
@@ -932,11 +934,14 @@ class _QuickCommandRow extends StatelessWidget {
   }
 }
 
-MenuStyle _quickMenuStyle({required double width}) {
+MenuStyle _quickMenuStyle({
+  required double width,
+  required AppThemePalette colors,
+}) {
   return MenuStyle(
     minimumSize: WidgetStatePropertyAll(Size(width, 0)),
     maximumSize: WidgetStatePropertyAll(Size(width, double.infinity)),
-    backgroundColor: const WidgetStatePropertyAll(AppTokens.surface2),
+    backgroundColor: WidgetStatePropertyAll(colors.surface2),
     surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
     shadowColor: const WidgetStatePropertyAll(Colors.black87),
     elevation: const WidgetStatePropertyAll(16),
@@ -944,32 +949,32 @@ MenuStyle _quickMenuStyle({required double width}) {
     shape: WidgetStatePropertyAll(
       RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(AppRadius.md),
-        side: const BorderSide(color: AppTokens.borderSubtle, width: 1),
+        side: BorderSide(color: colors.borderSubtle, width: 1),
       ),
     ),
   );
 }
 
-ButtonStyle _submenuButtonStyle() {
+ButtonStyle _submenuButtonStyle(AppThemePalette colors) {
   return ButtonStyle(
     alignment: Alignment.centerLeft,
     padding: const WidgetStatePropertyAll(EdgeInsets.zero),
     minimumSize: const WidgetStatePropertyAll(Size(0, 48)),
-    foregroundColor: const WidgetStatePropertyAll(AppTokens.textPrimary),
-    overlayColor: const WidgetStatePropertyAll(AppTokens.hoverOverlay),
+    foregroundColor: WidgetStatePropertyAll(colors.textPrimary),
+    overlayColor: WidgetStatePropertyAll(colors.hoverOverlay),
     shape: WidgetStatePropertyAll(
       RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.sm)),
     ),
   );
 }
 
-ButtonStyle _menuItemStyle() {
+ButtonStyle _menuItemStyle(AppThemePalette colors) {
   return ButtonStyle(
     minimumSize: const WidgetStatePropertyAll(Size(236, 32)),
     maximumSize: const WidgetStatePropertyAll(Size(236, 32)),
     padding: const WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 12)),
-    foregroundColor: const WidgetStatePropertyAll(AppTokens.textPrimary),
-    overlayColor: const WidgetStatePropertyAll(AppTokens.hoverOverlay),
+    foregroundColor: WidgetStatePropertyAll(colors.textPrimary),
+    overlayColor: WidgetStatePropertyAll(colors.hoverOverlay),
   );
 }
 
@@ -1131,37 +1136,40 @@ class _VoiceActionButtonState extends State<_VoiceActionButton> {
   }
 
   Color _foregroundColor(bool enabled) {
-    if (!enabled) return AppTokens.textMuted.withValues(alpha: 0.48);
+    final colors = context.appColors;
+    if (!enabled) return colors.textMuted.withValues(alpha: 0.48);
     if (widget.isActive) return AppTokens.accentGreen;
-    return _hovered ? Colors.white : AppTokens.textPrimary;
+    return _hovered ? Colors.white : colors.textPrimary;
   }
 
   Color _backgroundColor(bool enabled) {
+    final colors = context.appColors;
     if (!enabled) {
       return Color.alphaBlend(
         Colors.white.withValues(alpha: 0.018),
-        AppTokens.surfaceBase,
+        colors.surfaceBase,
       );
     }
     if (widget.isActive) {
       return Color.alphaBlend(
         AppTokens.accentGreen.withValues(alpha: _pressed ? 0.28 : 0.20),
-        AppTokens.surface2,
+        colors.surface2,
       );
     }
     return Color.alphaBlend(
       Colors.white.withValues(
         alpha: _pressed ? 0.16 : (_hovered ? 0.12 : 0.085),
       ),
-      AppTokens.surface2,
+      colors.surface2,
     );
   }
 
   Color _borderColor(bool enabled) {
+    final colors = context.appColors;
     if (!enabled) return Colors.white.withValues(alpha: 0.035);
     if (widget.isActive) return AppTokens.accentGreen.withValues(alpha: 0.58);
     if (_hovered) return Colors.white.withValues(alpha: 0.24);
-    return AppTokens.borderSubtle;
+    return colors.borderSubtle;
   }
 
   List<BoxShadow> _shadow(bool enabled) {

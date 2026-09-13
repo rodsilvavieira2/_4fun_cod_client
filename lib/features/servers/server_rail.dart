@@ -27,13 +27,14 @@ class ServerRail extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.appColors;
     final servers = ref.watch(serversProvider);
     return Container(
       width: width,
-      decoration: const BoxDecoration(
-        color: AppTokens.surfaceBase,
+      decoration: BoxDecoration(
+        color: colors.surfaceBase,
         border: Border(
-          right: BorderSide(color: AppTokens.borderHairline, width: 1),
+          right: BorderSide(color: colors.borderHairline, width: 1),
         ),
       ),
       child: servers.when(
@@ -58,9 +59,9 @@ class ServerRail extends ConsumerWidget {
               selected: selectedServerId == null && !dmActive,
               compact: compact,
             ),
-            const Padding(
+            Padding(
               padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Divider(height: 1, color: AppTokens.borderHairline),
+              child: Divider(height: 1, color: colors.borderHairline),
             ),
             for (final server in list)
               _ServerRailItem(
@@ -68,9 +69,9 @@ class ServerRail extends ConsumerWidget {
                 selected: server.id == selectedServerId,
                 compact: compact,
               ),
-            const Padding(
+            Padding(
               padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Divider(height: 1, color: AppTokens.borderHairline),
+              child: Divider(height: 1, color: colors.borderHairline),
             ),
             _AddServerRailItem(compact: compact),
           ],
@@ -98,6 +99,7 @@ class _HomeRailItemState extends State<_HomeRailItem> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     final selected = widget.selected;
     final compact = widget.compact;
     final itemSize = compact ? 36.0 : 44.0;
@@ -132,8 +134,8 @@ class _HomeRailItemState extends State<_HomeRailItem> {
                         curve: Curves.easeOutCubic,
                         width: selected ? 3.5 : (_hovered ? 3.5 : 0),
                         height: selected ? 28 : (_hovered ? 14 : 0),
-                        decoration: const BoxDecoration(
-                          color: AppTokens.textPrimary,
+                        decoration: BoxDecoration(
+                          color: colors.textPrimary,
                           borderRadius: BorderRadius.horizontal(
                             right: Radius.circular(3),
                           ),
@@ -148,10 +150,8 @@ class _HomeRailItemState extends State<_HomeRailItem> {
                     height: itemSize,
                     decoration: BoxDecoration(
                       color: selected
-                          ? AppTokens.textPrimary
-                          : (_hovered
-                                ? AppTokens.surface3
-                                : AppTokens.surface1),
+                          ? colors.textPrimary
+                          : (_hovered ? colors.surface3 : colors.surface1),
                       borderRadius: BorderRadius.circular(
                         active ? radius : AppRadius.full,
                       ),
@@ -159,8 +159,8 @@ class _HomeRailItemState extends State<_HomeRailItem> {
                         color: selected
                             ? Colors.transparent
                             : (_hovered
-                                  ? AppTokens.borderSubtle
-                                  : AppTokens.borderHairline),
+                                  ? colors.borderSubtle
+                                  : colors.borderHairline),
                         width: 1,
                       ),
                     ),
@@ -202,6 +202,7 @@ class _ServerRailItemState extends State<_ServerRailItem> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     final server = widget.server;
     final selected = widget.selected;
     final compact = widget.compact;
@@ -237,7 +238,7 @@ class _ServerRailItemState extends State<_ServerRailItem> {
                         width: selected ? 3.5 : (_hovered ? 3.5 : 0),
                         height: selected ? 28 : (_hovered ? 14 : 0),
                         decoration: BoxDecoration(
-                          color: AppTokens.textPrimary,
+                          color: colors.textPrimary,
                           borderRadius: const BorderRadius.horizontal(
                             right: Radius.circular(3),
                           ),
@@ -252,10 +253,8 @@ class _ServerRailItemState extends State<_ServerRailItem> {
                     height: itemSize,
                     decoration: BoxDecoration(
                       color: selected
-                          ? AppTokens.textPrimary
-                          : (_hovered
-                                ? AppTokens.surface3
-                                : AppTokens.surface1),
+                          ? colors.textPrimary
+                          : (_hovered ? colors.surface3 : colors.surface1),
                       borderRadius: BorderRadius.circular(
                         selected || _hovered ? radius : AppRadius.full,
                       ),
@@ -263,8 +262,8 @@ class _ServerRailItemState extends State<_ServerRailItem> {
                         color: selected
                             ? Colors.transparent
                             : (_hovered
-                                  ? AppTokens.borderSubtle
-                                  : AppTokens.borderHairline),
+                                  ? colors.borderSubtle
+                                  : colors.borderHairline),
                         width: 1,
                       ),
                     ),
@@ -295,11 +294,12 @@ class _ServerRailItemState extends State<_ServerRailItem> {
   }
 
   Widget _initial(Server server, bool selected) {
+    final colors = context.appColors;
     return Text(
       server.name.isEmpty ? '?' : server.name[0].toUpperCase(),
       style: TextStyle(
         fontFamily: 'Geist',
-        color: selected ? AppTokens.textInverse : AppTokens.textPrimary,
+        color: selected ? colors.textInverse : colors.textPrimary,
         fontWeight: FontWeight.w700,
         fontSize: 14,
       ),
@@ -321,6 +321,7 @@ class _AddServerRailItemState extends State<_AddServerRailItem> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     final compact = widget.compact;
     final itemSize = compact ? 36.0 : 44.0;
     final radius = compact ? 10.0 : 14.0;
@@ -345,16 +346,14 @@ class _AddServerRailItemState extends State<_AddServerRailItem> {
                   width: itemSize,
                   height: itemSize,
                   decoration: BoxDecoration(
-                    color: _hovered
-                        ? AppTokens.accentVercel
-                        : AppTokens.surface1,
+                    color: _hovered ? colors.accent : colors.surface1,
                     borderRadius: BorderRadius.circular(
                       _hovered ? radius : AppRadius.full,
                     ),
                     border: Border.all(
                       color: _hovered
                           ? Colors.transparent
-                          : AppTokens.borderHairline,
+                          : colors.borderHairline,
                       width: 1,
                     ),
                   ),
@@ -362,7 +361,7 @@ class _AddServerRailItemState extends State<_AddServerRailItem> {
                   child: Icon(
                     Icons.add,
                     size: compact ? 16 : 20,
-                    color: _hovered ? Colors.white : AppTokens.textSecondary,
+                    color: _hovered ? colors.onAccent : colors.textSecondary,
                   ),
                 ),
               ),

@@ -21,13 +21,14 @@ class DmChatArea extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.appColors;
     final conversations = ref.watch(dmConversationsProvider(serverId));
     final conversation = userId == null
         ? null
         : conversations.where((c) => c.userId == userId).firstOrNull;
 
     return Container(
-      color: AppTokens.background,
+      color: colors.background,
       child: Column(
         children: [
           // Header estilo macOS Toolbar
@@ -37,13 +38,10 @@ class DmChatArea extends ConsumerWidget {
               child: Container(
                 height: AppLayout.headerHeight,
                 padding: const EdgeInsets.symmetric(horizontal: 16),
-                decoration: const BoxDecoration(
-                  color: Color(0xCC000000),
+                decoration: BoxDecoration(
+                  color: colors.background.withValues(alpha: 0.80),
                   border: Border(
-                    bottom: BorderSide(
-                      color: AppTokens.borderHairline,
-                      width: 1,
-                    ),
+                    bottom: BorderSide(color: colors.borderHairline, width: 1),
                   ),
                 ),
                 child: Row(
@@ -61,12 +59,12 @@ class DmChatArea extends ConsumerWidget {
                           ? '@${conversation.name}'
                           : 'Mensagens Diretas',
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontFamily: 'Geist',
                         fontSize: 14.5,
                         fontWeight: FontWeight.w600,
-                        color: AppTokens.textPrimary,
-                        letterSpacing: -0.2,
+                        color: colors.textPrimary,
+                        letterSpacing: 0,
                       ),
                     ),
                     const Spacer(),
@@ -99,10 +97,10 @@ class DmChatArea extends ConsumerWidget {
                 conversation == null
                     ? 'Selecione uma conversa para começar'
                     : 'Nenhuma mensagem ainda com @${conversation.name}',
-                style: const TextStyle(
+                style: TextStyle(
                   fontFamily: 'Geist',
                   fontSize: 14,
-                  color: AppTokens.textMuted,
+                  color: colors.textMuted,
                 ),
               ),
             ),
@@ -143,12 +141,13 @@ class _DmComposerState extends State<_DmComposer> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     return AppChatInput(
       controller: _controller,
       hintText: widget.hintName != null
           ? 'Mensagem para @${widget.hintName}…'
           : 'Digite sua mensagem…',
-      sendActiveColor: AppTokens.textInverse,
+      sendActiveColor: colors.accent,
       onSend: _handleSend,
     );
   }

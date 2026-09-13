@@ -52,6 +52,7 @@ class ChannelList extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.appColors;
     final channels = ref.watch(channelsControllerProvider(serverId));
     final serverName = ref
         .watch(serverDetailProvider(serverId))
@@ -85,20 +86,20 @@ class ChannelList extends ConsumerWidget {
                   child: Text(
                     serverName ?? 'Servidor',
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontFamily: 'Geist',
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
-                      color: AppTokens.textPrimary,
+                      color: colors.textPrimary,
                     ),
                   ),
                 ),
                 AppMenuButton<String>(
                   tooltip: 'Menu do servidor',
-                  icon: const Icon(
+                  icon: Icon(
                     Icons.keyboard_arrow_down,
                     size: 18,
-                    color: AppTokens.textSecondary,
+                    color: colors.textSecondary,
                   ),
                   onSelected: (value) {
                     switch (value) {
@@ -159,7 +160,7 @@ class ChannelList extends ConsumerWidget {
             ),
           ),
         ),
-        const Divider(height: 1, color: AppTokens.borderHairline),
+        Divider(height: 1, color: colors.borderHairline),
         Expanded(
           child: channels.when(
             loading: () => const Center(
@@ -703,15 +704,16 @@ class _ChannelRowState extends State<_ChannelRow> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     final selected = widget.selected;
     final icon = widget.channel.type == ChannelType.text
         ? Icons.tag
         : Icons.volume_up_outlined;
     final baseColor = selected
-        ? AppTokens.textPrimary
+        ? colors.textPrimary
         : (widget.connected
               ? AppTokens.accentGreen
-              : (_hovered ? AppTokens.textPrimary : AppTokens.textSecondary));
+              : (_hovered ? colors.textPrimary : colors.textSecondary));
 
     return MouseRegion(
       cursor: SystemMouseCursors.click,
@@ -726,11 +728,11 @@ class _ChannelRowState extends State<_ChannelRow> {
           padding: const EdgeInsets.symmetric(horizontal: 8),
           decoration: BoxDecoration(
             color: selected
-                ? AppTokens.surface3
-                : (_hovered ? AppTokens.hoverOverlay : Colors.transparent),
+                ? colors.surface3
+                : (_hovered ? colors.hoverOverlay : Colors.transparent),
             borderRadius: BorderRadius.circular(AppRadius.sm),
             border: Border.all(
-              color: selected ? AppTokens.borderSubtle : Colors.transparent,
+              color: selected ? colors.borderSubtle : Colors.transparent,
               width: 1,
             ),
           ),

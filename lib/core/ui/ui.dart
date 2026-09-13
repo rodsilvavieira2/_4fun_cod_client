@@ -5,6 +5,7 @@ export 'app_logo.dart';
 export 'buttons/app_button.dart';
 export 'buttons/app_segmented_control.dart';
 export 'ds_tokens.dart';
+export '../theme/appearance_theme.dart';
 export 'feedback/app_badge.dart';
 export 'inputs/app_chat_input.dart';
 export 'inputs/app_text_field.dart';

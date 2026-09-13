@@ -14,6 +14,7 @@ class DmProfilePanel extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.appColors;
     final userId = this.userId;
     if (userId == null) return const SizedBox.shrink();
 
@@ -22,10 +23,10 @@ class DmProfilePanel extends ConsumerWidget {
 
     return Container(
       width: AppLayout.memberPanelWidth,
-      decoration: const BoxDecoration(
-        color: AppTokens.surface1,
+      decoration: BoxDecoration(
+        color: colors.surface1,
         border: Border(
-          left: BorderSide(color: AppTokens.borderHairline, width: 1),
+          left: BorderSide(color: colors.borderHairline, width: 1),
         ),
       ),
       child: SingleChildScrollView(
@@ -38,9 +39,9 @@ class DmProfilePanel extends ConsumerWidget {
                 width: 72,
                 height: 72,
                 decoration: BoxDecoration(
-                  color: AppTokens.surface2,
+                  color: colors.surface2,
                   borderRadius: BorderRadius.circular(AppRadius.lg),
-                  border: Border.all(color: AppTokens.borderSubtle, width: 1),
+                  border: Border.all(color: colors.borderSubtle, width: 1),
                 ),
                 alignment: Alignment.center,
                 clipBehavior: Clip.antiAlias,
@@ -49,21 +50,21 @@ class DmProfilePanel extends ConsumerWidget {
                         path: member?.user.avatarUrl,
                         width: 72,
                         height: 72,
-                        fallback: _initial(member?.user.name ?? '?'),
+                        fallback: _initial(member?.user.name ?? '?', colors),
                       )
-                    : _initial(member?.user.name ?? '?'),
+                    : _initial(member?.user.name ?? '?', colors),
               ),
             ),
             const SizedBox(height: 14),
             Center(
               child: Text(
                 member?.user.name ?? 'Contato',
-                style: const TextStyle(
+                style: TextStyle(
                   fontFamily: 'Geist',
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
-                  color: AppTokens.textPrimary,
-                  letterSpacing: -0.2,
+                  color: colors.textPrimary,
+                  letterSpacing: 0,
                 ),
               ),
             ),
@@ -71,15 +72,15 @@ class DmProfilePanel extends ConsumerWidget {
             Center(
               child: Text(
                 '@${member?.user.username ?? ''}',
-                style: const TextStyle(
+                style: TextStyle(
                   fontFamily: 'Geist',
-                  color: AppTokens.textSecondary,
+                  color: colors.textSecondary,
                   fontSize: 13,
                 ),
               ),
             ),
             const SizedBox(height: 18),
-            const Divider(height: 1, color: AppTokens.borderHairline),
+            Divider(height: 1, color: colors.borderHairline),
             const SizedBox(height: 14),
             _InfoRow(
               label: 'MEMBRO DESDE',
@@ -102,14 +103,14 @@ class DmProfilePanel extends ConsumerWidget {
     );
   }
 
-  Widget _initial(String name) {
+  Widget _initial(String name, AppThemePalette colors) {
     return Text(
       name.isEmpty ? '?' : name[0].toUpperCase(),
-      style: const TextStyle(
+      style: TextStyle(
         fontFamily: 'Geist',
         fontSize: 24,
         fontWeight: FontWeight.w600,
-        color: AppTokens.textPrimary,
+        color: colors.textPrimary,
       ),
     );
   }
@@ -130,26 +131,27 @@ class _InfoRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           label,
-          style: const TextStyle(
+          style: TextStyle(
             fontFamily: 'Geist Mono',
             fontSize: 10.5,
             fontWeight: FontWeight.w600,
-            color: AppTokens.textMuted,
-            letterSpacing: 0.8,
+            color: colors.textMuted,
+            letterSpacing: 0,
           ),
         ),
         const SizedBox(height: 4),
         Text(
           value,
-          style: const TextStyle(
+          style: TextStyle(
             fontFamily: 'Geist',
             fontSize: 13.5,
-            color: AppTokens.textPrimary,
+            color: colors.textPrimary,
           ),
         ),
       ],

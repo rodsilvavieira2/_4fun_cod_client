@@ -20,6 +20,9 @@ class App extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(routerProvider);
+    final appearanceTheme = ref.watch(appearanceThemeProvider);
+    final palette =
+        appearanceTheme.valueOrNull?.palette ?? AppThemePalette.defaultPalette;
     ref.watch(notificationCoordinatorProvider);
     // Fire-and-forget: no-op quando OTEL_ENABLED=false (default).
     final telemetry = ref.read(telemetryServiceProvider);
@@ -39,7 +42,7 @@ class App extends ConsumerWidget {
         title: '4FunCode',
         debugShowCheckedModeBanner: false,
         // Design system dark-only (Discord + Vercel dark/Geist).
-        theme: theme4funCod,
+        theme: build4funTheme(palette),
         routerConfig: router,
       ),
     );

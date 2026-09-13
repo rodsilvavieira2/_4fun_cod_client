@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/rtc/rtc_providers.dart';
 import '../../core/rtc/rtc_service.dart';
 import '../../core/rtc/rtc_video_view.dart';
+import '../../core/theme/appearance_theme.dart';
 import '../../core/ui/ds_tokens.dart';
 import '../../core/ui/overlay_icon_button.dart';
 import '../../core/ui/participant_volume_popover.dart';
@@ -174,6 +175,7 @@ class _VoiceVideoTileState extends ConsumerState<VoiceVideoTile> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     final rtc = ref.read(rtcServiceProvider);
     final participant = widget.participant;
     final isLocal = participant.id == rtc.localParticipantId;
@@ -189,8 +191,8 @@ class _VoiceVideoTileState extends ConsumerState<VoiceVideoTile> {
     final frameColor = participant.isSpeaking
         ? palette.base
         : isMiniature
-        ? AppTokens.borderSubtle
-        : AppTokens.borderHairline;
+        ? colors.borderSubtle
+        : colors.borderHairline;
     final frameWidth = participant.isSpeaking ? 2.0 : 1.0;
 
     final tile = GestureDetector(
@@ -336,6 +338,7 @@ class _TileOverlay extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final colors = context.appColors;
     return Positioned(
       left: 8,
       bottom: 8,
@@ -350,7 +353,7 @@ class _TileOverlay extends StatelessWidget {
             decoration: BoxDecoration(
               color: Colors.black.withValues(alpha: 0.72),
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: AppTokens.borderSubtle),
+              border: Border.all(color: colors.borderSubtle),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -404,7 +407,7 @@ class _TileOverlay extends StatelessWidget {
                     audioAvailable: source == VoiceVideoSource.screen
                         ? participant.isSystemAudioEnabled
                         : null,
-                    iconColor: AppTokens.textPrimary,
+                    iconColor: colors.textPrimary,
                     iconSize: 15.4,
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints.tightFor(
@@ -443,6 +446,7 @@ class _TransmitTopOverlay extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final colors = context.appColors;
     return Positioned(
       left: 8,
       right: 8,
@@ -464,7 +468,7 @@ class _TransmitTopOverlay extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: Colors.black.withValues(alpha: 0.72),
                     borderRadius: BorderRadius.circular(999),
-                    border: Border.all(color: AppTokens.borderSubtle),
+                    border: Border.all(color: colors.borderSubtle),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -473,7 +477,7 @@ class _TransmitTopOverlay extends StatelessWidget {
                         Text(
                           qualityLabel!,
                           style: theme.textTheme.labelSmall?.copyWith(
-                            color: AppTokens.textSecondary,
+                            color: colors.textSecondary,
                             fontWeight: FontWeight.w700,
                           ),
                         ),
@@ -567,6 +571,7 @@ class _MiniatureOverlay extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final colors = context.appColors;
     return Positioned(
       left: 8,
       bottom: 8,
@@ -576,7 +581,7 @@ class _MiniatureOverlay extends StatelessWidget {
         decoration: BoxDecoration(
           color: Colors.black.withValues(alpha: 0.68),
           borderRadius: BorderRadius.circular(9),
-          border: Border.all(color: AppTokens.borderSubtle),
+          border: Border.all(color: colors.borderSubtle),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -693,6 +698,7 @@ class _PlaceholderAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     final radius = compact ? 30.0 : 42.0;
     final diameter = radius * 2;
     return Container(
@@ -706,15 +712,15 @@ class _PlaceholderAvatar extends StatelessWidget {
           colors: [
             Color.alphaBlend(
               palette.highlight.withValues(alpha: 0.48),
-              AppTokens.surface3,
+              colors.surface3,
             ),
             Color.alphaBlend(
               palette.base.withValues(alpha: 0.62),
-              AppTokens.surface3,
+              colors.surface3,
             ),
             Color.alphaBlend(
               palette.deep.withValues(alpha: 0.52),
-              AppTokens.surface3,
+              colors.surface3,
             ),
           ],
           stops: const [0, 0.62, 1],
@@ -757,7 +763,7 @@ class _PlaceholderAvatar extends StatelessWidget {
         child: Text(
           _initialFor(name),
           style: TextStyle(
-            color: AppTokens.textPrimary,
+            color: colors.textPrimary,
             fontSize: compact ? 28 : 36,
             fontWeight: FontWeight.w700,
             fontFamily: 'Geist',
@@ -785,26 +791,27 @@ class _AvatarPlaceholder extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     final name = participant.name;
     return Container(
       key: const ValueKey('voice-video-placeholder'),
       decoration: BoxDecoration(
-        color: AppTokens.surface1,
+        color: colors.surface1,
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
             Color.alphaBlend(
               palette.base.withValues(alpha: compact ? 0.055 : 0.07),
-              AppTokens.surface2,
+              colors.surface2,
             ),
             Color.alphaBlend(
               palette.secondary.withValues(alpha: compact ? 0.035 : 0.045),
-              AppTokens.surface1,
+              colors.surface1,
             ),
             Color.alphaBlend(
               palette.deep.withValues(alpha: compact ? 0.12 : 0.16),
-              AppTokens.surfaceBase,
+              colors.surfaceBase,
             ),
           ],
           stops: const [0, 0.58, 1],
@@ -994,6 +1001,7 @@ class _NoVideoBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     return Container(
       padding: EdgeInsets.symmetric(
         horizontal: compact ? 6 : 7,
@@ -1002,7 +1010,7 @@ class _NoVideoBadge extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.46),
         borderRadius: AppRadius.brSm,
-        border: Border.all(color: AppTokens.borderSubtle),
+        border: Border.all(color: colors.borderSubtle),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -1010,7 +1018,7 @@ class _NoVideoBadge extends StatelessWidget {
           Icon(
             Icons.videocam_off_outlined,
             size: compact ? 12 : 13,
-            color: AppTokens.textSecondary,
+            color: colors.textSecondary,
           ),
           SizedBox(width: compact ? 4 : 5),
           Text(
@@ -1019,7 +1027,7 @@ class _NoVideoBadge extends StatelessWidget {
               fontFamily: 'Geist',
               fontSize: compact ? 10 : 10.5,
               fontWeight: FontWeight.w600,
-              color: AppTokens.textSecondary,
+              color: colors.textSecondary,
             ),
           ),
         ],

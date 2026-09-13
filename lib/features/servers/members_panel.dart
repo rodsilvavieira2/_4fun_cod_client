@@ -15,6 +15,7 @@ class MembersPanel extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.appColors;
     final detail = ref.watch(serverDetailProvider(serverId));
     final online = ref.watch(presenceProvider(serverId));
     final members = detail.valueOrNull?.members ?? const <ServerMember>[];
@@ -31,10 +32,10 @@ class MembersPanel extends ConsumerWidget {
 
     return Container(
       width: AppLayout.memberPanelWidth,
-      decoration: const BoxDecoration(
-        color: AppTokens.surface1,
+      decoration: BoxDecoration(
+        color: colors.surface1,
         border: Border(
-          left: BorderSide(color: AppTokens.borderHairline, width: 1),
+          left: BorderSide(color: colors.borderHairline, width: 1),
         ),
       ),
       child: ListView(
@@ -77,6 +78,7 @@ class _MemberRowState extends ConsumerState<_MemberRow> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     final user = widget.member.user;
     final online = widget.online;
     // Nickname (username) primeiro — cai para o nome se vazio.
@@ -92,7 +94,7 @@ class _MemberRowState extends ConsumerState<_MemberRow> {
         margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
-          color: _hovered ? AppTokens.hoverOverlay : Colors.transparent,
+          color: _hovered ? colors.hoverOverlay : Colors.transparent,
           borderRadius: BorderRadius.circular(AppRadius.sm),
         ),
         child: Row(
@@ -104,12 +106,9 @@ class _MemberRowState extends ConsumerState<_MemberRow> {
                   width: 30,
                   height: 30,
                   decoration: BoxDecoration(
-                    color: AppTokens.surface2,
+                    color: colors.surface2,
                     borderRadius: BorderRadius.circular(AppRadius.sm),
-                    border: Border.all(
-                      color: AppTokens.borderHairline,
-                      width: 1,
-                    ),
+                    border: Border.all(color: colors.borderHairline, width: 1),
                   ),
                   alignment: Alignment.center,
                   clipBehavior: Clip.antiAlias,
@@ -143,7 +142,7 @@ class _MemberRowState extends ConsumerState<_MemberRow> {
                   fontFamily: 'Geist',
                   fontSize: 13.5,
                   fontWeight: FontWeight.w500,
-                  color: online ? AppTokens.textPrimary : AppTokens.textMuted,
+                  color: online ? colors.textPrimary : colors.textMuted,
                 ),
               ),
             ),
@@ -162,11 +161,11 @@ class _MemberRowState extends ConsumerState<_MemberRow> {
   Widget _initial(String name) {
     return Text(
       name.isEmpty ? '?' : name[0].toUpperCase(),
-      style: const TextStyle(
+      style: TextStyle(
         fontFamily: 'Geist',
         fontSize: 12,
         fontWeight: FontWeight.w600,
-        color: AppTokens.textPrimary,
+        color: context.appColors.textPrimary,
       ),
     );
   }

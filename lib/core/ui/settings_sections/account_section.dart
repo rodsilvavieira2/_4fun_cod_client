@@ -141,6 +141,7 @@ class _ProfileSummary extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     return Padding(
       padding: const EdgeInsets.all(12),
       child: Row(
@@ -154,11 +155,11 @@ class _ProfileSummary extends StatelessWidget {
                 Text(
                   user.name,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontFamily: 'Geist',
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
-                    color: AppTokens.textPrimary,
+                    color: colors.textPrimary,
                     letterSpacing: 0,
                   ),
                 ),
@@ -166,10 +167,10 @@ class _ProfileSummary extends StatelessWidget {
                 Text(
                   '@${user.username}',
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontFamily: 'Geist',
                     fontSize: 12.5,
-                    color: AppTokens.textSecondary,
+                    color: colors.textSecondary,
                     letterSpacing: 0,
                   ),
                 ),
@@ -206,6 +207,7 @@ class _Avatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
     final initial = user.name.isEmpty ? '?' : user.name[0].toUpperCase();
     final preview = previewBytes;
     return Container(
@@ -214,9 +216,9 @@ class _Avatar extends StatelessWidget {
       alignment: Alignment.center,
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        color: AppTokens.surface2,
+        color: colors.surface2,
         borderRadius: BorderRadius.circular(AppRadius.sm),
-        border: Border.all(color: AppTokens.borderHairline, width: 1),
+        border: Border.all(color: colors.borderHairline, width: 1),
       ),
       child: preview != null
           ? Image.memory(
@@ -253,7 +255,7 @@ class _AvatarInitial extends StatelessWidget {
         fontFamily: 'Geist',
         fontSize: size * 0.36,
         fontWeight: FontWeight.w600,
-        color: AppTokens.textPrimary,
+        color: context.appColors.textPrimary,
       ),
     );
   }
@@ -577,12 +579,12 @@ class _EmailEditDialogState extends ConsumerState<_EmailEditDialog> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text(
+            Text(
               'Confirme sua senha para trocar o e-mail usado no login.',
               style: TextStyle(
                 fontFamily: 'Geist',
                 fontSize: 13,
-                color: AppTokens.textSecondary,
+                color: context.appColors.textSecondary,
               ),
             ),
             const SizedBox(height: 18),
@@ -758,10 +760,10 @@ class _ErrorText extends StatelessWidget {
   Widget build(BuildContext context) {
     return Text(
       value,
-      style: const TextStyle(
+      style: TextStyle(
         fontFamily: 'Geist',
         fontSize: 12,
-        color: AppTokens.accentPurple,
+        color: context.appColors.accent,
       ),
     );
   }
