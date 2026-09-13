@@ -612,10 +612,19 @@ jobs:
           gh release upload \
             "$GITHUB_REF_NAME" \
             updater/feed/app-archive.json
-          BASE="https://github.com/rodsilvavieira2/_4fun_cod_client/releases/download/$GITHUB_REF_NAME"
+          # Verificação hospedada via API (funciona com repo privado ou
+          # público). Retry cobre propagação eventual dos assets.
+          fetch_retry() { # $1=pattern $2=dest-dir
+            for i in $(seq 1 12); do
+              if gh release download "$GITHUB_REF_NAME" -p "$1" -D "$2" --clobber; then return 0; fi
+              sleep 10
+            done
+            echo "verificação hospedada falhou: $1" >&2
+            return 1
+          }
           for platform in linux windows; do
-            curl -fsSL "$BASE/release-$platform.json" -o "$RUNNER_TEMP/hosted-$platform.json"
-            dart run desktop_updater:verify --release "$RUNNER_TEMP/hosted-$platform.json"
+            fetch_retry "release-$platform.json" "$RUNNER_TEMP/hosted"
+            dart run desktop_updater:verify --release "$RUNNER_TEMP/hosted/release-$platform.json"
           done
-          curl -fsSL "$BASE/app-archive.json" -o "$RUNNER_TEMP/hosted-archive.json"
+          fetch_retry "app-archive.json" "$RUNNER_TEMP/hosted"
           echo "hosted feed OK"
