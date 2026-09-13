@@ -349,7 +349,7 @@ class _TileOverlay extends StatelessWidget {
           ignoring: !visible,
           child: Container(
             constraints: const BoxConstraints(maxWidth: 240),
-            padding: const EdgeInsets.fromLTRB(3, 3, 8, 3),
+            padding: EdgeInsets.fromLTRB(showAvatar ? 3 : 10, 3, 8, 3),
             decoration: BoxDecoration(
               color: Colors.black.withValues(alpha: 0.72),
               borderRadius: BorderRadius.circular(16),
@@ -357,6 +357,7 @@ class _TileOverlay extends StatelessWidget {
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 if (showAvatar)
                   _NameAvatar(
