@@ -15,6 +15,7 @@ import '../auth/auth_controller.dart';
 import '../auth/auth_state.dart';
 import '../logging/app_logger.dart';
 import '../telemetry/telemetry_service.dart';
+import 'route_transitions.dart';
 
 /// Observer de navegação: loga todas as transições de rota (diagnóstico).
 class RouterLogObserver extends NavigatorObserver {
@@ -106,52 +107,71 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/splash',
         name: 'splash',
-        builder: (context, state) => const SplashScreen(),
+        pageBuilder: (context, state) =>
+            fadeThroughPage(key: state.pageKey, child: const SplashScreen()),
       ),
       GoRoute(
         path: '/login',
         name: 'login',
-        builder: (context, state) => const LoginScreen(),
+        pageBuilder: (context, state) =>
+            fadeThroughPage(key: state.pageKey, child: const LoginScreen()),
       ),
       GoRoute(
         path: '/register',
         name: 'register',
-        builder: (context, state) => const RegisterScreen(),
+        pageBuilder: (context, state) => slideHorizontalPage(
+          key: state.pageKey,
+          child: const RegisterScreen(),
+        ),
       ),
       GoRoute(
         path: '/',
         name: 'home',
-        builder: (context, state) => const HomeScreen(),
+        pageBuilder: (context, state) =>
+            fadeThroughPage(key: state.pageKey, child: const HomeScreen()),
       ),
       GoRoute(
         path: '/dms',
         name: 'dms',
-        builder: (context, state) => const DmShellScreen(),
+        pageBuilder: (context, state) => slideHorizontalPage(
+          key: state.pageKey,
+          child: const DmShellScreen(),
+        ),
       ),
       GoRoute(
         path: '/servers/:serverId',
         name: 'server-shell',
-        builder: (context, state) => ServerShellScreen(
-          serverId: state.pathParameters['serverId']!,
-          initialChannelId: state.uri.queryParameters['channelId'],
+        pageBuilder: (context, state) => slideHorizontalPage(
+          key: state.pageKey,
+          child: ServerShellScreen(
+            serverId: state.pathParameters['serverId']!,
+            initialChannelId: state.uri.queryParameters['channelId'],
+          ),
         ),
       ),
       GoRoute(
         path: '/servers/:serverId/members',
         name: 'server-members',
-        builder: (context, state) =>
-            MembersScreen(serverId: state.pathParameters['serverId']!),
+        pageBuilder: (context, state) => slideHorizontalPage(
+          key: state.pageKey,
+          child: MembersScreen(serverId: state.pathParameters['serverId']!),
+        ),
       ),
       GoRoute(
         path: '/invite/:code',
         name: 'invite',
-        builder: (context, state) =>
-            InviteScreen(code: state.pathParameters['code']!),
+        pageBuilder: (context, state) => modalScalePage(
+          key: state.pageKey,
+          child: InviteScreen(code: state.pathParameters['code']!),
+        ),
       ),
       GoRoute(
         path: '/profile',
         name: 'profile',
-        builder: (context, state) => const ProfileSettingsRedirectScreen(),
+        pageBuilder: (context, state) => instantPage(
+          key: state.pageKey,
+          child: const ProfileSettingsRedirectScreen(),
+        ),
       ),
     ],
   );
