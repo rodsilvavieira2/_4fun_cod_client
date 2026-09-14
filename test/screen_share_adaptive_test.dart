@@ -226,22 +226,24 @@ void main() {
       expect(adaptiveLossFromStats(reports), closeTo(13 / 256, 0.0001));
     });
 
-    test('cai para packetsLost/packetsReceived e depois outbound', () {
+    test('ignora contadores cumulativos (só fractionLost vale)', () {
+      // packetsLost alto em histórico antigo NÃO pode derrubar: sem
+      // fractionLost de intervalo, a dimensão é ignorada (null).
       final inbound = [
         rtc.StatsReport('r', 'remote-inbound-rtp', 1, {
-          'packetsLost': 5,
+          'packetsLost': 500,
           'packetsReceived': 95,
         }),
       ];
-      expect(adaptiveLossFromStats(inbound), closeTo(0.05, 0.0001));
+      expect(adaptiveLossFromStats(inbound), isNull);
 
       final outbound = [
         rtc.StatsReport('o', 'outbound-rtp', 1, {
-          'packetsLost': 1,
+          'packetsLost': 50,
           'packetsSent': 99,
         }),
       ];
-      expect(adaptiveLossFromStats(outbound), closeTo(0.01, 0.0001));
+      expect(adaptiveLossFromStats(outbound), isNull);
     });
 
     test('retorna null sem dados de perda', () {

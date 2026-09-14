@@ -1368,6 +1368,59 @@ void main() {
       );
     });
 
+    test('evento de qualidade efetiva reflete a adaptação no estado', () async {
+      repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
+      final notifier = buildVoice();
+      await notifier.join();
+      await settle();
+
+      await notifier.startScreenShare(
+        'src-1',
+        quality: RtcScreenShareQuality.q1080p30,
+      );
+      await settle();
+      expect(state().isScreenSharing, isTrue);
+      expect(state().screenShareEffectiveQuality, isNull);
+
+      // Adaptação desceu: efetiva aparece, objetivo intacto.
+      rtc.pushEvent(
+        const ScreenShareEffectiveQualityChangedEvent(
+          effective: RtcScreenShareQuality.q1080p15,
+        ),
+      );
+      await settle();
+      expect(state().screenShareQuality, RtcScreenShareQuality.q1080p30);
+      expect(
+        state().screenShareEffectiveQuality,
+        RtcScreenShareQuality.q1080p15,
+      );
+
+      // Efetiva voltou ao objetivo: volta a null (sem adaptação).
+      rtc.pushEvent(
+        const ScreenShareEffectiveQualityChangedEvent(
+          effective: RtcScreenShareQuality.q1080p30,
+        ),
+      );
+      await settle();
+      expect(state().screenShareEffectiveQuality, isNull);
+    });
+
+    test('evento de qualidade efetiva sem share ativo é ignorado', () async {
+      repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
+      final notifier = buildVoice();
+      await notifier.join();
+      await settle();
+
+      rtc.pushEvent(
+        const ScreenShareEffectiveQualityChangedEvent(
+          effective: RtcScreenShareQuality.q720p15,
+        ),
+      );
+      await settle();
+      expect(state().isScreenSharing, isFalse);
+      expect(state().screenShareEffectiveQuality, isNull);
+    });
+
     test(
       'startScreenShare fora da sessão é ignorado; com share ativo é no-op',
       () async {
