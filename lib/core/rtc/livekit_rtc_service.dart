@@ -14,6 +14,7 @@ import '../logging/app_logger.dart';
 import '../native/native_media_backend.dart';
 import 'local_audio_gain_processor.dart';
 import 'rtc_service.dart';
+import 'screen_share_adaptive.dart';
 
 /// Implementação de [RtcService] sobre o LiveKit.
 ///
@@ -161,6 +162,15 @@ class LiveKitRtcService implements RtcService {
   /// resetado no [_cleanupRoom] (sessão nova = auto).
   RtcScreenShareQuality _screenShareQuality = RtcScreenShareQuality.auto;
 
+  /// Qualidade EFETIVA do share local (`<= _screenShareQuality`), decidida
+  /// pelo [_adaptiveController]. Sem share ativo, espelha o objetivo.
+  RtcScreenShareQuality _screenShareEffective = RtcScreenShareQuality.auto;
+
+  /// Controlador adaptativo (spec V1 — só screen share): o teto é sempre o
+  /// objetivo do usuário; a efetiva desce rápido e sobe devagar.
+  final ScreenShareAdaptiveController _adaptiveController =
+      ScreenShareAdaptiveController(target: RtcScreenShareQuality.auto);
+
   /// Câmera escolhida no sheet. Fica em memória durante a sessão para que a
   /// seleção feita no preview também seja usada quando a câmera for publicada.
   String? _selectedCameraId;
@@ -235,6 +245,10 @@ class LiveKitRtcService implements RtcService {
 
   @override
   RtcScreenShareQuality get screenShareQuality => _screenShareQuality;
+
+  @override
+  RtcScreenShareQuality get effectiveScreenShareQuality =>
+      _screenShareEffective;
 
   /// identity → participante atual da sala.
   final Map<String, RtcParticipant> _participantsById = {};
@@ -500,6 +514,8 @@ class LiveKitRtcService implements RtcService {
     if (publication == null || publication.track is! LocalVideoTrack) {
       // Sem share ativo, a escolha fica pendente para o próximo início.
       _screenShareQuality = quality;
+      _screenShareEffective = quality;
+      _adaptiveController.setTarget(quality);
       return;
     }
 
@@ -520,6 +536,9 @@ class LiveKitRtcService implements RtcService {
     try {
       await _applyScreenShareQuality(sender, baseline, quality);
       _screenShareQuality = quality;
+      // Escolha explícita do usuário: a efetiva assume o teto na hora.
+      _adaptiveController.setTarget(quality);
+      _setEffectiveQuality(quality);
     } catch (_) {
       if (quality == RtcScreenShareQuality.auto) rethrow;
       try {
@@ -529,6 +548,8 @@ class LiveKitRtcService implements RtcService {
           RtcScreenShareQuality.auto,
         );
         _screenShareQuality = RtcScreenShareQuality.auto;
+        _adaptiveController.setTarget(RtcScreenShareQuality.auto);
+        _setEffectiveQuality(RtcScreenShareQuality.auto);
       } catch (_) {
         // Se o fallback também for recusado, tente restaurar o último perfil
         // confirmado sem trocar track, sender ou estado do compartilhamento.
@@ -585,6 +606,10 @@ class LiveKitRtcService implements RtcService {
         _screenShareEncodingBaseline = baseline;
         // One-shot (modal Go Live): aplica o pedido sem tocar no pendente.
         final requested = quality ?? _screenShareQuality;
+        // Teto adaptativo deste share = qualidade pedida; a efetiva começa
+        // no teto (one-shot não altera o pendente para o próximo share).
+        _adaptiveController.setTarget(requested);
+        _screenShareEffective = requested;
         if (baseline.isEmpty) {
           if (quality == null) {
             _screenShareQuality = RtcScreenShareQuality.auto;
@@ -607,6 +632,9 @@ class LiveKitRtcService implements RtcService {
             // Fallback silencioso para Auto: no modo one-shot o pendente é
             // preservado — o controller então reporta o pedido em vez do
             // efetivo neste caso raro (sender recusou os parâmetros).
+            // O fio está em Auto: a adaptação parte desse teto real.
+            _adaptiveController.setTarget(RtcScreenShareQuality.auto);
+            _screenShareEffective = RtcScreenShareQuality.auto;
             if (quality == null) {
               _screenShareQuality = RtcScreenShareQuality.auto;
             }
@@ -639,6 +667,10 @@ class LiveKitRtcService implements RtcService {
     // inativo é no-op natural do SDK.
     await localParticipant.setScreenShareEnabled(false);
     _screenShareEncodingBaseline = null;
+    // Share encerrado: a efetiva volta ao pendente e a adaptação congela
+    // (o poll só adapta com share ativo).
+    _screenShareEffective = _screenShareQuality;
+    _adaptiveController.setTarget(_screenShareQuality);
   }
 
   /// Publica o ÁUDIO DE SISTEMA (track de screenShareAudio) capturando o
@@ -1264,6 +1296,89 @@ class LiveKitRtcService implements RtcService {
     }
   }
 
+  /// Atualiza a efetiva e notifica a UI (sem duplicar o evento).
+  void _setEffectiveQuality(RtcScreenShareQuality quality) {
+    if (_screenShareEffective == quality) return;
+    _screenShareEffective = quality;
+    _emitEvent(ScreenShareEffectiveQualityChangedEvent(effective: quality));
+  }
+
+  /// Passo adaptativo (spec V1): avalia os stats do sender do screen share
+  /// a cada amostra do timer de latência e ajusta a efetiva sem derrubar
+  /// a publicação. Best-effort: qualquer falha só adia a próxima amostra —
+  /// nunca reconecta, nunca corta áudio.
+  Future<void> _adaptScreenShareQuality(Room room, int generation) async {
+    if (_disposed ||
+        generation != _latencyGeneration ||
+        !identical(_room, room)) {
+      return;
+    }
+    final localParticipant = room.localParticipant;
+    if (localParticipant == null || !localParticipant.isScreenShareEnabled()) {
+      return;
+    }
+    final track = localParticipant
+        .getTrackPublicationBySource(TrackSource.screenShareVideo)
+        ?.track;
+    if (track is! LocalVideoTrack) return;
+    final sender = track.sender;
+    final baseline = _screenShareEncodingBaseline;
+    if (sender == null || baseline == null || baseline.isEmpty) return;
+    final sample = await _collectAdaptiveSample(sender);
+    if (_disposed ||
+        generation != _latencyGeneration ||
+        !identical(_room, room)) {
+      return;
+    }
+    final proposed = _adaptiveController.propose(sample);
+    if (proposed == null || proposed == _screenShareEffective) return;
+    try {
+      await _applyScreenShareQuality(sender, baseline, proposed);
+    } catch (error) {
+      // Passo automático recusado: mantém a efetiva atual e tenta de novo
+      // na próxima amostra. Sem fallback para Auto — subiria o bitrate
+      // justamente em rede ruim.
+      debugPrint(
+        '[rtc] adaptação do share falhou '
+        '(mantida $_screenShareEffective): $error',
+      );
+      return;
+    }
+    if (_disposed ||
+        generation != _latencyGeneration ||
+        !identical(_room, room)) {
+      return;
+    }
+    _adaptiveController.commit(proposed);
+    _statsLog(
+      'screen adaptativo: objetivo=${_adaptiveController.target} '
+      'efetiva=$proposed',
+    );
+    _setEffectiveQuality(proposed);
+  }
+
+  /// Coleta a amostra de rede do passo adaptativo: RTT do último poll da
+  /// conexão + limitação/perda dos stats do sender (best-effort, null
+  /// quando indisponível — o controlador ignora a dimensão).
+  Future<ScreenShareNetworkSample> _collectAdaptiveSample(
+    rtc.RTCRtpSender sender,
+  ) async {
+    String? limitation;
+    double? loss;
+    try {
+      final stats = await sender.getStats();
+      limitation = adaptiveLimitationFromStats(stats);
+      loss = adaptiveLossFromStats(stats);
+    } catch (error) {
+      debugPrint('[rtc] stats adaptativos indisponíveis: $error');
+    }
+    return ScreenShareNetworkSample(
+      rttMs: _lastLatencyMs,
+      lossFraction: loss,
+      limitationReason: limitation,
+    );
+  }
+
   void _wire(Room room) {
     _roomListeners.addAll([
       room.events.on<ParticipantConnectedEvent>((e) {
@@ -1642,6 +1757,8 @@ class LiveKitRtcService implements RtcService {
     _tokenGenerator = null;
     _livekitUrl = null;
     _screenShareQuality = RtcScreenShareQuality.auto;
+    _screenShareEffective = RtcScreenShareQuality.auto;
+    _adaptiveController.setTarget(RtcScreenShareQuality.auto);
     _screenShareEncodingBaseline = null;
     await _teardownRoom();
   }
@@ -1760,6 +1877,10 @@ class LiveKitRtcService implements RtcService {
   /// vivos num reconnect rápido.
   Future<void> _teardownRoom() async {
     _stopLatencyMonitor();
+    // O share morre com a sala: congela a adaptação e volta a efetiva ao
+    // pendente (teto da próxima publicação).
+    _screenShareEffective = _screenShareQuality;
+    _adaptiveController.setTarget(_screenShareQuality);
     // Pode ser chamado tanto no disconnect quanto na reconexão automática.
     // Em ambos os casos, preview local não pode sobreviver à room antiga.
     await stopCameraPreview();
@@ -1830,13 +1951,15 @@ class LiveKitRtcService implements RtcService {
       );
       if (_disposed ||
           generation != _latencyGeneration ||
-          !identical(_room, room) ||
-          latencyMs == null ||
-          latencyMs == _lastLatencyMs) {
+          !identical(_room, room)) {
         return;
       }
-      _lastLatencyMs = latencyMs;
-      _emitEvent(ConnectionLatencyChangedEvent(latencyMs: latencyMs));
+      if (latencyMs != null && latencyMs != _lastLatencyMs) {
+        _lastLatencyMs = latencyMs;
+        _emitEvent(ConnectionLatencyChangedEvent(latencyMs: latencyMs));
+      }
+      // A adaptação do screen share reaproveita este timer (~5 s, spec V1).
+      await _adaptScreenShareQuality(room, generation);
     } catch (error) {
       // Stats podem não existir nos primeiros instantes da negociação. A
       // próxima coleta tenta novamente sem afetar áudio ou vídeo.
@@ -1898,6 +2021,65 @@ double? _statNumber(Object? value) {
   if (value is num) return value.toDouble();
   if (value is String) return double.tryParse(value);
   return null;
+}
+
+/// Extrai o `qualityLimitationReason` mais relevante dos stats do sender do
+/// screen share (`bandwidth` > `cpu` > demais). `none`/vazio/ausente vira
+/// null (sem limitação). Função pura, testável isoladamente.
+@visibleForTesting
+String? adaptiveLimitationFromStats(Iterable<rtc.StatsReport> reports) {
+  String? found;
+  for (final report in reports) {
+    if (report.type != 'outbound-rtp') continue;
+    final raw = report.values['qualityLimitationReason'];
+    if (raw is! String) continue;
+    final limitation = raw.trim().toLowerCase();
+    if (limitation.isEmpty || limitation == 'none') continue;
+    if (limitation == 'bandwidth') return 'bandwidth';
+    found ??= limitation;
+  }
+  return found;
+}
+
+/// Fração de perda `0.0..1.0` a partir dos stats do sender, na primeira
+/// fonte disponível: `fractionLost` do `remote-inbound-rtp` (0..1 ou 0..255
+/// conforme o backend), senão `packetsLost/packetsReceived`, senão
+/// `packetsLost/packetsSent` do `outbound-rtp`. Null quando indisponível.
+/// Função pura, testável isoladamente.
+@visibleForTesting
+double? adaptiveLossFromStats(Iterable<rtc.StatsReport> reports) {
+  final all = reports.toList(growable: false);
+  for (final report in all) {
+    if (report.type != 'remote-inbound-rtp') continue;
+    final fraction = _statNumber(report.values['fractionLost']);
+    if (fraction != null) {
+      final normalized = fraction > 1 ? fraction / 256 : fraction;
+      if (normalized.isFinite && normalized >= 0) {
+        return normalized.clamp(0.0, 1.0);
+      }
+    }
+    final ratio = _lossRatio(
+      _statNumber(report.values['packetsLost']),
+      _statNumber(report.values['packetsReceived']),
+    );
+    if (ratio != null) return ratio;
+  }
+  for (final report in all) {
+    if (report.type != 'outbound-rtp') continue;
+    final ratio = _lossRatio(
+      _statNumber(report.values['packetsLost']),
+      _statNumber(report.values['packetsSent']),
+    );
+    if (ratio != null) return ratio;
+  }
+  return null;
+}
+
+double? _lossRatio(double? lost, double? total) {
+  if (lost == null || total == null || lost < 0 || total <= 0) return null;
+  final ratio = lost / (lost + total);
+  if (!ratio.isFinite) return null;
+  return ratio.clamp(0.0, 1.0);
 }
 
 /// Acha o device de "monitor"/loopback (áudio de sistema) na lista de

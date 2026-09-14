@@ -216,6 +216,16 @@ class ConnectionLatencyChangedEvent extends RtcEvent {
   final int? latencyMs;
 }
 
+/// A qualidade EFETIVA do screen share local mudou por decisão do
+/// controlador adaptativo (ou assumiu o objetivo após ação do usuário).
+/// `effective` é sempre `<=` o objetivo; a UI mostra `objetivo · efetivo`
+/// quando diferem.
+class ScreenShareEffectiveQualityChangedEvent extends RtcEvent {
+  const ScreenShareEffectiveQualityChangedEvent({required this.effective});
+
+  final RtcScreenShareQuality effective;
+}
+
 /// Qualidade de recepção de vídeo remoto (Fase 5).
 ///
 /// SEM `off`: "desligar" um tile é decisão da UI (não montar o RtcVideoView).
@@ -477,6 +487,12 @@ abstract class RtcService {
   /// Perfil de screen share atualmente configurado. Reseta para [auto] ao
   /// sair da sala ou desconectar.
   RtcScreenShareQuality get screenShareQuality;
+
+  /// Qualidade EFETIVA do compartilhamento local (`<= screenShareQuality`),
+  /// decidida pelo controlador adaptativo (spec de qualidade adaptativa,
+  /// V1 — só screen share). Sem share ativo, é igual ao objetivo. A UI
+  /// observa as trocas via [ScreenShareEffectiveQualityChangedEvent].
+  RtcScreenShareQuality get effectiveScreenShareQuality;
 
   /// Retoma o playback de áudio remoto. Necessário no web quando a política
   /// de autoplay do browser bloqueou o áudio ([AudioPlaybackBlockedEvent]) —

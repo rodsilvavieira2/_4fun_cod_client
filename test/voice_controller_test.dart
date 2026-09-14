@@ -187,6 +187,10 @@ class FakeRtcService implements RtcService {
   RtcScreenShareQuality get screenShareQuality => screenShareQualityValue;
 
   @override
+  RtcScreenShareQuality get effectiveScreenShareQuality =>
+      screenShareQualityValue;
+
+  @override
   Future<void> setScreenShareQuality(RtcScreenShareQuality quality) async {
     if (failSetScreenShareQuality) {
       if (fallbackToAutoOnScreenShareQualityFailure &&

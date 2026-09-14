@@ -658,9 +658,20 @@ List<_VoiceMediaItem> _mediaItems(List<RtcParticipant> participants) {
 /// Rótulo curto da qualidade transmitida (ex.: `1080p60`, `Auto`).
 /// Nulo quando não há share de tela ativo — da câmera não temos perfil
 /// conhecido, então é mais honesto omitir do que chutar.
+///
+/// Com adaptação ativa (efetiva < objetivo), mostra `objetivo · adaptado
+/// em efetivo` (ex.: `Auto · adaptado em 720p15`); iguais = só o objetivo.
 String? _transmitQualityLabel(VoiceState state) {
   if (!state.isScreenSharing) return null;
-  return switch (state.screenShareQuality) {
+  final target = _screenShareQualityShortLabel(state.screenShareQuality);
+  final effective = state.screenShareEffectiveQuality;
+  if (effective == null || effective == state.screenShareQuality) return target;
+  return '$target · adaptado em ${_screenShareQualityShortLabel(effective)}';
+}
+
+/// Rótulo curto de um perfil de screen share (ex.: `1080p60`, `Auto`).
+String _screenShareQualityShortLabel(RtcScreenShareQuality quality) {
+  return switch (quality) {
     RtcScreenShareQuality.q1080p60 => '1080p60',
     RtcScreenShareQuality.q1080p30 => '1080p30',
     RtcScreenShareQuality.q1080p15 => '1080p15',

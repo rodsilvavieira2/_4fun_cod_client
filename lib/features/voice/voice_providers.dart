@@ -54,6 +54,7 @@ class VoiceState {
     this.cameraDevices = const [],
     this.selectedCameraId,
     this.screenShareQuality = RtcScreenShareQuality.auto,
+    this.screenShareEffectiveQuality,
   });
 
   final VoiceSessionStatus status;
@@ -136,6 +137,11 @@ class VoiceState {
   /// `auto`). Persistido só na sessão — resetado a cada join.
   final RtcScreenShareQuality screenShareQuality;
 
+  /// Qualidade EFETIVA do share local decidida pelo controlador adaptativo.
+  /// Null = igual ao objetivo ([screenShareQuality]) — a UI mostra só o
+  /// objetivo; quando diferem, mostra `objetivo · adaptado em efetivo`.
+  final RtcScreenShareQuality? screenShareEffectiveQuality;
+
   VoiceState copyWith({
     VoiceSessionStatus? status,
     Object? errorMessage = _unset,
@@ -157,6 +163,7 @@ class VoiceState {
     List<RtcVideoDevice>? cameraDevices,
     Object? selectedCameraId = _unset,
     RtcScreenShareQuality? screenShareQuality,
+    Object? screenShareEffectiveQuality = _unset,
   }) {
     return VoiceState(
       status: status ?? this.status,
@@ -197,6 +204,10 @@ class VoiceState {
           ? this.selectedCameraId
           : selectedCameraId as String?,
       screenShareQuality: screenShareQuality ?? this.screenShareQuality,
+      screenShareEffectiveQuality:
+          identical(screenShareEffectiveQuality, _unset)
+          ? this.screenShareEffectiveQuality
+          : screenShareEffectiveQuality as RtcScreenShareQuality?,
     );
   }
 }
@@ -290,6 +301,7 @@ class VoiceController
       errorMessage: null,
       // Sessão nova = perfil de screen share default (decisão: por sessão).
       screenShareQuality: RtcScreenShareQuality.auto,
+      screenShareEffectiveQuality: null,
       latencyMs: null,
       selectedCameraId: null,
     );
@@ -332,7 +344,10 @@ class VoiceController
     await ref.read(rtcServiceProvider).disconnect();
     await ref.read(voiceControlsProvider.notifier).resetPushToTalkPress();
     if (_disposed) return;
-    state = state.copyWith(screenShareQuality: RtcScreenShareQuality.auto);
+    state = state.copyWith(
+      screenShareQuality: RtcScreenShareQuality.auto,
+      screenShareEffectiveQuality: null,
+    );
     if (_disposed) return;
     // A sala morreu: câmera/share pararam junto e o destaque não faz mais
     // sentido. `_lastQuality` e o rastreio de sharers também são resetados
@@ -475,6 +490,8 @@ class VoiceController
         status: VoiceSessionStatus.connected,
         isScreenSharing: true,
         screenShareQuality: quality ?? rtc.screenShareQuality,
+        // Share novo começa na efetiva == objetivo; a adaptação ajusta depois.
+        screenShareEffectiveQuality: null,
         errorMessage: 'Compartilhamento iniciado sem áudio de sistema.',
       );
       return;
@@ -512,6 +529,7 @@ class VoiceController
     state = state.copyWith(
       isScreenSharing: true,
       screenShareQuality: effectiveQuality,
+      screenShareEffectiveQuality: null,
       errorMessage: warnings.isEmpty ? null : warnings.join(' '),
     );
   }
@@ -556,7 +574,11 @@ class VoiceController
       return;
     }
     if (_disposed) return;
-    state = state.copyWith(isScreenSharing: false, errorMessage: null);
+    state = state.copyWith(
+      isScreenSharing: false,
+      screenShareEffectiveQuality: null,
+      errorMessage: null,
+    );
   }
 
   /// Alterna o destaque (spotlight) de um participante: toque repetido no
@@ -696,6 +718,8 @@ class VoiceController
     final effectiveQuality = rtc.screenShareQuality;
     state = state.copyWith(
       screenShareQuality: effectiveQuality,
+      // Escolha explícita: a efetiva assume o objetivo na hora.
+      screenShareEffectiveQuality: null,
       errorMessage: effectiveQuality == quality
           ? null
           : 'Não foi possível aplicar a qualidade escolhida; transmissão mantida em Auto.',
@@ -888,6 +912,7 @@ class VoiceController
           isCameraEnabled: false,
           isScreenSharing: false,
           screenShareQuality: RtcScreenShareQuality.auto,
+          screenShareEffectiveQuality: null,
           isSystemAudioEnabled: false,
           isDeafened: false,
           isReconnecting: false,
@@ -940,7 +965,23 @@ class VoiceController
         final localId = ref.read(rtcServiceProvider).localParticipantId;
         if (participantId == localId &&
             state.isScreenSharing != isScreenSharing) {
-          state = state.copyWith(isScreenSharing: isScreenSharing);
+          state = state.copyWith(
+            isScreenSharing: isScreenSharing,
+            // Share parou fora do botão (ex.: fim pelo SO): sem efetiva.
+            screenShareEffectiveQuality: isScreenSharing
+                ? state.screenShareEffectiveQuality
+                : null,
+          );
+        }
+      case ScreenShareEffectiveQualityChangedEvent(:final effective):
+        // Passo adaptativo do serviço: reflete a efetiva sem tocar no
+        // objetivo. Igual ao objetivo = sem adaptação (null).
+        if (state.isScreenSharing) {
+          state = state.copyWith(
+            screenShareEffectiveQuality: effective == state.screenShareQuality
+                ? null
+                : effective,
+          );
         }
       case SystemAudioEnabledChangedEvent(
         :final participantId,
@@ -969,6 +1010,7 @@ class VoiceController
           isCameraEnabled: false,
           isScreenSharing: false,
           screenShareQuality: RtcScreenShareQuality.auto,
+          screenShareEffectiveQuality: null,
           isSystemAudioEnabled: false,
           isAudioBlocked: false,
           latencyMs: null,
