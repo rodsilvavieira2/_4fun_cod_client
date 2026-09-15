@@ -49,6 +49,7 @@ class VoiceState {
     this.savedSpotlightParticipantId,
     this.spotlightParticipantId,
     this.spotlightSource,
+    this.watchedPublicationIds = const {},
     this.filmstripVisible = true,
     this.isFullscreen = false,
     this.cameraDevices = const [],
@@ -120,6 +121,13 @@ class VoiceState {
   /// grid; mantido separado do id para câmera e tela poderem coexistir.
   final VoiceSpotlightSource? spotlightSource;
 
+  /// Publicações remotas que o usuário escolheu assistir (opt-in de vídeo).
+  ///
+  /// Chave `participantId:source` ([VoiceController.watchKey]). Vazio = nada
+  /// assinado: tiles remotos mostram avatar + LIVE + "Assistir". O local
+  /// nunca entra aqui (sempre renderiza). Resetado a cada sessão.
+  final Set<String> watchedPublicationIds;
+
   /// Filmstrip de miniaturas visível (spotlight). Falso = palco imersivo.
   final bool filmstripVisible;
 
@@ -158,6 +166,7 @@ class VoiceState {
     Object? savedSpotlightParticipantId = _unset,
     Object? spotlightParticipantId = _unset,
     Object? spotlightSource = _unset,
+    Set<String>? watchedPublicationIds,
     bool? filmstripVisible,
     bool? isFullscreen,
     List<RtcVideoDevice>? cameraDevices,
@@ -197,6 +206,8 @@ class VoiceState {
       spotlightSource: identical(spotlightSource, _unset)
           ? this.spotlightSource
           : spotlightSource as VoiceSpotlightSource?,
+      watchedPublicationIds:
+          watchedPublicationIds ?? this.watchedPublicationIds,
       filmstripVisible: filmstripVisible ?? this.filmstripVisible,
       isFullscreen: isFullscreen ?? this.isFullscreen,
       cameraDevices: cameraDevices ?? this.cameraDevices,
@@ -302,6 +313,8 @@ class VoiceController
       // Sessão nova = perfil de screen share default (decisão: por sessão).
       screenShareQuality: RtcScreenShareQuality.auto,
       screenShareEffectiveQuality: null,
+      // Entrar começa limpo: nada assistido (opt-in total).
+      watchedPublicationIds: const {},
       latencyMs: null,
       selectedCameraId: null,
     );
@@ -353,6 +366,7 @@ class VoiceController
     // sentido. `_lastQuality` e o rastreio de sharers também são resetados
     // (a sala acabou).
     _lastQuality.clear();
+    _lastScreenQuality.clear();
     _lastSharers.clear();
     state = state.copyWith(
       status: VoiceSessionStatus.idle,
@@ -369,6 +383,7 @@ class VoiceController
       savedSpotlightParticipantId: null,
       spotlightParticipantId: null,
       spotlightSource: null,
+      watchedPublicationIds: const {},
       filmstripVisible: true,
       isFullscreen: false,
       selectedCameraId: null,
@@ -621,6 +636,45 @@ class VoiceController
         spotlightSource: targetSource,
       );
     }
+  }
+
+  /// Chave de uma publicação assistível no [VoiceState.watchedPublicationIds].
+  static String watchKey(String participantId, VoiceSpotlightSource source) =>
+      '$participantId:${source.name}';
+
+  /// Se o id é o participante local (sempre renderiza o próprio vídeo,
+  /// nunca entra no opt-in).
+  bool isLocalParticipant(String participantId) =>
+      participantId == ref.read(rtcServiceProvider).localParticipantId;
+
+  /// Se a publicação remota deve renderizar vídeo: local sempre, remoto só
+  /// após opt-in ([toggleWatch]).
+  bool isWatching(String participantId, VoiceSpotlightSource source) {
+    if (isLocalParticipant(participantId)) return true;
+    return state.watchedPublicationIds.contains(
+      watchKey(participantId, source),
+    );
+  }
+
+  /// Liga/desliga o opt-in de vídeo de uma publicação remota (clique no
+  /// tile: assistir/parar). Múltiplos simultâneos permitidos. Local é no-op
+  /// (sempre visível). Desligar limpa o dedupe de qualidade da fonte para
+  /// religar reaplicar (o tile desmontado = OFF por omissão).
+  void toggleWatch(String participantId, VoiceSpotlightSource source) {
+    if (isLocalParticipant(participantId)) return;
+    final key = watchKey(participantId, source);
+    final next = {...state.watchedPublicationIds};
+    if (next.contains(key)) {
+      next.remove(key);
+      if (source == VoiceSpotlightSource.screen) {
+        _lastScreenQuality.remove(participantId);
+      } else {
+        _lastQuality.remove(participantId);
+      }
+    } else {
+      next.add(key);
+    }
+    state = state.copyWith(watchedPublicationIds: next);
   }
 
   /// Mostra/oculta a filmstrip de miniaturas (spotlight). Puro flip de UI —
@@ -890,6 +944,23 @@ class VoiceController
     }
     final ids = {for (final p in sorted) p.id};
     _lastQuality.removeWhere((id, _) => !ids.contains(id));
+    _lastScreenQuality.removeWhere((id, _) => !ids.contains(id));
+    // Purga o opt-in: quem saiu da sala ou desligou a fonte volta a
+    // avatar+LIVE (sem banda reservada para publicação morta).
+    final liveKeys = <String>{
+      for (final participant in sorted) ...[
+        if (participant.isCameraEnabled)
+          watchKey(participant.id, VoiceSpotlightSource.camera),
+        if (participant.isScreenSharing)
+          watchKey(participant.id, VoiceSpotlightSource.screen),
+      ],
+    };
+    final watched = next.watchedPublicationIds;
+    if (!liveKeys.containsAll(watched)) {
+      next = next.copyWith(
+        watchedPublicationIds: watched.intersection(liveKeys),
+      );
+    }
     state = next;
   }
 
@@ -901,6 +972,7 @@ class VoiceController
         // volta para idle para permitir nova entrada. Câmera/share locais
         // pararam junto e o destaque não faz mais sentido.
         _lastQuality.clear();
+        _lastScreenQuality.clear();
         _lastSharers.clear();
         unawaited(
           ref.read(voiceControlsProvider.notifier).resetPushToTalkPress(),
@@ -922,6 +994,7 @@ class VoiceController
           savedSpotlightParticipantId: null,
           spotlightParticipantId: null,
           spotlightSource: null,
+          watchedPublicationIds: const {},
           filmstripVisible: true,
           isFullscreen: false,
           selectedCameraId: null,
@@ -1001,6 +1074,8 @@ class VoiceController
       case ReconnectedEvent():
         // Sala nova preserva mute/ensurdecer globais; câmera/share locais
         // recomeçam off. Reset também o rastreio de sharers do auto-spotlight.
+        _lastQuality.clear();
+        _lastScreenQuality.clear();
         _lastSharers.clear();
         final controls = ref.read(voiceControlsProvider);
         state = state.copyWith(
@@ -1018,6 +1093,8 @@ class VoiceController
           savedSpotlightParticipantId: null,
           spotlightParticipantId: null,
           spotlightSource: null,
+          // Sala nova = ninguém assistido (opt-in recomeça do zero).
+          watchedPublicationIds: const {},
         );
       case ParticipantJoinedEvent() ||
           ParticipantLeftEvent() ||

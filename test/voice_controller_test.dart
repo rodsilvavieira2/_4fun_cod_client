@@ -1082,6 +1082,137 @@ void main() {
       },
     );
 
+    // ── Opt-in de vídeo (LIVE com assistir sob demanda) ───────────────
+
+    test('toggleWatch: alterna por publicação, ignora o local', () {
+      rtc.localId = 'user_u1';
+      final notifier = buildVoice();
+
+      expect(state().watchedPublicationIds, isEmpty);
+
+      notifier.toggleWatch('user_u2', VoiceSpotlightSource.camera);
+      expect(state().watchedPublicationIds, {'user_u2:camera'});
+
+      notifier.toggleWatch('user_u2', VoiceSpotlightSource.screen);
+      expect(state().watchedPublicationIds, {
+        'user_u2:camera',
+        'user_u2:screen',
+      });
+
+      notifier.toggleWatch('user_u2', VoiceSpotlightSource.camera);
+      expect(state().watchedPublicationIds, {'user_u2:screen'});
+
+      notifier.toggleWatch('user_u1', VoiceSpotlightSource.camera);
+      expect(
+        state().watchedPublicationIds,
+        {'user_u2:screen'},
+        reason: 'local sempre visível — nunca entra no opt-in',
+      );
+
+      expect(
+        notifier.isWatching('user_u1', VoiceSpotlightSource.camera),
+        isTrue,
+      );
+      expect(
+        notifier.isWatching('user_u2', VoiceSpotlightSource.screen),
+        isTrue,
+      );
+      expect(
+        notifier.isWatching('user_u2', VoiceSpotlightSource.camera),
+        isFalse,
+      );
+    });
+
+    test('join e leave resetam o opt-in (entrar começa limpo)', () async {
+      repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
+      rtc.localId = 'user_u1';
+      final notifier = buildVoice();
+
+      notifier.toggleWatch('user_u2', VoiceSpotlightSource.camera);
+      expect(state().watchedPublicationIds, isNotEmpty);
+
+      await notifier.join();
+      await settle();
+      expect(state().status, VoiceSessionStatus.connected);
+      expect(state().watchedPublicationIds, isEmpty);
+
+      notifier.toggleWatch('user_u2', VoiceSpotlightSource.camera);
+      expect(state().watchedPublicationIds, isNotEmpty);
+
+      await notifier.leave();
+      await settle();
+      expect(state().status, VoiceSessionStatus.idle);
+      expect(state().watchedPublicationIds, isEmpty);
+    });
+
+    test('snapshot purga opt-in de quem saiu ou desligou a fonte', () async {
+      rtc.localId = 'user_u1';
+      final notifier = buildVoice();
+
+      notifier.toggleWatch('user_u2', VoiceSpotlightSource.camera);
+      notifier.toggleWatch('user_u3', VoiceSpotlightSource.screen);
+      expect(state().watchedPublicationIds.length, 2);
+
+      // u2 desliga a câmera; u3 some da sala; u4 entra sem vídeo.
+      rtc.participantsController.add([
+        _participant('user_u1', 'Local'),
+        _participant('user_u2', 'U2'),
+        _participant('user_u4', 'U4'),
+      ]);
+      await settle();
+
+      expect(state().watchedPublicationIds, isEmpty);
+    });
+
+    test('snapshot mantém opt-in de fonte ainda publicada', () async {
+      rtc.localId = 'user_u1';
+      final notifier = buildVoice();
+
+      notifier.toggleWatch('user_u2', VoiceSpotlightSource.camera);
+      rtc.participantsController.add([
+        _participant('user_u1', 'Local'),
+        _participant('user_u2', 'U2', camera: true),
+      ]);
+      await settle();
+
+      expect(state().watchedPublicationIds, {'user_u2:camera'});
+    });
+
+    test('DisconnectedEvent reseta o opt-in', () async {
+      rtc.localId = 'user_u1';
+      final notifier = buildVoice();
+
+      notifier.toggleWatch('user_u2', VoiceSpotlightSource.camera);
+      expect(state().watchedPublicationIds, isNotEmpty);
+
+      rtc.eventsController.add(const DisconnectedEvent());
+      await settle();
+
+      expect(state().watchedPublicationIds, isEmpty);
+    });
+
+    test('unwatch limpa dedupe: religar reaplica qualidade', () async {
+      rtc.localId = 'user_u1';
+      final notifier = buildVoice();
+
+      await notifier.applyTileQuality('user_u2', RtcVideoQuality.medium);
+      await settle();
+      expect(rtc.setQualityCalls.length, 1);
+
+      notifier.toggleWatch('user_u2', VoiceSpotlightSource.camera);
+      await settle();
+      notifier.toggleWatch('user_u2', VoiceSpotlightSource.camera);
+      await settle();
+
+      await notifier.applyTileQuality('user_u2', RtcVideoQuality.medium);
+      await settle();
+      expect(
+        rtc.setQualityCalls.length,
+        2,
+        reason: 'parar de assistir limpa o dedupe da fonte',
+      );
+    });
+
     // ── Fase 7: qualidade de transmissão (publicação) ────────────────
 
     test(

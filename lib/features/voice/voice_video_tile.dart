@@ -94,6 +94,7 @@ class VoiceVideoTile extends ConsumerStatefulWidget {
     this.onTap,
     this.qualityLabel,
     this.onExpand,
+    this.isWatching = true,
     this.isFullscreen = false,
     this.overlayVisible = true,
   });
@@ -120,6 +121,11 @@ class VoiceVideoTile extends ConsumerStatefulWidget {
   /// spotlight; spotlight → takeover fullscreen. Nulo = sem botão.
   final VoidCallback? onExpand;
 
+  /// Opt-in de vídeo (regra da sala): `true` renderiza o vídeo normalmente;
+  /// `false` (remoto em live não assistido) mostra avatar + LIVE + "Assistir"
+  /// SEM montar o [RtcVideoView] (sem banda). O local sempre chega `true`.
+  final bool isWatching;
+
   /// Troca o ícone do botão expandir (fullscreen ↔ fullscreen_exit).
   final bool isFullscreen;
 
@@ -141,11 +147,12 @@ class _VoiceVideoTileState extends ConsumerState<VoiceVideoTile> {
   @override
   void didUpdateWidget(VoiceVideoTile oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Mudou de papel (grid→spotlight/miniatura, etc.) ou de participante:
-    // a transição de papel é o que dispara a mudança de qualidade.
+    // Mudou de papel (grid→spotlight/miniatura, etc.), de participante ou de
+    // opt-in (começou/parou de assistir): papel e assistir disparam qualidade.
     if (oldWidget.role != widget.role ||
         oldWidget.participant.id != widget.participant.id ||
-        oldWidget.source != widget.source) {
+        oldWidget.source != widget.source ||
+        oldWidget.isWatching != widget.isWatching) {
       _scheduleQuality();
     }
   }
@@ -154,9 +161,11 @@ class _VoiceVideoTileState extends ConsumerState<VoiceVideoTile> {
   /// durante o build); seguro mesmo se o tile desmontar antes — o controller
   /// dedupe chamadas repetidas e ignora o participante local. Câmera e tela
   /// usam dedupes separados: a tela em destaque não rebaixa a câmera irmã
-  /// em miniatura e vice-versa.
+  /// em miniatura e vice-versa. Tile não assistido não pede qualidade (sem
+  /// view montada, o adaptive stream já corta a recepção).
   void _scheduleQuality() {
     if (widget.source == VoiceVideoSource.avatar) return;
+    if (!widget.isWatching) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final quality = switch (widget.role) {
@@ -179,12 +188,20 @@ class _VoiceVideoTileState extends ConsumerState<VoiceVideoTile> {
     final rtc = ref.read(rtcServiceProvider);
     final participant = widget.participant;
     final isLocal = participant.id == rtc.localParticipantId;
-    final trackRef = switch (widget.source) {
-      VoiceVideoSource.camera => rtc.videoTrackOf(participant.id),
-      VoiceVideoSource.screen => rtc.screenTrackOf(participant.id),
-      VoiceVideoSource.avatar => null,
-    };
+    // Local sempre mostra o próprio vídeo; remoto só após opt-in — sem
+    // RtcVideoView montada, o adaptive stream corta a recepção (sem banda).
+    final showVideo = isLocal || widget.isWatching;
+    final trackRef = !showVideo
+        ? null
+        : switch (widget.source) {
+            VoiceVideoSource.camera => rtc.videoTrackOf(participant.id),
+            VoiceVideoSource.screen => rtc.screenTrackOf(participant.id),
+            VoiceVideoSource.avatar => null,
+          };
     final hasVideo = trackRef != null;
+    // Remoto em live que não estou assistindo: avatar + LIVE + "Assistir".
+    final liveUnwatched =
+        !showVideo && widget.source != VoiceVideoSource.avatar;
     final isMiniature = widget.role == VoiceVideoTileRole.miniature;
     final palette = _paletteForParticipant(participant);
     final tileRadius = BorderRadius.circular(AppRadius.lg);
@@ -222,7 +239,12 @@ class _VoiceVideoTileState extends ConsumerState<VoiceVideoTile> {
                   compact: isMiniature,
                   speaking: participant.isSpeaking,
                   palette: palette,
+                  liveUnwatched: liveUnwatched,
                 ),
+              // Opt-in: LIVE + "Assistir" sobre o avatar (grid/spotlight; na
+              // miniatura o toque no tile já assiste — sem botão por espaço).
+              if (liveUnwatched && !isMiniature)
+                _WatchPrompt(source: widget.source, onWatch: widget.onTap),
               if (isMiniature) const _MiniatureBottomScrim(),
               if (isMiniature)
                 _MiniatureOverlay(
@@ -775,6 +797,54 @@ class _PlaceholderAvatar extends StatelessWidget {
   }
 }
 
+/// Prompt de opt-in sobre o avatar de um remoto em live não assistido:
+/// pill LIVE + botão "Assistir" (mesma ação do toque no tile). O fundo é o
+/// avatar do placeholder — nunca um frame real (frame exigiria subscribe e
+/// quebraria o opt-in).
+class _WatchPrompt extends StatelessWidget {
+  const _WatchPrompt({required this.source, required this.onWatch});
+
+  final VoiceVideoSource source;
+  final VoidCallback? onWatch;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: AppTokens.accentDanger,
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Text(
+              'LIVE',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          FilledButton.icon(
+            onPressed: onWatch,
+            icon: Icon(
+              source == VoiceVideoSource.screen
+                  ? Icons.present_to_all
+                  : Icons.videocam,
+              size: 18,
+            ),
+            label: const Text('Assistir'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// Placeholder de tile SEM vídeo: avatar central com profundidade e badge de
 /// estado, preservando a identificação pelo overlay de nome.
 class _AvatarPlaceholder extends StatelessWidget {
@@ -783,12 +853,17 @@ class _AvatarPlaceholder extends StatelessWidget {
     required this.compact,
     required this.speaking,
     required this.palette,
+    this.liveUnwatched = false,
   });
 
   final RtcParticipant participant;
   final bool compact;
   final bool speaking;
   final _ParticipantVisualPalette palette;
+
+  /// Remoto em live não assistido: esconde o badge "Sem vídeo" (há vídeo —
+  /// só não estou assinando) e o prompt LIVE + "Assistir" assume o estado.
+  final bool liveUnwatched;
 
   @override
   Widget build(BuildContext context) {
@@ -827,7 +902,7 @@ class _AvatarPlaceholder extends StatelessWidget {
               speaking: speaking,
             ),
           ),
-          if (!compact)
+          if (!compact && !liveUnwatched)
             Positioned(
               left: 12,
               top: 12,

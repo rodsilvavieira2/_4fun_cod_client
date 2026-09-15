@@ -689,6 +689,29 @@ VoiceSpotlightSource _spotlightSource(VoiceVideoSource source) {
       : VoiceSpotlightSource.camera;
 }
 
+/// Opt-in de vídeo: o tile mostra vídeo quando local ou assistido.
+/// Avatar (sem publicação) sempre `true` — o tile decide o placeholder.
+bool _isWatching(VoiceController notifier, _VoiceMediaItem item) {
+  if (item.source == VoiceVideoSource.avatar) return true;
+  return notifier.isWatching(
+    item.participant.id,
+    _spotlightSource(item.source),
+  );
+}
+
+/// Toque no tile do grid: local alterna spotlight (comportamento existente);
+/// remoto alterna assistir/parar (opt-in). Avatar sem vídeo não é tocável.
+/// Spotlight/filmstrip mantêm o toque atual (troca/dispensa destaque).
+VoidCallback? _gridOnTap(VoiceController notifier, _VoiceMediaItem item) {
+  if (item.source == VoiceVideoSource.avatar) return null;
+  final id = item.participant.id;
+  final source = _spotlightSource(item.source);
+  if (notifier.isLocalParticipant(id)) {
+    return () => notifier.toggleSpotlight(id, source: source);
+  }
+  return () => notifier.toggleWatch(id, source);
+}
+
 /// Palco em grade: uma pessoa pode contribuir com dois tiles irmãos (tela e
 /// câmera); participantes sem vídeo continuam presentes através do avatar.
 class _VideoGrid extends StatelessWidget {
@@ -765,12 +788,8 @@ class _VideoGrid extends StatelessWidget {
                         participant: item.participant,
                         source: item.source,
                         role: VoiceVideoTileRole.grid,
-                        onTap: item.source == VoiceVideoSource.avatar
-                            ? null
-                            : () => notifier.toggleSpotlight(
-                                item.participant.id,
-                                source: _spotlightSource(item.source),
-                              ),
+                        isWatching: _isWatching(notifier, item),
+                        onTap: _gridOnTap(notifier, item),
                         // Overlay de transmissão: cada tile de tela tem o
                         // seu (LIVE + qualidade local); expandir = destacar.
                         qualityLabel: item.source == VoiceVideoSource.screen
@@ -925,6 +944,7 @@ class _SpotlightLayout extends StatelessWidget {
               participant: selected.participant,
               source: selected.source,
               role: VoiceVideoTileRole.spotlight,
+              isWatching: _isWatching(notifier, selected),
               onTap: () => notifier.toggleSpotlight(
                 selected.participant.id,
                 source: _spotlightSource(selected.source),
@@ -988,6 +1008,7 @@ class _SpotlightLayout extends StatelessWidget {
                       participant: item.participant,
                       source: item.source,
                       role: VoiceVideoTileRole.miniature,
+                      isWatching: _isWatching(notifier, item),
                       onTap: item.source == VoiceVideoSource.avatar
                           ? null
                           : () => notifier.toggleSpotlight(

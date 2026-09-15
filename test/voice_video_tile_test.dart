@@ -29,6 +29,8 @@ void main() {
     required VoiceVideoTileRole role,
     String? qualityLabel,
     VoidCallback? onExpand,
+    bool isWatching = true,
+    VoidCallback? onTap,
     Size size = const Size(640, 360),
   }) async {
     await tester.pumpWidget(
@@ -47,6 +49,8 @@ void main() {
                 source: source,
                 qualityLabel: qualityLabel,
                 onExpand: onExpand,
+                isWatching: isWatching,
+                onTap: onTap,
               ),
             ),
           ),
@@ -72,6 +76,16 @@ void main() {
     isMicrophoneEnabled: true,
     isCameraEnabled: false,
     isScreenSharing: true,
+    isSystemAudioEnabled: false,
+    isSpeaking: false,
+  );
+
+  const remoteCamera = RtcParticipant(
+    id: 'user-2',
+    name: 'Remoto',
+    isMicrophoneEnabled: true,
+    isCameraEnabled: true,
+    isScreenSharing: false,
     isSystemAudioEnabled: false,
     isSpeaking: false,
   );
@@ -309,5 +323,84 @@ void main() {
     final secondGradient = decorations[1].gradient! as LinearGradient;
 
     expect(firstGradient.colors.first, isNot(secondGradient.colors.first));
+  });
+
+  testWidgets('remoto não assistido exibe LIVE + Assistir (sem "Sem vídeo")', (
+    tester,
+  ) async {
+    await pumpTile(
+      tester,
+      participant: remoteCamera,
+      source: VoiceVideoSource.camera,
+      role: VoiceVideoTileRole.grid,
+      isWatching: false,
+      onTap: () {},
+    );
+
+    expect(find.text('LIVE'), findsOneWidget);
+    expect(find.text('Assistir'), findsOneWidget);
+    expect(find.text('Sem vídeo'), findsNothing);
+    expect(find.text('Remoto'), findsOneWidget);
+  });
+
+  testWidgets('botão Assistir dispara o onTap do tile', (tester) async {
+    var tapped = 0;
+    await pumpTile(
+      tester,
+      participant: remoteCamera,
+      source: VoiceVideoSource.camera,
+      role: VoiceVideoTileRole.grid,
+      isWatching: false,
+      onTap: () => tapped++,
+    );
+
+    await tester.tap(find.text('Assistir'));
+    expect(tapped, 1);
+  });
+
+  testWidgets('miniatura não assistida não tem botão (toque assiste)', (
+    tester,
+  ) async {
+    var tapped = 0;
+    await pumpTile(
+      tester,
+      participant: remoteCamera,
+      source: VoiceVideoSource.camera,
+      role: VoiceVideoTileRole.miniature,
+      isWatching: false,
+      onTap: () => tapped++,
+      size: const Size(192, 120),
+    );
+
+    expect(find.text('Assistir'), findsNothing);
+    expect(find.text('Sem vídeo'), findsNothing);
+
+    await tester.tap(find.text('Remoto'));
+    expect(tapped, 1);
+  });
+
+  testWidgets('avatar com isWatching=false continua "Sem vídeo"', (
+    tester,
+  ) async {
+    const participant = RtcParticipant(
+      id: 'user-2',
+      name: 'Remoto',
+      isMicrophoneEnabled: true,
+      isCameraEnabled: false,
+      isScreenSharing: false,
+      isSystemAudioEnabled: false,
+      isSpeaking: false,
+    );
+    await pumpTile(
+      tester,
+      participant: participant,
+      source: VoiceVideoSource.avatar,
+      role: VoiceVideoTileRole.grid,
+      isWatching: false,
+    );
+
+    expect(find.text('Sem vídeo'), findsOneWidget);
+    expect(find.text('Assistir'), findsNothing);
+    expect(find.text('LIVE'), findsNothing);
   });
 }
