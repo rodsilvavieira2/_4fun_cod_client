@@ -96,7 +96,11 @@ class LiveKitRtcService implements RtcService {
     dynacast: true,
     defaultVideoPublishOptions: const VideoPublishOptions(
       simulcast: true,
-      screenShareEncoding: VideoEncoding(maxBitrate: 2500000, maxFramerate: 15),
+      // Publicação inicial = topo da escada (1080p60, 8 Mbps): o modo Auto
+      // já transmite em Full HD 60 fps do primeiro frame, sem rampa de ~60s
+      // até o teto. Rede fraca cai via controlador adaptativo (2 amostras
+      // ruins = 1 degrau). 720p60 (3,5 Mbps) via chip Médio no Go Live.
+      screenShareEncoding: VideoEncoding(maxBitrate: 8000000, maxFramerate: 60),
     ),
   );
 
