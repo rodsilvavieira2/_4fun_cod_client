@@ -81,6 +81,10 @@ Map<String, Object?> _markerToJson(UpdateInstallRecoveryMarker marker) {
     'stagingPath': marker.stagingPath,
     'stageProvenanceSha256': marker.stageProvenanceSha256,
     'diagnosticsText': marker.diagnosticsText,
+    // O handoff (persistInstallTransaction) exige readback EXATO, incluindo
+    // transactionId — sem este campo todo update falha com "Recovery marker
+    // readback did not match the write" (v1.1.0 no Windows).
+    'transactionId': marker.transactionId,
   };
 }
 
@@ -97,5 +101,6 @@ UpdateInstallRecoveryMarker _markerFromJson(Map<String, dynamic> json) {
     stagingPath: json['stagingPath'] as String?,
     stageProvenanceSha256: json['stageProvenanceSha256'] as String?,
     diagnosticsText: json['diagnosticsText'] as String?,
+    transactionId: json['transactionId'] as String?,
   );
 }
