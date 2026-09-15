@@ -33,11 +33,12 @@ class ScreenShareNetworkSample {
 /// - Regra: desce rápido (2 amostras ruins), sobe devagar (6 boas), nunca
 ///   passa do objetivo, com cooldown anti-flapping após cada troca.
 ///
-/// Escada (ordem de bitrate, perfil existente mais próximo do 540p da spec
-/// é o `q360p3` — nenhum perfil novo foi criado na V1):
-/// `q360p3` < `q720p15` < `q1080p15` < `q1080p30` < `q1080p60`.
-/// `auto` tem o mesmo encoding do `q1080p15` e ocupa a mesma posição na
-/// escada (objetivo máximo com adaptação total dentro do próprio teto).
+/// Escada (ordem de bitrate; `q1080p30`/`q1080p15`/`q720p15` seguem como
+/// degraus internos da adaptação, sem chip na UI):
+/// `q360p3` (0.2M) < `q480p30` (1.2M) < `q720p15` (1.5M) <
+/// `q1080p15` (2.5M) < `q720p60` (3.5M) < `q1080p30` (5M) < `q1080p60` (8M).
+/// `auto` publica no topo (`q1080p60`) e adapta na escada INTEIRA — da
+/// maior à menor qualidade disponível no sistema.
 class ScreenShareAdaptiveController {
   ScreenShareAdaptiveController({
     required RtcScreenShareQuality target,
@@ -56,8 +57,10 @@ class ScreenShareAdaptiveController {
   /// Escada de adaptação, do menor para o maior bitrate.
   static const List<RtcScreenShareQuality> ladder = [
     RtcScreenShareQuality.q360p3,
+    RtcScreenShareQuality.q480p30,
     RtcScreenShareQuality.q720p15,
     RtcScreenShareQuality.q1080p15,
+    RtcScreenShareQuality.q720p60,
     RtcScreenShareQuality.q1080p30,
     RtcScreenShareQuality.q1080p60,
   ];
@@ -78,10 +81,10 @@ class ScreenShareAdaptiveController {
   /// Qualidade efetiva atual (`<= target`).
   RtcScreenShareQuality get effective => _effective;
 
-  /// Índice de [quality] na [ladder] (`auto` = posição do `q1080p15`).
+  /// Índice de [quality] na [ladder] (`auto` = topo, `q1080p60`).
   static int ladderIndex(RtcScreenShareQuality quality) {
     if (quality == RtcScreenShareQuality.auto) {
-      return ladder.indexOf(RtcScreenShareQuality.q1080p15);
+      return ladder.indexOf(RtcScreenShareQuality.q1080p60);
     }
     return ladder.indexOf(quality);
   }

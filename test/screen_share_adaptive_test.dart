@@ -42,7 +42,7 @@ void main() {
         cooldownSamples: 0,
       );
       expect(controller.propose(_badRtt), isNull);
-      expect(controller.propose(_badRtt), RtcScreenShareQuality.q1080p15);
+      expect(controller.propose(_badRtt), RtcScreenShareQuality.q720p60);
     });
 
     test('perda > 5% também derruba (sem RTT alto)', () {
@@ -51,7 +51,7 @@ void main() {
         cooldownSamples: 0,
       );
       expect(controller.propose(_badLoss), isNull);
-      expect(controller.propose(_badLoss), RtcScreenShareQuality.q360p3);
+      expect(controller.propose(_badLoss), RtcScreenShareQuality.q480p30);
     });
 
     test('amostra neutra quebra a sequência de ruins', () {
@@ -70,20 +70,20 @@ void main() {
         target: RtcScreenShareQuality.q1080p30,
         cooldownSamples: 0,
       );
-      // Desce até o piso.
+      // Desce degrau a degrau na escada nova (1080p30 → 720p60 → 1080p15).
       var proposed = _drive(controller, _badRtt);
-      expect(proposed, RtcScreenShareQuality.q1080p15);
+      expect(proposed, RtcScreenShareQuality.q720p60);
       controller.commit(proposed!);
       proposed = _drive(controller, _badRtt);
-      expect(proposed, RtcScreenShareQuality.q720p15);
+      expect(proposed, RtcScreenShareQuality.q1080p15);
       controller.commit(proposed!);
 
       // 5 boas não bastam; a 6ª sobe um degrau.
       for (var i = 0; i < 5; i++) {
         expect(controller.propose(_good), isNull);
       }
-      expect(controller.propose(_good), RtcScreenShareQuality.q1080p15);
-      controller.commit(RtcScreenShareQuality.q1080p15);
+      expect(controller.propose(_good), RtcScreenShareQuality.q720p60);
+      controller.commit(RtcScreenShareQuality.q720p60);
 
       // Ainda abaixo do teto: 6 boas sobem mais um degrau (q1080p30).
       expect(_drive(controller, _good), RtcScreenShareQuality.q1080p30);
@@ -94,9 +94,9 @@ void main() {
       expect(controller.effective, RtcScreenShareQuality.q1080p30);
     });
 
-    test('piso: nem a Baixa desce mais', () {
+    test('piso: Baixa (480p30) só desce até 360p3', () {
       final controller = ScreenShareAdaptiveController(
-        target: RtcScreenShareQuality.q720p15,
+        target: RtcScreenShareQuality.q480p30,
         cooldownSamples: 0,
       );
       var proposed = _drive(controller, _badRtt);
@@ -106,14 +106,20 @@ void main() {
       expect(controller.effective, RtcScreenShareQuality.q360p3);
     });
 
-    test('auto desce para 720p e volta para auto (não q1080p15)', () {
+    test('auto desce do topo e volta para auto (escada inteira)', () {
       final controller = ScreenShareAdaptiveController(
         target: RtcScreenShareQuality.auto,
         cooldownSamples: 0,
       );
-      final down = _drive(controller, _badRtt);
-      expect(down, RtcScreenShareQuality.q720p15);
+      // Topo = 1080p60: primeiro degrau abaixo é 1080p30, depois 720p60.
+      var down = _drive(controller, _badRtt);
+      expect(down, RtcScreenShareQuality.q1080p30);
       controller.commit(down!);
+      down = _drive(controller, _badRtt);
+      expect(down, RtcScreenShareQuality.q720p60);
+      controller.commit(down!);
+      // Recuperação total volta a auto (não a um degrau fixo).
+      controller.commit(RtcScreenShareQuality.q1080p30);
       final up = _drive(controller, _good);
       expect(up, RtcScreenShareQuality.auto);
     });
@@ -124,7 +130,7 @@ void main() {
         cooldownSamples: 0,
       );
       final down = _drive(controller, _badRtt);
-      expect(down, RtcScreenShareQuality.q360p3);
+      expect(down, RtcScreenShareQuality.q480p30);
       controller.commit(down!);
       final up = _drive(controller, _good);
       expect(up, RtcScreenShareQuality.q720p15);
@@ -138,14 +144,14 @@ void main() {
         target: RtcScreenShareQuality.q1080p30,
       );
       final down = _drive(controller, _badRtt);
-      expect(down, RtcScreenShareQuality.q1080p15);
+      expect(down, RtcScreenShareQuality.q720p60);
       controller.commit(down!);
       // 2 amostras de cooldown: nem 2 ruins seguidas propõem.
       expect(controller.propose(_badRtt), isNull);
       expect(controller.propose(_badRtt), isNull);
       // Após o cooldown, a contagem recomeça.
       expect(controller.propose(_badRtt), isNull);
-      expect(controller.propose(_badRtt), RtcScreenShareQuality.q720p15);
+      expect(controller.propose(_badRtt), RtcScreenShareQuality.q1080p15);
     });
 
     test('setTarget assume o teto na hora (ação do usuário)', () {
@@ -181,7 +187,7 @@ void main() {
         limitationReason: 'bandwidth',
       );
       expect(controller.propose(limited), isNull);
-      expect(controller.propose(limited), RtcScreenShareQuality.q1080p15);
+      expect(controller.propose(limited), RtcScreenShareQuality.q720p60);
     });
   });
 

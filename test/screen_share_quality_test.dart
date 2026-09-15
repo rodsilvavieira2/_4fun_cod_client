@@ -8,13 +8,13 @@ import 'package:fourfun_cod_client/core/rtc/rtc_service.dart';
 
 void main() {
   group('screenShareQualityProfile', () {
-    test('mapeia exatamente os seis perfis', () {
+    test('mapeia exatamente os oito perfis', () {
       expect(
         screenShareQualityProfile(RtcScreenShareQuality.auto),
         const ScreenShareQualityProfile(
           scaleResolutionDownBy: 1,
-          maxFramerate: 15,
-          maxBitrate: 2500000,
+          maxFramerate: 60,
+          maxBitrate: 8000000,
         ),
       );
       expect(
@@ -23,6 +23,14 @@ void main() {
           scaleResolutionDownBy: 1,
           maxFramerate: 60,
           maxBitrate: 8000000,
+        ),
+      );
+      expect(
+        screenShareQualityProfile(RtcScreenShareQuality.q720p60),
+        const ScreenShareQualityProfile(
+          scaleResolutionDownBy: 1.5,
+          maxFramerate: 60,
+          maxBitrate: 3500000,
         ),
       );
       expect(
@@ -47,6 +55,14 @@ void main() {
           scaleResolutionDownBy: 1.5,
           maxFramerate: 15,
           maxBitrate: 1500000,
+        ),
+      );
+      expect(
+        screenShareQualityProfile(RtcScreenShareQuality.q480p30),
+        const ScreenShareQualityProfile(
+          scaleResolutionDownBy: 2.25,
+          maxFramerate: 30,
+          maxBitrate: 1200000,
         ),
       );
       expect(
@@ -82,11 +98,13 @@ void main() {
 
     test('transforma resolução, fps e bitrate proporcionalmente', () {
       final expected = <RtcScreenShareQuality, List<num>>{
-        RtcScreenShareQuality.auto: [2, 15, 625000, 1, 15, 2500000],
+        RtcScreenShareQuality.auto: [2, 60, 2000000, 1, 60, 8000000],
         RtcScreenShareQuality.q1080p60: [2, 60, 2000000, 1, 60, 8000000],
+        RtcScreenShareQuality.q720p60: [3, 60, 875000, 1.5, 60, 3500000],
         RtcScreenShareQuality.q1080p30: [2, 30, 1250000, 1, 30, 5000000],
         RtcScreenShareQuality.q1080p15: [2, 15, 625000, 1, 15, 2500000],
         RtcScreenShareQuality.q720p15: [3, 15, 375000, 1.5, 15, 1500000],
+        RtcScreenShareQuality.q480p30: [4.5, 30, 300000, 2.25, 30, 1200000],
         RtcScreenShareQuality.q360p3: [6, 3, 50000, 3, 3, 200000],
       };
 

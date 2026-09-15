@@ -69,11 +69,11 @@ void main() {
       );
       expect(
         goLiveQualityFor(GoLiveQuality.medium),
-        RtcScreenShareQuality.q1080p30,
+        RtcScreenShareQuality.q720p60,
       );
       expect(
         goLiveQualityFor(GoLiveQuality.low),
-        RtcScreenShareQuality.q720p15,
+        RtcScreenShareQuality.q480p30,
       );
     });
   });
@@ -89,19 +89,27 @@ void main() {
         GoLiveQuality.high,
       );
       expect(
-        goLiveQualityFromPending(RtcScreenShareQuality.q1080p30),
+        goLiveQualityFromPending(RtcScreenShareQuality.q720p60),
         GoLiveQuality.medium,
       );
       expect(
-        goLiveQualityFromPending(RtcScreenShareQuality.q720p15),
+        goLiveQualityFromPending(RtcScreenShareQuality.q480p30),
         GoLiveQuality.low,
       );
     });
 
     test('órfãos do sheet caem no chip mais próximo', () {
       expect(
+        goLiveQualityFromPending(RtcScreenShareQuality.q1080p30),
+        GoLiveQuality.medium,
+      );
+      expect(
         goLiveQualityFromPending(RtcScreenShareQuality.q1080p15),
         GoLiveQuality.medium,
+      );
+      expect(
+        goLiveQualityFromPending(RtcScreenShareQuality.q720p15),
+        GoLiveQuality.low,
       );
       expect(
         goLiveQualityFromPending(RtcScreenShareQuality.q360p3),

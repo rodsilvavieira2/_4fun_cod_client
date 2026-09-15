@@ -18,18 +18,21 @@ RtcScreenShareQuality goLiveQualityFor(GoLiveQuality quality) =>
     switch (quality) {
       GoLiveQuality.auto => RtcScreenShareQuality.auto,
       GoLiveQuality.high => RtcScreenShareQuality.q1080p60,
-      GoLiveQuality.medium => RtcScreenShareQuality.q1080p30,
-      GoLiveQuality.low => RtcScreenShareQuality.q720p15,
+      GoLiveQuality.medium => RtcScreenShareQuality.q720p60,
+      GoLiveQuality.low => RtcScreenShareQuality.q480p30,
     };
 
-/// Chip inicial a partir do perfil pendente. Órfãos (`q1080p15`, `q360p3`,
-/// acessíveis só pelo sheet) caem no chip mais próximo.
+/// Chip inicial a partir do perfil pendente. Órfãos (`q1080p30`,
+/// `q1080p15`, `q720p15`, `q360p3` — degraus internos da adaptação, sem
+/// chip) caem no chip mais próximo.
 GoLiveQuality goLiveQualityFromPending(RtcScreenShareQuality pending) =>
     switch (pending) {
       RtcScreenShareQuality.auto => GoLiveQuality.auto,
       RtcScreenShareQuality.q1080p60 => GoLiveQuality.high,
+      RtcScreenShareQuality.q720p60 ||
       RtcScreenShareQuality.q1080p30 ||
       RtcScreenShareQuality.q1080p15 => GoLiveQuality.medium,
+      RtcScreenShareQuality.q480p30 ||
       RtcScreenShareQuality.q720p15 ||
       RtcScreenShareQuality.q360p3 => GoLiveQuality.low,
     };
@@ -506,8 +509,8 @@ String _qualityTitle(GoLiveQuality quality) => switch (quality) {
 };
 
 String _qualitySpec(GoLiveQuality quality) => switch (quality) {
-  GoLiveQuality.auto => 'Sem downscale · até 15fps',
+  GoLiveQuality.auto => 'Sem downscale · até 60fps',
   GoLiveQuality.high => '1080p · até 60fps',
-  GoLiveQuality.medium => '1080p · até 30fps',
-  GoLiveQuality.low => '720p · 15fps',
+  GoLiveQuality.medium => '720p · até 60fps',
+  GoLiveQuality.low => '480p · 30fps',
 };

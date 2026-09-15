@@ -241,9 +241,11 @@ enum RtcVideoQuality { low, medium, high }
 enum RtcScreenShareQuality {
   auto,
   q1080p60,
+  q720p60,
   q1080p30,
   q1080p15,
   q720p15,
+  q480p30,
   q360p3,
 }
 

@@ -82,7 +82,8 @@ class LiveKitRtcService implements RtcService {
   /// - câmera sem opções customizadas: captura e publicação seguem os
   ///   defaults do SDK/dispositivo;
   /// - screen share usa um teto de captura 1080p60 e publica inicialmente no
-  ///   perfil Auto (1080p15), com simulcast calculado pelo SDK.
+  ///   perfil Auto (1080p60, topo da escada adaptativa), com simulcast
+  ///   calculado pelo SDK.
   static final RoomOptions defaultRoomOptions = RoomOptions(
     defaultAudioCaptureOptions: _buildMicrophoneCaptureOptions(
       noiseSuppressionEnabled: true,
@@ -1347,7 +1348,10 @@ class LiveKitRtcService implements RtcService {
     final track = _activeScreenShareTrack(room);
     final sender = track?.sender;
     final baseline = _screenShareEncodingBaseline;
-    if (track == null || sender == null || baseline == null || baseline.isEmpty) {
+    if (track == null ||
+        sender == null ||
+        baseline == null ||
+        baseline.isEmpty) {
       return;
     }
     final sample = await _collectAdaptiveSample(sender);
@@ -2162,13 +2166,18 @@ ScreenShareQualityProfile screenShareQualityProfile(
 ) => switch (quality) {
   RtcScreenShareQuality.auto => const ScreenShareQualityProfile(
     scaleResolutionDownBy: 1,
-    maxFramerate: 15,
-    maxBitrate: 2500000,
+    maxFramerate: 60,
+    maxBitrate: 8000000,
   ),
   RtcScreenShareQuality.q1080p60 => const ScreenShareQualityProfile(
     scaleResolutionDownBy: 1,
     maxFramerate: 60,
     maxBitrate: 8000000,
+  ),
+  RtcScreenShareQuality.q720p60 => const ScreenShareQualityProfile(
+    scaleResolutionDownBy: 1.5,
+    maxFramerate: 60,
+    maxBitrate: 3500000,
   ),
   RtcScreenShareQuality.q1080p30 => const ScreenShareQualityProfile(
     scaleResolutionDownBy: 1,
@@ -2184,6 +2193,11 @@ ScreenShareQualityProfile screenShareQualityProfile(
     scaleResolutionDownBy: 1.5,
     maxFramerate: 15,
     maxBitrate: 1500000,
+  ),
+  RtcScreenShareQuality.q480p30 => const ScreenShareQualityProfile(
+    scaleResolutionDownBy: 2.25,
+    maxFramerate: 30,
+    maxBitrate: 1200000,
   ),
   RtcScreenShareQuality.q360p3 => const ScreenShareQualityProfile(
     scaleResolutionDownBy: 3,

@@ -673,9 +673,11 @@ String? _transmitQualityLabel(VoiceState state) {
 String _screenShareQualityShortLabel(RtcScreenShareQuality quality) {
   return switch (quality) {
     RtcScreenShareQuality.q1080p60 => '1080p60',
+    RtcScreenShareQuality.q720p60 => '720p60',
     RtcScreenShareQuality.q1080p30 => '1080p30',
     RtcScreenShareQuality.q1080p15 => '1080p15',
     RtcScreenShareQuality.q720p15 => '720p15',
+    RtcScreenShareQuality.q480p30 => '480p30',
     RtcScreenShareQuality.q360p3 => '360p3',
     RtcScreenShareQuality.auto => 'Auto',
   };
