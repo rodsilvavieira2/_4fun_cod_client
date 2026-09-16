@@ -104,6 +104,11 @@ void main() {
         noiseSuppressionEnabled: false,
         deviceId: 'mic-usb',
       );
+      final deepFilterNet =
+          LiveKitRtcService.microphoneCaptureOptionsForTesting(
+            noiseSuppressionMode: RtcNoiseSuppressionMode.deepFilterNet,
+            deviceId: 'mic-usb',
+          );
 
       expect(enabled.deviceId, 'mic-usb');
       expect(enabled.echoCancellation, isTrue);
@@ -120,6 +125,14 @@ void main() {
       expect(disabled.highPassFilter, isTrue);
       expect(disabled.voiceIsolation, isFalse);
       expect(disabled.typingNoiseDetection, isFalse);
+
+      expect(deepFilterNet.deviceId, 'mic-usb');
+      expect(deepFilterNet.echoCancellation, isTrue);
+      expect(deepFilterNet.noiseSuppression, isFalse);
+      expect(deepFilterNet.autoGainControl, isTrue);
+      expect(deepFilterNet.highPassFilter, isTrue);
+      expect(deepFilterNet.voiceIsolation, isFalse);
+      expect(deepFilterNet.typingNoiseDetection, isFalse);
     });
 
     test('áudio de sistema não usa processamento de voz', () {

@@ -16,6 +16,7 @@ set(CMAKE_CXX_STANDARD 17)
 add_definitions(-DRTC_DESKTOP_DEVICE)
 
 add_library(${PLUGIN_NAME} SHARED
+  "../common/cpp/src/deep_filter_audio_processor.cc"
   "../common/cpp/src/flutter_data_channel.cc"
   "../common/cpp/src/flutter_data_packet_cryptor.cc"
   "../common/cpp/src/flutter_frame_cryptor.cc"
@@ -38,6 +39,34 @@ add_library(${PLUGIN_NAME} SHARED
   "task_runner_linux.cc"
 )
 
+unset(DEEPFILTER_BRIDGE_DIR CACHE)
+get_filename_component(FLUTTER_WEBRTC_PLUGIN_ROOT
+  "${CMAKE_CURRENT_SOURCE_DIR}/.." REALPATH)
+get_filename_component(DEEPFILTER_BRIDGE_DIR
+  "${FLUTTER_WEBRTC_PLUGIN_ROOT}/../../native/deepfilter_bridge" REALPATH)
+if(NOT EXISTS "${DEEPFILTER_BRIDGE_DIR}/Cargo.toml")
+  message(FATAL_ERROR "Unable to locate native/deepfilter_bridge from ${CMAKE_CURRENT_SOURCE_DIR}")
+endif()
+message(STATUS "flutter_webrtc: DeepFilterNet bridge at ${DEEPFILTER_BRIDGE_DIR}")
+set(DEEPFILTER_BRIDGE_LIB
+  "${DEEPFILTER_BRIDGE_DIR}/target/release/libfourfun_deepfilter_bridge.a")
+find_program(CARGO_EXECUTABLE cargo)
+if(NOT CARGO_EXECUTABLE)
+  message(FATAL_ERROR "cargo is required to build DeepFilterNet support")
+endif()
+add_custom_command(
+  OUTPUT "${DEEPFILTER_BRIDGE_LIB}"
+  COMMAND "${CARGO_EXECUTABLE}" build --manifest-path
+          "${DEEPFILTER_BRIDGE_DIR}/Cargo.toml" --release
+  WORKING_DIRECTORY "${DEEPFILTER_BRIDGE_DIR}"
+  COMMENT "Building fourfun DeepFilterNet bridge"
+)
+add_custom_target(fourfun_deepfilter_bridge_build
+  DEPENDS "${DEEPFILTER_BRIDGE_LIB}")
+add_library(fourfun_deepfilter_bridge STATIC IMPORTED GLOBAL)
+set_target_properties(fourfun_deepfilter_bridge PROPERTIES
+  IMPORTED_LOCATION "${DEEPFILTER_BRIDGE_LIB}")
+
 include_directories(
   "${CMAKE_CURRENT_SOURCE_DIR}"
   "${CMAKE_CURRENT_SOURCE_DIR}/flutter/include"
@@ -57,6 +86,9 @@ target_include_directories(${PLUGIN_NAME} INTERFACE
 )
 target_link_libraries(${PLUGIN_NAME} PRIVATE flutter)
 target_link_libraries(${PLUGIN_NAME} PRIVATE PkgConfig::GTK)
+add_dependencies(${PLUGIN_NAME} fourfun_deepfilter_bridge_build)
+target_link_libraries(${PLUGIN_NAME} PRIVATE fourfun_deepfilter_bridge)
+target_link_libraries(${PLUGIN_NAME} PRIVATE pthread dl m)
 
 # Native Wayland screen sharing. The xdg-desktop-portal session is opened by
 # the plugin and its PipeWire stream is converted to I420 by GStreamer before

@@ -86,8 +86,15 @@ class _FakeRtcService implements RtcService {
   Future<void> setOutputVolume(double gain) async => outputGain = gain;
 
   @override
-  Future<void> setNoiseSuppressionEnabled(bool enabled) async {
-    noiseSuppressionEnabled = enabled;
+  Future<RtcNoiseSuppressionStatus> setNoiseSuppressionMode(
+    RtcNoiseSuppressionMode mode,
+  ) async {
+    noiseSuppressionEnabled = mode != RtcNoiseSuppressionMode.off;
+    return RtcNoiseSuppressionStatus(
+      requestedMode: mode,
+      effectiveMode: mode,
+      deepFilterNetAvailable: mode == RtcNoiseSuppressionMode.deepFilterNet,
+    );
   }
 
   @override
@@ -261,9 +268,15 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Supressão de ruído'), findsOneWidget);
-    expect(tester.widget<Switch>(find.byType(Switch).first).value, isFalse);
+    expect(find.text('Desativada'), findsOneWidget);
+    expect(find.text('Normal'), findsOneWidget);
+    expect(find.text('IA'), findsOneWidget);
+    expect(
+      container.read(voiceAudioProcessingProvider).requestedMode,
+      RtcNoiseSuppressionMode.off,
+    );
 
-    tester.widget<Switch>(find.byType(Switch).first).onChanged?.call(true);
+    await tester.tap(find.text('Normal'));
     await tester.pumpAndSettle();
 
     final preferences = await SharedPreferences.getInstance();
@@ -273,8 +286,10 @@ void main() {
       isTrue,
     );
     expect(
-      preferences.getBool(VoiceAudioProcessingController.noiseSuppressionKey),
-      isTrue,
+      preferences.getString(
+        VoiceAudioProcessingController.noiseSuppressionModeKey,
+      ),
+      RtcNoiseSuppressionMode.webrtc.name,
     );
   });
 

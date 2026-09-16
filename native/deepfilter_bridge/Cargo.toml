@@ -1,0 +1,14 @@
+[package]
+name = "fourfun_deepfilter_bridge"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+name = "fourfun_deepfilter_bridge"
+crate-type = ["staticlib"]
+
+[dependencies]
+deep_filter = { package = "deep_filter", git = "https://github.com/Rikorose/DeepFilterNet", rev = "978576a", default-features = false, features = ["tract", "default-model"] }
+ndarray = "0.15"
+kstring = "=2.0.2"

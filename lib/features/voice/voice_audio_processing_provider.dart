@@ -4,25 +4,37 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/rtc/rtc_providers.dart';
+import '../../core/rtc/rtc_service.dart';
 
 class VoiceAudioProcessingState {
   const VoiceAudioProcessingState({
-    this.isNoiseSuppressionEnabled = true,
+    this.requestedMode = RtcNoiseSuppressionMode.webrtc,
+    this.effectiveMode = RtcNoiseSuppressionMode.webrtc,
+    this.deepFilterNetAvailable = false,
     this.isApplying = false,
     this.errorMessage,
   });
 
-  final bool isNoiseSuppressionEnabled;
+  final RtcNoiseSuppressionMode requestedMode;
+  final RtcNoiseSuppressionMode effectiveMode;
+  final bool deepFilterNetAvailable;
   final bool isApplying;
   final String? errorMessage;
 
+  bool get isNoiseSuppressionEnabled =>
+      effectiveMode != RtcNoiseSuppressionMode.off;
+
   VoiceAudioProcessingState copyWith({
-    bool? isNoiseSuppressionEnabled,
+    RtcNoiseSuppressionMode? requestedMode,
+    RtcNoiseSuppressionMode? effectiveMode,
+    bool? deepFilterNetAvailable,
     bool? isApplying,
     Object? errorMessage = _unset,
   }) => VoiceAudioProcessingState(
-    isNoiseSuppressionEnabled:
-        isNoiseSuppressionEnabled ?? this.isNoiseSuppressionEnabled,
+    requestedMode: requestedMode ?? this.requestedMode,
+    effectiveMode: effectiveMode ?? this.effectiveMode,
+    deepFilterNetAvailable:
+        deepFilterNetAvailable ?? this.deepFilterNetAvailable,
     isApplying: isApplying ?? this.isApplying,
     errorMessage: identical(errorMessage, _unset)
         ? this.errorMessage
@@ -38,6 +50,8 @@ const Object _unset = Object();
 /// e continuar valendo para reconnect, troca de device e unmute.
 class VoiceAudioProcessingController
     extends Notifier<VoiceAudioProcessingState> {
+  static const noiseSuppressionModeKey =
+      'voice.audio_processing.noise_suppression_mode';
   static const noiseSuppressionKey =
       'voice.audio_processing.noise_suppression_enabled';
 
@@ -60,14 +74,14 @@ class VoiceAudioProcessingController
   Future<void> _initialize() async {
     try {
       final preferences = await SharedPreferences.getInstance();
-      final enabled = preferences.getBool(noiseSuppressionKey) ?? true;
+      final mode = _readMode(preferences);
       if (_disposed) return;
       _preferences = preferences;
-      state = state.copyWith(
-        isNoiseSuppressionEnabled: enabled,
-        errorMessage: null,
-      );
-      await ref.read(rtcServiceProvider).setNoiseSuppressionEnabled(enabled);
+      final status = await ref
+          .read(rtcServiceProvider)
+          .setNoiseSuppressionMode(mode);
+      if (_disposed) return;
+      state = _stateFromStatus(status, isApplying: false);
     } catch (_) {
       if (!_disposed) {
         state = state.copyWith(
@@ -77,31 +91,68 @@ class VoiceAudioProcessingController
     }
   }
 
-  Future<bool> setNoiseSuppressionEnabled(bool enabled) async {
+  RtcNoiseSuppressionMode _readMode(SharedPreferences preferences) {
+    final savedMode = preferences.getString(noiseSuppressionModeKey);
+    final parsedMode = _modeFromStorage(savedMode);
+    if (parsedMode != null) return parsedMode;
+
+    final legacyEnabled = preferences.getBool(noiseSuppressionKey);
+    if (legacyEnabled == null) return RtcNoiseSuppressionMode.webrtc;
+    final migrated = legacyEnabled
+        ? RtcNoiseSuppressionMode.webrtc
+        : RtcNoiseSuppressionMode.off;
+    unawaited(preferences.setString(noiseSuppressionModeKey, migrated.name));
+    return migrated;
+  }
+
+  RtcNoiseSuppressionMode? _modeFromStorage(String? value) {
+    if (value == null) return null;
+    for (final mode in RtcNoiseSuppressionMode.values) {
+      if (mode.name == value) return mode;
+    }
+    return null;
+  }
+
+  VoiceAudioProcessingState _stateFromStatus(
+    RtcNoiseSuppressionStatus status, {
+    required bool isApplying,
+  }) {
+    return VoiceAudioProcessingState(
+      requestedMode: status.requestedMode,
+      effectiveMode: status.effectiveMode,
+      deepFilterNetAvailable: status.deepFilterNetAvailable,
+      isApplying: isApplying,
+      errorMessage: status.message,
+    );
+  }
+
+  Future<bool> setNoiseSuppressionMode(RtcNoiseSuppressionMode mode) async {
     await ensureInitialized();
-    if (state.isApplying || enabled == state.isNoiseSuppressionEnabled) {
-      return enabled == state.isNoiseSuppressionEnabled;
+    if (state.isApplying || mode == state.requestedMode) {
+      return mode == state.requestedMode;
     }
 
     final previous = state;
     state = previous.copyWith(
-      isNoiseSuppressionEnabled: enabled,
+      requestedMode: mode,
       isApplying: true,
       errorMessage: null,
     );
 
     final rtc = ref.read(rtcServiceProvider);
     try {
-      await rtc.setNoiseSuppressionEnabled(enabled);
+      final status = await rtc.setNoiseSuppressionMode(mode);
       final preferences = _preferences;
       if (preferences != null) {
-        await preferences.setBool(noiseSuppressionKey, enabled);
+        await preferences.setString(noiseSuppressionModeKey, mode.name);
       }
+      if (!_disposed) {
+        state = _stateFromStatus(status, isApplying: false);
+      }
+      return true;
     } catch (_) {
       try {
-        await rtc.setNoiseSuppressionEnabled(
-          previous.isNoiseSuppressionEnabled,
-        );
+        await rtc.setNoiseSuppressionMode(previous.requestedMode);
       } catch (_) {}
       if (!_disposed) {
         state = previous.copyWith(
@@ -111,11 +162,12 @@ class VoiceAudioProcessingController
       }
       return false;
     }
+  }
 
-    if (!_disposed) {
-      state = state.copyWith(isApplying: false, errorMessage: null);
-    }
-    return true;
+  Future<bool> setNoiseSuppressionEnabled(bool enabled) async {
+    return setNoiseSuppressionMode(
+      enabled ? RtcNoiseSuppressionMode.webrtc : RtcNoiseSuppressionMode.off,
+    );
   }
 }
 

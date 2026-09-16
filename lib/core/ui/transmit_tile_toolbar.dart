@@ -67,7 +67,7 @@ class TransmitTileToolbar extends StatelessWidget {
       if (isLocal && onStopShare != null)
         _toolbarToggleButton(
           colors: colors,
-          icon: Icons.present_to_all,
+          icon: Icons.call_end,
           active: true,
           activeColor: AppTokens.accentDanger,
           tooltip: 'Parar compartilhamento',

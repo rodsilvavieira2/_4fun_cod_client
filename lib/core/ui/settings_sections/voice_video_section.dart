@@ -86,17 +86,47 @@ class _NoiseSuppressionField extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(voiceAudioProcessingProvider);
     final controller = ref.read(voiceAudioProcessingProvider.notifier);
+    final fallbackMessage =
+        state.requestedMode == RtcNoiseSuppressionMode.deepFilterNet &&
+            state.effectiveMode == RtcNoiseSuppressionMode.webrtc
+        ? 'IA indisponível neste dispositivo. Usando Normal.'
+        : state.errorMessage;
     return SettingsRow(
       icon: Icons.graphic_eq_outlined,
       title: 'Supressão de ruído',
-      subtitle: state.errorMessage,
+      subtitle: fallbackMessage,
       subtitleColor: context.appColors.accent,
-      trailing: SettingsSwitch(
-        value: state.isNoiseSuppressionEnabled,
-        onChanged: state.isApplying
-            ? null
-            : (enabled) =>
-                  unawaited(controller.setNoiseSuppressionEnabled(enabled)),
+      trailing: SizedBox(
+        width: 456,
+        child: IgnorePointer(
+          ignoring: state.isApplying,
+          child: Opacity(
+            opacity: state.isApplying ? 0.6 : 1,
+            child: AppSegmentedControl<RtcNoiseSuppressionMode>(
+              height: 34,
+              selectedValue: state.requestedMode,
+              onChanged: (mode) =>
+                  unawaited(controller.setNoiseSuppressionMode(mode)),
+              items: const [
+                SegmentItem(
+                  value: RtcNoiseSuppressionMode.off,
+                  label: 'Desativada',
+                  icon: Icons.mic_none_outlined,
+                ),
+                SegmentItem(
+                  value: RtcNoiseSuppressionMode.webrtc,
+                  label: 'Normal',
+                  icon: Icons.graphic_eq_outlined,
+                ),
+                SegmentItem(
+                  value: RtcNoiseSuppressionMode.deepFilterNet,
+                  label: 'IA',
+                  icon: Icons.auto_awesome_outlined,
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

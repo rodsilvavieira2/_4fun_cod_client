@@ -1,4 +1,5 @@
 #include "flutter_webrtc.h"
+#include "deep_filter_audio_processor.h"
 #include "flutter_data_channel.h"
 
 #include "flutter_webrtc/flutter_web_r_t_c_plugin.h"
@@ -20,6 +21,26 @@ FlutterWebRTC::FlutterWebRTC(FlutterWebRTCPlugin* plugin)
       FlutterDataPacketCryptor::FlutterDataPacketCryptor(this) {}
 
 FlutterWebRTC::~FlutterWebRTC() {}
+
+bool FlutterWebRTC::SetDeepFilterNoiseSuppressionEnabled(bool enabled) {
+  if (!audio_processing()) return false;
+  if (!enabled) {
+    audio_processing()->SetCapturePostProcessing(nullptr);
+    deep_filter_audio_processor_.reset();
+    return false;
+  }
+
+  auto processor = std::make_unique<DeepFilterAudioProcessor>();
+  if (!processor->runtime_available()) {
+    audio_processing()->SetCapturePostProcessing(nullptr);
+    deep_filter_audio_processor_.reset();
+    return false;
+  }
+  auto* raw_processor = processor.get();
+  audio_processing()->SetCapturePostProcessing(raw_processor);
+  deep_filter_audio_processor_ = std::move(processor);
+  return true;
+}
 
 void FlutterWebRTC::HandleMethodCall(
     const MethodCallProxy& method_call,
@@ -127,6 +148,15 @@ void FlutterWebRTC::HandleMethodCall(
         GetValue<EncodableMap>(*method_call.arguments());
     const std::string deviceId = findString(params, "deviceId");
     SelectAudioOutput(deviceId, std::move(result));
+  } else if (method_call.method_name().compare(
+                 "setDeepFilterNoiseSuppressionEnabled") == 0) {
+    const EncodableMap params =
+        method_call.arguments() == nullptr
+            ? EncodableMap()
+            : GetValue<EncodableMap>(*method_call.arguments());
+    const bool enabled = findBoolean(params, "enabled");
+    const bool available = SetDeepFilterNoiseSuppressionEnabled(enabled);
+    result->Success(EncodableValue(available));
   } else if (method_call.method_name().compare("mediaStreamGetTracks") == 0) {
     if (!method_call.arguments()) {
       result->Error("Bad Arguments", "Null constraints arguments received");

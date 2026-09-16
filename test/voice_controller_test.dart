@@ -278,8 +278,15 @@ class FakeRtcService implements RtcService {
   Future<void> setInputVolume(double gain) async {}
 
   @override
-  Future<void> setNoiseSuppressionEnabled(bool enabled) async {
-    noiseSuppressionEnabled = enabled;
+  Future<RtcNoiseSuppressionStatus> setNoiseSuppressionMode(
+    RtcNoiseSuppressionMode mode,
+  ) async {
+    noiseSuppressionEnabled = mode != RtcNoiseSuppressionMode.off;
+    return RtcNoiseSuppressionStatus(
+      requestedMode: mode,
+      effectiveMode: mode,
+      deepFilterNetAvailable: mode == RtcNoiseSuppressionMode.deepFilterNet,
+    );
   }
 
   @override

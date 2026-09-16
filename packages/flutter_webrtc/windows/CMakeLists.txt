@@ -17,6 +17,7 @@ add_definitions(-DLIB_WEBRTC_API_DLL)
 add_definitions(-DRTC_DESKTOP_DEVICE)
 
 add_library(${PLUGIN_NAME} SHARED
+  "../common/cpp/src/deep_filter_audio_processor.cc"
   "../common/cpp/src/flutter_common.cc"
   "../common/cpp/src/flutter_data_channel.cc"
   "../common/cpp/src/flutter_data_packet_cryptor.cc"
@@ -34,6 +35,34 @@ add_library(${PLUGIN_NAME} SHARED
   "flutter_webrtc_plugin.cc"
   "task_runner_windows.cc"
 )
+
+unset(DEEPFILTER_BRIDGE_DIR CACHE)
+get_filename_component(FLUTTER_WEBRTC_PLUGIN_ROOT
+  "${CMAKE_CURRENT_SOURCE_DIR}/.." REALPATH)
+get_filename_component(DEEPFILTER_BRIDGE_DIR
+  "${FLUTTER_WEBRTC_PLUGIN_ROOT}/../../native/deepfilter_bridge" REALPATH)
+if(NOT EXISTS "${DEEPFILTER_BRIDGE_DIR}/Cargo.toml")
+  message(FATAL_ERROR "Unable to locate native/deepfilter_bridge from ${CMAKE_CURRENT_SOURCE_DIR}")
+endif()
+message(STATUS "flutter_webrtc: DeepFilterNet bridge at ${DEEPFILTER_BRIDGE_DIR}")
+set(DEEPFILTER_BRIDGE_LIB
+  "${DEEPFILTER_BRIDGE_DIR}/target/release/fourfun_deepfilter_bridge.lib")
+find_program(CARGO_EXECUTABLE cargo)
+if(NOT CARGO_EXECUTABLE)
+  message(FATAL_ERROR "cargo is required to build DeepFilterNet support")
+endif()
+add_custom_command(
+  OUTPUT "${DEEPFILTER_BRIDGE_LIB}"
+  COMMAND "${CARGO_EXECUTABLE}" build --manifest-path
+          "${DEEPFILTER_BRIDGE_DIR}/Cargo.toml" --release
+  WORKING_DIRECTORY "${DEEPFILTER_BRIDGE_DIR}"
+  COMMENT "Building fourfun DeepFilterNet bridge"
+)
+add_custom_target(fourfun_deepfilter_bridge_build
+  DEPENDS "${DEEPFILTER_BRIDGE_LIB}")
+add_library(fourfun_deepfilter_bridge STATIC IMPORTED GLOBAL)
+set_target_properties(fourfun_deepfilter_bridge PROPERTIES
+  IMPORTED_LOCATION "${DEEPFILTER_BRIDGE_LIB}")
 
 include_directories(
   "${CMAKE_CURRENT_SOURCE_DIR}"
@@ -54,6 +83,7 @@ target_include_directories(${PLUGIN_NAME} INTERFACE
 target_link_libraries(${PLUGIN_NAME} PRIVATE 
   flutter
   flutter_wrapper_plugin
+  fourfun_deepfilter_bridge
   "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/libwebrtc/lib/libwebrtc.dll.lib"
   avrt.lib
   ksuser.lib
@@ -61,8 +91,13 @@ target_link_libraries(${PLUGIN_NAME} PRIVATE
   ole32.lib
   runtimeobject.lib
   uuid.lib
+  bcrypt.lib
+  ntdll.lib
+  userenv.lib
   winmm.lib
+  ws2_32.lib
 )
+add_dependencies(${PLUGIN_NAME} fourfun_deepfilter_bridge_build)
 
 # List of absolute paths to libraries that should be bundled with the plugin
 set(flutter_webrtc_bundled_libraries

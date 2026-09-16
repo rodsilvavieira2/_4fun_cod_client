@@ -86,7 +86,7 @@ class LiveKitRtcService implements RtcService {
   ///   calculado pelo SDK.
   static final RoomOptions defaultRoomOptions = RoomOptions(
     defaultAudioCaptureOptions: _buildMicrophoneCaptureOptions(
-      noiseSuppressionEnabled: true,
+      noiseSuppressionMode: RtcNoiseSuppressionMode.webrtc,
       defaults: const AudioCaptureOptions(),
     ),
     defaultAudioPublishOptions: const AudioPublishOptions(
@@ -114,34 +114,43 @@ class LiveKitRtcService implements RtcService {
 
   @visibleForTesting
   static AudioCaptureOptions microphoneCaptureOptionsForTesting({
-    required bool noiseSuppressionEnabled,
+    bool? noiseSuppressionEnabled,
+    RtcNoiseSuppressionMode? noiseSuppressionMode,
     String? deviceId,
     AudioCaptureOptions defaults = const AudioCaptureOptions(),
   }) => _buildMicrophoneCaptureOptions(
-    noiseSuppressionEnabled: noiseSuppressionEnabled,
+    noiseSuppressionMode:
+        noiseSuppressionMode ??
+        (noiseSuppressionEnabled == false
+            ? RtcNoiseSuppressionMode.off
+            : RtcNoiseSuppressionMode.webrtc),
     deviceId: deviceId,
     defaults: defaults,
   );
 
   static AudioCaptureOptions _buildMicrophoneCaptureOptions({
-    required bool noiseSuppressionEnabled,
+    required RtcNoiseSuppressionMode noiseSuppressionMode,
     String? deviceId,
     required AudioCaptureOptions defaults,
-  }) => AudioCaptureOptions(
-    deviceId: deviceId,
-    echoCancellation: true,
-    noiseSuppression: noiseSuppressionEnabled,
-    autoGainControl: true,
-    highPassFilter: true,
-    echoCancellationMode: defaults.echoCancellationMode,
-    noiseSuppressionMode: defaults.noiseSuppressionMode,
-    autoGainControlMode: defaults.autoGainControlMode,
-    highPassFilterMode: defaults.highPassFilterMode,
-    voiceIsolation: noiseSuppressionEnabled,
-    typingNoiseDetection: noiseSuppressionEnabled,
-    stopAudioCaptureOnMute: defaults.stopAudioCaptureOnMute,
-    processor: defaults.processor,
-  );
+  }) {
+    final useWebRtcSuppression =
+        noiseSuppressionMode == RtcNoiseSuppressionMode.webrtc;
+    return AudioCaptureOptions(
+      deviceId: deviceId,
+      echoCancellation: true,
+      noiseSuppression: useWebRtcSuppression,
+      autoGainControl: true,
+      highPassFilter: true,
+      echoCancellationMode: defaults.echoCancellationMode,
+      noiseSuppressionMode: defaults.noiseSuppressionMode,
+      autoGainControlMode: defaults.autoGainControlMode,
+      highPassFilterMode: defaults.highPassFilterMode,
+      voiceIsolation: useWebRtcSuppression,
+      typingNoiseDetection: useWebRtcSuppression,
+      stopAudioCaptureOnMute: defaults.stopAudioCaptureOnMute,
+      processor: defaults.processor,
+    );
+  }
 
   /// Opções da sala. O microfone é publicado conforme a preferência global
   /// pendente, que no primeiro uso é ativa.
@@ -196,7 +205,11 @@ class LiveKitRtcService implements RtcService {
   String? _selectedAudioOutputId;
   bool _microphoneEnabled = true;
   bool _remoteAudioEnabled = true;
-  bool _noiseSuppressionEnabled = true;
+  RtcNoiseSuppressionMode _noiseSuppressionMode =
+      RtcNoiseSuppressionMode.webrtc;
+  RtcNoiseSuppressionMode _effectiveNoiseSuppressionMode =
+      RtcNoiseSuppressionMode.webrtc;
+  bool _deepFilterNetAvailable = false;
 
   /// Volume de voz (fatia volumes): entrada `0.0..1.0`, demais `0.0..2.0`.
   /// Pendentes sem sala — aplicados em publicação/subscribe/reconexão/device.
@@ -1014,16 +1027,31 @@ class LiveKitRtcService implements RtcService {
     await _applyInputVolumeToMicrophone();
   }
 
-  @override
   Future<void> setNoiseSuppressionEnabled(bool enabled) async {
-    if (_disposed) return;
-    if (_noiseSuppressionEnabled == enabled) return;
+    await setNoiseSuppressionMode(
+      enabled ? RtcNoiseSuppressionMode.webrtc : RtcNoiseSuppressionMode.off,
+    );
+  }
 
-    final previousEnabled = _noiseSuppressionEnabled;
-    _noiseSuppressionEnabled = enabled;
+  @override
+  Future<RtcNoiseSuppressionStatus> setNoiseSuppressionMode(
+    RtcNoiseSuppressionMode mode,
+  ) async {
+    if (_disposed) {
+      return _noiseSuppressionStatus(requestedMode: mode);
+    }
+
+    final previousRequestedMode = _noiseSuppressionMode;
+    final previousEffectiveMode = _effectiveNoiseSuppressionMode;
+    final previousDeepFilterNetAvailable = _deepFilterNetAvailable;
+
+    final status = await _resolveNoiseSuppressionMode(mode);
+    _noiseSuppressionMode = status.requestedMode;
+    _effectiveNoiseSuppressionMode = status.effectiveMode;
+    _deepFilterNetAvailable = status.deepFilterNetAvailable;
 
     final room = _room;
-    if (room == null) return;
+    if (room == null) return status;
 
     final localParticipant = room.localParticipant;
     final publication = localParticipant?.getTrackPublicationBySource(
@@ -1032,7 +1060,7 @@ class LiveKitRtcService implements RtcService {
     final track = publication?.track;
     final nextRoomOptions = _syncRoomAudioCaptureOptions(room);
 
-    if (track is! LocalAudioTrack) return;
+    if (track is! LocalAudioTrack) return status;
 
     final previousTrackOptions = track.currentOptions;
     final nextTrackOptions = _microphoneCaptureOptions(
@@ -1043,15 +1071,71 @@ class LiveKitRtcService implements RtcService {
     try {
       if (publication?.muted ?? track.muted) {
         track.currentOptions = nextTrackOptions;
-        return;
+        return status;
       }
       await track.restartTrack(nextTrackOptions);
       await _applyInputVolumeToMicrophone();
+      return status;
     } catch (_) {
-      _noiseSuppressionEnabled = previousEnabled;
+      _noiseSuppressionMode = previousRequestedMode;
+      _effectiveNoiseSuppressionMode = previousEffectiveMode;
+      _deepFilterNetAvailable = previousDeepFilterNetAvailable;
+      await _setDeepFilterNetEnabled(
+        previousEffectiveMode == RtcNoiseSuppressionMode.deepFilterNet,
+      );
       _syncRoomAudioCaptureOptions(room);
       track.currentOptions = previousTrackOptions;
       rethrow;
+    }
+  }
+
+  RtcNoiseSuppressionStatus _noiseSuppressionStatus({
+    RtcNoiseSuppressionMode? requestedMode,
+    String? message,
+  }) => RtcNoiseSuppressionStatus(
+    requestedMode: requestedMode ?? _noiseSuppressionMode,
+    effectiveMode: _effectiveNoiseSuppressionMode,
+    deepFilterNetAvailable: _deepFilterNetAvailable,
+    message: message,
+  );
+
+  Future<RtcNoiseSuppressionStatus> _resolveNoiseSuppressionMode(
+    RtcNoiseSuppressionMode requestedMode,
+  ) async {
+    if (requestedMode != RtcNoiseSuppressionMode.deepFilterNet) {
+      await _setDeepFilterNetEnabled(false);
+      return RtcNoiseSuppressionStatus(
+        requestedMode: requestedMode,
+        effectiveMode: requestedMode,
+        deepFilterNetAvailable: _deepFilterNetAvailable,
+      );
+    }
+
+    final enabled = await _setDeepFilterNetEnabled(true);
+    if (enabled) {
+      return const RtcNoiseSuppressionStatus(
+        requestedMode: RtcNoiseSuppressionMode.deepFilterNet,
+        effectiveMode: RtcNoiseSuppressionMode.deepFilterNet,
+        deepFilterNetAvailable: true,
+      );
+    }
+    return const RtcNoiseSuppressionStatus(
+      requestedMode: RtcNoiseSuppressionMode.deepFilterNet,
+      effectiveMode: RtcNoiseSuppressionMode.webrtc,
+      deepFilterNetAvailable: false,
+      message: 'IA indisponível neste dispositivo. Usando Normal.',
+    );
+  }
+
+  Future<bool> _setDeepFilterNetEnabled(bool enabled) async {
+    try {
+      final available = await rtc
+          .NativeAudioManagement.setDeepFilterNoiseSuppressionEnabled(enabled);
+      _deepFilterNetAvailable = available;
+      return enabled ? available : false;
+    } catch (_) {
+      _deepFilterNetAvailable = false;
+      return false;
     }
   }
 
@@ -1831,7 +1915,7 @@ class LiveKitRtcService implements RtcService {
     required AudioCaptureOptions base,
     String? deviceId,
   }) => _buildMicrophoneCaptureOptions(
-    noiseSuppressionEnabled: _noiseSuppressionEnabled,
+    noiseSuppressionMode: _effectiveNoiseSuppressionMode,
     deviceId: deviceId,
     defaults: base,
   );

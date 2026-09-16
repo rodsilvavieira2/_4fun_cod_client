@@ -21,6 +21,26 @@ typedef RtcTokenGenerator = Future<String> Function();
 /// áudio que acompanha um compartilhamento de tela (transmissão).
 enum RtcAudioSource { microphone, screenShareAudio }
 
+/// Modo de supressão de ruído aplicado ao microfone local.
+///
+/// [deepFilterNet] roda localmente no pipeline nativo de captura. Quando ele
+/// não está disponível, a implementação deve cair para [webrtc].
+enum RtcNoiseSuppressionMode { off, webrtc, deepFilterNet }
+
+class RtcNoiseSuppressionStatus {
+  const RtcNoiseSuppressionStatus({
+    required this.requestedMode,
+    required this.effectiveMode,
+    required this.deepFilterNetAvailable,
+    this.message,
+  });
+
+  final RtcNoiseSuppressionMode requestedMode;
+  final RtcNoiseSuppressionMode effectiveMode;
+  final bool deepFilterNetAvailable;
+  final String? message;
+}
+
 class RtcParticipant {
   const RtcParticipant({
     required this.id,
@@ -451,11 +471,13 @@ abstract class RtcService {
   /// Troca de microfone, reconnect e unmute devem reaplicar este ganho.
   Future<void> setInputVolume(double gain);
 
-  /// Liga/desliga a supressão de ruído nativa do WebRTC no microfone local.
+  /// Define o modo de supressão de ruído do microfone local.
   ///
-  /// Echo cancellation, AGC e high-pass continuam ligados. Sem sala ativa,
-  /// fica pendente para a próxima publicação do microfone.
-  Future<void> setNoiseSuppressionEnabled(bool enabled);
+  /// Echo cancellation, AGC e high-pass continuam ligados em todos os modos.
+  /// Sem sala ativa, fica pendente para a próxima publicação do microfone.
+  Future<RtcNoiseSuppressionStatus> setNoiseSuppressionMode(
+    RtcNoiseSuppressionMode mode,
+  );
 
   /// Define o volume individual de um participante remoto, como ganho
   /// `0.0..2.0`. Aplica-se a TODAS as faixas de áudio dele (voz + áudio de

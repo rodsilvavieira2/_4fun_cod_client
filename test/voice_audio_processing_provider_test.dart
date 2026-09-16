@@ -7,16 +7,33 @@ import 'package:fourfun_cod_client/core/rtc/rtc_service.dart';
 import 'package:fourfun_cod_client/features/voice/voice_audio_processing_provider.dart';
 
 class _FakeRtcService implements RtcService {
-  final List<bool> appliedNoiseSuppression = [];
+  final List<RtcNoiseSuppressionMode> appliedNoiseSuppression = [];
   bool failNextApply = false;
+  bool fallbackDeepFilterNet = false;
 
   @override
-  Future<void> setNoiseSuppressionEnabled(bool enabled) async {
-    appliedNoiseSuppression.add(enabled);
+  Future<RtcNoiseSuppressionStatus> setNoiseSuppressionMode(
+    RtcNoiseSuppressionMode mode,
+  ) async {
+    appliedNoiseSuppression.add(mode);
     if (failNextApply) {
       failNextApply = false;
       throw StateError('processamento indisponível');
     }
+    if (mode == RtcNoiseSuppressionMode.deepFilterNet &&
+        fallbackDeepFilterNet) {
+      return const RtcNoiseSuppressionStatus(
+        requestedMode: RtcNoiseSuppressionMode.deepFilterNet,
+        effectiveMode: RtcNoiseSuppressionMode.webrtc,
+        deepFilterNetAvailable: false,
+        message: 'IA indisponível neste dispositivo. Usando Normal.',
+      );
+    }
+    return RtcNoiseSuppressionStatus(
+      requestedMode: mode,
+      effectiveMode: mode,
+      deepFilterNetAvailable: mode == RtcNoiseSuppressionMode.deepFilterNet,
+    );
   }
 
   @override
@@ -54,10 +71,10 @@ void main() {
         container.read(voiceAudioProcessingProvider).isNoiseSuppressionEnabled,
         isTrue,
       );
-      expect(rtc.appliedNoiseSuppression, [true]);
+      expect(rtc.appliedNoiseSuppression, [RtcNoiseSuppressionMode.webrtc]);
     });
 
-    test('restaura preferência salva e aplica no RTC', () async {
+    test('migra preferência booleana antiga e aplica no RTC', () async {
       final container = makeContainer({
         VoiceAudioProcessingController.noiseSuppressionKey: false,
       });
@@ -74,7 +91,11 @@ void main() {
         container.read(voiceAudioProcessingProvider).isNoiseSuppressionEnabled,
         isFalse,
       );
-      expect(rtc.appliedNoiseSuppression, [false]);
+      expect(
+        container.read(voiceAudioProcessingProvider).requestedMode,
+        RtcNoiseSuppressionMode.off,
+      );
+      expect(rtc.appliedNoiseSuppression, [RtcNoiseSuppressionMode.off]);
     });
 
     test('altera, aplica e persiste a preferência', () async {
@@ -89,7 +110,7 @@ void main() {
 
       final changed = await container
           .read(voiceAudioProcessingProvider.notifier)
-          .setNoiseSuppressionEnabled(false);
+          .setNoiseSuppressionMode(RtcNoiseSuppressionMode.off);
 
       final preferences = await SharedPreferences.getInstance();
       expect(changed, isTrue);
@@ -98,10 +119,38 @@ void main() {
         isFalse,
       );
       expect(
-        preferences.getBool(VoiceAudioProcessingController.noiseSuppressionKey),
-        isFalse,
+        preferences.getString(
+          VoiceAudioProcessingController.noiseSuppressionModeKey,
+        ),
+        RtcNoiseSuppressionMode.off.name,
       );
-      expect(rtc.appliedNoiseSuppression, [true, false]);
+      expect(rtc.appliedNoiseSuppression, [
+        RtcNoiseSuppressionMode.webrtc,
+        RtcNoiseSuppressionMode.off,
+      ]);
+    });
+
+    test('mantém modo IA pedido quando o RTC cai para Normal', () async {
+      final container = makeContainer({});
+      addTearDown(container.dispose);
+      final subscription = container.listen(
+        voiceAudioProcessingProvider,
+        (_, _) {},
+      );
+      addTearDown(subscription.close);
+      await settle();
+
+      rtc.fallbackDeepFilterNet = true;
+      final changed = await container
+          .read(voiceAudioProcessingProvider.notifier)
+          .setNoiseSuppressionMode(RtcNoiseSuppressionMode.deepFilterNet);
+
+      final state = container.read(voiceAudioProcessingProvider);
+      expect(changed, isTrue);
+      expect(state.requestedMode, RtcNoiseSuppressionMode.deepFilterNet);
+      expect(state.effectiveMode, RtcNoiseSuppressionMode.webrtc);
+      expect(state.deepFilterNetAvailable, isFalse);
+      expect(state.errorMessage, contains('IA indisponível'));
     });
 
     test('faz rollback quando o RTC recusa a troca', () async {
@@ -123,7 +172,11 @@ void main() {
       expect(changed, isFalse);
       expect(state.isNoiseSuppressionEnabled, isTrue);
       expect(state.errorMessage, contains('supressão de ruído'));
-      expect(rtc.appliedNoiseSuppression, [true, false, true]);
+      expect(rtc.appliedNoiseSuppression, [
+        RtcNoiseSuppressionMode.webrtc,
+        RtcNoiseSuppressionMode.off,
+        RtcNoiseSuppressionMode.webrtc,
+      ]);
     });
   });
 }

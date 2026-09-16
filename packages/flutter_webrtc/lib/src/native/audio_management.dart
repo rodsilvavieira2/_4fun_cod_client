@@ -246,4 +246,25 @@ class NativeAudioManagement {
       throw 'Unable to set isMicrophoneMuted: ${e.message}';
     }
   }
+
+  /// Enables the process-global DeepFilterNet capture post-processor.
+  ///
+  /// Returns `true` when the native runtime is available and installed. A
+  /// `false` result means callers should fall back to WebRTC noise
+  /// suppression without treating it as a fatal audio failure.
+  static Future<bool> setDeepFilterNoiseSuppressionEnabled(
+    bool enabled,
+  ) async {
+    if (kIsWeb) return false;
+
+    try {
+      final result = await WebRTC.invokeMethod(
+        'setDeepFilterNoiseSuppressionEnabled',
+        <String, dynamic>{'enabled': enabled},
+      );
+      return result == true;
+    } on PlatformException catch (e) {
+      throw 'Unable to set DeepFilterNet noise suppression: ${e.message}';
+    }
+  }
 }

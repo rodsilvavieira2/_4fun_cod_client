@@ -5,6 +5,7 @@
 
 #include "flutter_data_channel.h"
 #include "flutter_data_packet_cryptor.h"
+#include "deep_filter_audio_processor.h"
 #include "flutter_frame_cryptor.h"
 #include "flutter_media_stream.h"
 #include "flutter_peerconnection.h"
@@ -43,8 +44,12 @@ class FlutterWebRTC : public FlutterWebRTCBase,
                         std::unique_ptr<MethodResultProxy> result);
 
  private:
+  bool SetDeepFilterNoiseSuppressionEnabled(bool enabled);
+
   void initLoggerCallback(RTCLoggingSeverity severity);
   RTCLoggingSeverity str2LogSeverity(std::string str);
+
+  std::unique_ptr<DeepFilterAudioProcessor> deep_filter_audio_processor_;
 };
 
 }  // namespace flutter_webrtc_plugin
