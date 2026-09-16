@@ -247,7 +247,8 @@ class NativeAudioManagement {
     }
   }
 
-  /// Enables the process-global DeepFilterNet capture post-processor.
+  /// Enables the process-global Studio capture pipeline (DeepFilterNet +
+  /// own AGC/compressor/limiter, after the WebRTC AEC).
   ///
   /// Returns `true` when the native runtime is available and installed. A
   /// `false` result means callers should fall back to WebRTC noise
@@ -265,6 +266,25 @@ class NativeAudioManagement {
       return result == true;
     } on PlatformException catch (e) {
       throw 'Unable to set DeepFilterNet noise suppression: ${e.message}';
+    }
+  }
+
+  /// Live diagnostic counters for the Studio capture pipeline.
+  ///
+  /// `processedHops` counts 10 ms hops enhanced by the net; `bypassedFrames`
+  /// counts input frames passed through untouched. `processedHops == 0`
+  /// while `active` is true means the APM is not delivering audio to the
+  /// pipeline. `agcGainDb`/`limitedFrames` expose the own-dynamics stages.
+  /// Returns `{'active': false}` when Studio processing is off.
+  static Future<Map<String, dynamic>> getDeepFilterStats() async {
+    if (kIsWeb) return <String, dynamic>{'active': false};
+
+    try {
+      final result = await WebRTC.invokeMethod('getDeepFilterStats');
+      if (result is Map) return Map<String, dynamic>.from(result);
+      return <String, dynamic>{'active': false};
+    } on PlatformException catch (e) {
+      throw 'Unable to get DeepFilterNet stats: ${e.message}';
     }
   }
 }

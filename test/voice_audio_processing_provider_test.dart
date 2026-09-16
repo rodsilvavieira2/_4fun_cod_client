@@ -9,7 +9,7 @@ import 'package:fourfun_cod_client/features/voice/voice_audio_processing_provide
 class _FakeRtcService implements RtcService {
   final List<RtcNoiseSuppressionMode> appliedNoiseSuppression = [];
   bool failNextApply = false;
-  bool fallbackDeepFilterNet = false;
+  bool fallbackStudio = false;
 
   @override
   Future<RtcNoiseSuppressionStatus> setNoiseSuppressionMode(
@@ -20,19 +20,18 @@ class _FakeRtcService implements RtcService {
       failNextApply = false;
       throw StateError('processamento indisponível');
     }
-    if (mode == RtcNoiseSuppressionMode.deepFilterNet &&
-        fallbackDeepFilterNet) {
+    if (mode == RtcNoiseSuppressionMode.studio && fallbackStudio) {
       return const RtcNoiseSuppressionStatus(
-        requestedMode: RtcNoiseSuppressionMode.deepFilterNet,
+        requestedMode: RtcNoiseSuppressionMode.studio,
         effectiveMode: RtcNoiseSuppressionMode.webrtc,
         deepFilterNetAvailable: false,
-        message: 'IA indisponível neste dispositivo. Usando Normal.',
+        message: 'Studio indisponível neste dispositivo. Usando Normal.',
       );
     }
     return RtcNoiseSuppressionStatus(
       requestedMode: mode,
       effectiveMode: mode,
-      deepFilterNetAvailable: mode == RtcNoiseSuppressionMode.deepFilterNet,
+      deepFilterNetAvailable: mode == RtcNoiseSuppressionMode.studio,
     );
   }
 
@@ -130,7 +129,7 @@ void main() {
       ]);
     });
 
-    test('mantém modo IA pedido quando o RTC cai para Normal', () async {
+    test('mantém modo Studio pedido quando o RTC cai para Normal', () async {
       final container = makeContainer({});
       addTearDown(container.dispose);
       final subscription = container.listen(
@@ -140,17 +139,37 @@ void main() {
       addTearDown(subscription.close);
       await settle();
 
-      rtc.fallbackDeepFilterNet = true;
+      rtc.fallbackStudio = true;
       final changed = await container
           .read(voiceAudioProcessingProvider.notifier)
-          .setNoiseSuppressionMode(RtcNoiseSuppressionMode.deepFilterNet);
+          .setNoiseSuppressionMode(RtcNoiseSuppressionMode.studio);
 
       final state = container.read(voiceAudioProcessingProvider);
       expect(changed, isTrue);
-      expect(state.requestedMode, RtcNoiseSuppressionMode.deepFilterNet);
+      expect(state.requestedMode, RtcNoiseSuppressionMode.studio);
       expect(state.effectiveMode, RtcNoiseSuppressionMode.webrtc);
       expect(state.deepFilterNetAvailable, isFalse);
-      expect(state.errorMessage, contains('IA indisponível'));
+      expect(state.errorMessage, contains('Studio indisponível'));
+    });
+
+    test('migra preferência legada deepFilterNet para Studio', () async {
+      final container = makeContainer({
+        VoiceAudioProcessingController.noiseSuppressionModeKey: 'deepFilterNet',
+      });
+      addTearDown(container.dispose);
+      final subscription = container.listen(
+        voiceAudioProcessingProvider,
+        (_, _) {},
+      );
+      addTearDown(subscription.close);
+
+      await settle();
+
+      expect(
+        container.read(voiceAudioProcessingProvider).requestedMode,
+        RtcNoiseSuppressionMode.studio,
+      );
+      expect(rtc.appliedNoiseSuppression, [RtcNoiseSuppressionMode.studio]);
     });
 
     test('faz rollback quando o RTC recusa a troca', () async {

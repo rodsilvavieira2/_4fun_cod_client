@@ -95,7 +95,7 @@ void main() {
       expect(LiveKitRtcService.effectiveVolumeGain(1.0, 1.0), 1.0);
     });
 
-    test('opções do microfone fixam EC/AGC/high-pass e alternam ruído', () {
+    test('opções do microfone fixam EC/high-pass e alternam ruído/AGC', () {
       final enabled = LiveKitRtcService.microphoneCaptureOptionsForTesting(
         noiseSuppressionEnabled: true,
         deviceId: 'mic-usb',
@@ -104,11 +104,10 @@ void main() {
         noiseSuppressionEnabled: false,
         deviceId: 'mic-usb',
       );
-      final deepFilterNet =
-          LiveKitRtcService.microphoneCaptureOptionsForTesting(
-            noiseSuppressionMode: RtcNoiseSuppressionMode.deepFilterNet,
-            deviceId: 'mic-usb',
-          );
+      final studio = LiveKitRtcService.microphoneCaptureOptionsForTesting(
+        noiseSuppressionMode: RtcNoiseSuppressionMode.studio,
+        deviceId: 'mic-usb',
+      );
 
       expect(enabled.deviceId, 'mic-usb');
       expect(enabled.echoCancellation, isTrue);
@@ -126,13 +125,16 @@ void main() {
       expect(disabled.voiceIsolation, isFalse);
       expect(disabled.typingNoiseDetection, isFalse);
 
-      expect(deepFilterNet.deviceId, 'mic-usb');
-      expect(deepFilterNet.echoCancellation, isTrue);
-      expect(deepFilterNet.noiseSuppression, isFalse);
-      expect(deepFilterNet.autoGainControl, isTrue);
-      expect(deepFilterNet.highPassFilter, isTrue);
-      expect(deepFilterNet.voiceIsolation, isFalse);
-      expect(deepFilterNet.typingNoiseDetection, isFalse);
+      // Studio: AEC do WebRTC + pipeline próprio (DPDFNet2 + HPF RBJ 60Hz +
+      // expander/AGC/compressor/limiter nativos) — NS, AGC e HPF do WebRTC
+      // desligados para nenhum estágio rodar em duplicidade (round 10).
+      expect(studio.deviceId, 'mic-usb');
+      expect(studio.echoCancellation, isTrue);
+      expect(studio.noiseSuppression, isFalse);
+      expect(studio.autoGainControl, isFalse);
+      expect(studio.highPassFilter, isFalse);
+      expect(studio.voiceIsolation, isFalse);
+      expect(studio.typingNoiseDetection, isFalse);
     });
 
     test('áudio de sistema não usa processamento de voz', () {

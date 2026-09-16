@@ -87,9 +87,9 @@ class _NoiseSuppressionField extends ConsumerWidget {
     final state = ref.watch(voiceAudioProcessingProvider);
     final controller = ref.read(voiceAudioProcessingProvider.notifier);
     final fallbackMessage =
-        state.requestedMode == RtcNoiseSuppressionMode.deepFilterNet &&
+        state.requestedMode == RtcNoiseSuppressionMode.studio &&
             state.effectiveMode == RtcNoiseSuppressionMode.webrtc
-        ? 'IA indisponível neste dispositivo. Usando Normal.'
+        ? 'Studio indisponível neste dispositivo. Usando Normal.'
         : state.errorMessage;
     return SettingsRow(
       icon: Icons.graphic_eq_outlined,
@@ -119,8 +119,8 @@ class _NoiseSuppressionField extends ConsumerWidget {
                   icon: Icons.graphic_eq_outlined,
                 ),
                 SegmentItem(
-                  value: RtcNoiseSuppressionMode.deepFilterNet,
-                  label: 'IA',
+                  value: RtcNoiseSuppressionMode.studio,
+                  label: 'Studio',
                   icon: Icons.auto_awesome_outlined,
                 ),
               ],

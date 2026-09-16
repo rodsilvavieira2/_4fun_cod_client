@@ -306,7 +306,20 @@ class VoiceController
   /// Entra no canal de voz: obtém token no backend e conecta no LiveKit.
   Future<void> join() async {
     final current = state;
-    if (current.status == VoiceSessionStatus.connecting) return;
+    final log = ref.read(appLoggerProvider);
+    log.d(
+      'voice join solicitado '
+      '(server=${arg.serverId}, channel=${arg.channelId}, status=${current.status.name})',
+      tag: 'voice',
+    );
+    if (current.status == VoiceSessionStatus.connecting) {
+      log.w(
+        'voice join ignorado: já existe conexão em andamento '
+        '(server=${arg.serverId}, channel=${arg.channelId})',
+        tag: 'voice',
+      );
+      return;
+    }
     state = current.copyWith(
       status: VoiceSessionStatus.connecting,
       errorMessage: null,
@@ -325,22 +338,103 @@ class VoiceController
       // enquanto a UI já observa uma instância nova em `idle`.
       final keepAlive = ref.keepAlive();
       final generation = ++_joinGeneration;
+      log.d(
+        'voice join geração iniciada '
+        '(server=${arg.serverId}, channel=${arg.channelId}, generation=$generation)',
+        tag: 'voice',
+      );
       try {
+        log.d('voice join etapa: inicializando controles', tag: 'voice');
         await ref.read(voiceControlsProvider.notifier).ensureInitialized();
-        if (_disposed || generation != _joinGeneration) return;
+        if (_disposed || generation != _joinGeneration) {
+          log.w(
+            'voice join cancelado após controles '
+            '(disposed=$_disposed, generation=$generation, current=$_joinGeneration)',
+            tag: 'voice',
+          );
+          return;
+        }
+        log.d(
+          'voice join etapa: inicializando processamento de áudio',
+          tag: 'voice',
+        );
         await ref
             .read(voiceAudioProcessingProvider.notifier)
             .ensureInitialized();
-        if (_disposed || generation != _joinGeneration) return;
+        if (_disposed || generation != _joinGeneration) {
+          log.w(
+            'voice join cancelado após processamento de áudio '
+            '(disposed=$_disposed, generation=$generation, current=$_joinGeneration)',
+            tag: 'voice',
+          );
+          return;
+        }
+        final audioProcessing = ref.read(voiceAudioProcessingProvider);
+        log.d(
+          'voice join processamento de áudio pronto '
+          '(requested=${audioProcessing.requestedMode.name}, '
+          'effective=${audioProcessing.effectiveMode.name}, '
+          'deepFilterAvailable=${audioProcessing.deepFilterNetAvailable}, '
+          'message=${audioProcessing.errorMessage ?? '-'})',
+          tag: 'voice',
+        );
+        log.d(
+          'voice join etapa: inicializando dispositivos de mídia',
+          tag: 'voice',
+        );
         await ref.read(audioDevicesProvider.notifier).ensureInitialized();
-        if (_disposed || generation != _joinGeneration) return;
+        if (_disposed || generation != _joinGeneration) {
+          log.w(
+            'voice join cancelado após dispositivos '
+            '(disposed=$_disposed, generation=$generation, current=$_joinGeneration)',
+            tag: 'voice',
+          );
+          return;
+        }
+        final devices = ref.read(audioDevicesProvider);
+        log.d(
+          'voice join dispositivos prontos '
+          '(inputs=${devices.inputs.length}, outputs=${devices.outputs.length}, '
+          'cameras=${devices.cameras.length}, preferredInput=${devices.preferredInputId ?? '-'}, '
+          'preferredOutput=${devices.preferredOutputId ?? '-'}, error=${devices.errorMessage ?? '-'})',
+          tag: 'voice',
+        );
+        log.d(
+          'voice join etapa: solicitando token LiveKit ao backend '
+          '(server=${arg.serverId}, channel=${arg.channelId})',
+          tag: 'voice',
+        );
         final info = await _freshJoinInfo();
-        if (_disposed || generation != _joinGeneration) return;
+        log.d(
+          'voice join token recebido '
+          '(server=${arg.serverId}, channel=${arg.channelId}, url=${info.livekitUrl})',
+          tag: 'voice',
+        );
+        if (_disposed || generation != _joinGeneration) {
+          log.w(
+            'voice join cancelado após token '
+            '(disposed=$_disposed, generation=$generation, current=$_joinGeneration)',
+            tag: 'voice',
+          );
+          return;
+        }
         await _connect(info, generation);
       } finally {
+        log.d(
+          'voice join keepAlive liberado '
+          '(server=${arg.serverId}, channel=${arg.channelId}, generation=$generation)',
+          tag: 'voice',
+        );
         keepAlive.close();
       }
-    } catch (_) {
+    } catch (error, stackTrace) {
+      log.e(
+        'voice join falhou antes/conectando '
+        '(server=${arg.serverId}, channel=${arg.channelId})',
+        error: error,
+        stackTrace: stackTrace,
+        tag: 'voice',
+      );
       if (_disposed) return;
       state = state.copyWith(
         status: VoiceSessionStatus.error,
@@ -354,6 +448,13 @@ class VoiceController
     // Cancela um join em voo: sem isso, o connect tardio criaria uma sala
     // órfã depois de o usuário já ter saído.
     ++_joinGeneration;
+    ref
+        .read(appLoggerProvider)
+        .d(
+          'voice leave solicitado '
+          '(server=${arg.serverId}, channel=${arg.channelId}, generation=$_joinGeneration)',
+          tag: 'voice',
+        );
     await ref.read(rtcServiceProvider).disconnect();
     await ref.read(voiceControlsProvider.notifier).resetPushToTalkPress();
     if (_disposed) return;
@@ -895,6 +996,12 @@ class VoiceController
       status: VoiceSessionStatus.connected,
       isMicrophoneEnabled: controls.isMicrophoneEnabled,
       isDeafened: controls.isDeafened,
+    );
+    log.d(
+      'voice connect concluído '
+      '(server=${arg.serverId}, channel=${arg.channelId}, '
+      'mic=${controls.isMicrophoneEnabled}, deafened=${controls.isDeafened})',
+      tag: 'voice',
     );
   }
 

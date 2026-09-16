@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/api/api_exception.dart';
+import '../../core/logging/app_logger.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/ui/invite_dialog.dart';
 import '../../core/ui/settings_modal.dart';
@@ -117,17 +118,50 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
     List<ServerChannel> channels,
   ) async {
     final channel = channels.where((c) => c.id == channelId).firstOrNull;
-    if (channel == null) return;
+    final log = ref.read(appLoggerProvider);
+    log.d(
+      'voice ui: canal selecionado '
+      '(server=${widget.serverId}, channel=$channelId, '
+      'type=${channel?.type.name ?? 'missing'}, selected=$_selectedChannelId, '
+      'activeVoice=$_activeVoiceChannelId)',
+      tag: 'voice',
+    );
+    if (channel == null) {
+      log.w(
+        'voice ui: canal selecionado não existe no snapshot '
+        '(server=${widget.serverId}, channel=$channelId)',
+        tag: 'voice',
+      );
+      return;
+    }
     _didSelectInitialChannel = true;
     if (_selectedChannelId == channelId) {
       if (channel.type == ChannelType.voice) {
         if (_activeVoiceChannelId != channelId) {
+          log.d(
+            'voice ui: canal já selecionado, ativando voz e agendando join '
+            '(channel=$channelId)',
+            tag: 'voice',
+          );
           setState(() => _activeVoiceChannelId = channelId);
           // Pós-frame: o `watch` do provider só existe após o rebuild. Sem
           // isso, o join rodaria numa instância sem listeners que o
           // autoDispose descartaria (sala órfã — ver VoiceController.join).
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!mounted || _activeVoiceChannelId != channelId) return;
+            if (!mounted || _activeVoiceChannelId != channelId) {
+              log.w(
+                'voice ui: join pós-frame cancelado '
+                '(mounted=$mounted, activeVoice=$_activeVoiceChannelId, '
+                'channel=$channelId)',
+                tag: 'voice',
+              );
+              return;
+            }
+            log.d(
+              'voice ui: disparando join pós-frame '
+              '(server=${widget.serverId}, channel=$channelId)',
+              tag: 'voice',
+            );
             unawaited(
               ref
                   .read(
@@ -153,8 +187,18 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
             channelId: channelId,
           )),
         );
+        log.d(
+          'voice ui: voz já ativa selecionada novamente '
+          '(channel=$channelId, status=${state.status.name})',
+          tag: 'voice',
+        );
         if (state.status == VoiceSessionStatus.idle ||
             state.status == VoiceSessionStatus.error) {
+          log.d(
+            'voice ui: disparando join direto '
+            '(server=${widget.serverId}, channel=$channelId)',
+            tag: 'voice',
+          );
           await controller.join();
         }
       }
@@ -187,6 +231,12 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
     // segue vivo (watch em `build`) — voltar ao texto é instantâneo, sem
     // refetch, com os eventos aplicados em segundo plano. Só a seleção
     // visível muda; a voz troca com leave-then-join abaixo.
+    log.d(
+      'voice ui: canal de voz selecionado '
+      '(server=${widget.serverId}, channel=$channelId, '
+      'previousVoice=$_activeVoiceChannelId)',
+      tag: 'voice',
+    );
     setState(() => _selectedChannelId = channelId);
 
     final previousVoiceChannelId = _activeVoiceChannelId;
@@ -196,11 +246,29 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
     if (previousVoiceChannelId == channelId) {
       setState(() => _activeVoiceChannelId = channelId);
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted || _activeVoiceChannelId != channelId) return;
+        if (!mounted || _activeVoiceChannelId != channelId) {
+          log.w(
+            'voice ui: rejoin pós-frame cancelado '
+            '(mounted=$mounted, activeVoice=$_activeVoiceChannelId, '
+            'channel=$channelId)',
+            tag: 'voice',
+          );
+          return;
+        }
         final arg = (serverId: widget.serverId, channelId: channelId);
         final status = ref.read(voiceControllerProvider(arg)).status;
+        log.d(
+          'voice ui: mesma voz pós-frame '
+          '(channel=$channelId, status=${status.name})',
+          tag: 'voice',
+        );
         if (status == VoiceSessionStatus.idle ||
             status == VoiceSessionStatus.error) {
+          log.d(
+            'voice ui: disparando rejoin '
+            '(server=${widget.serverId}, channel=$channelId)',
+            tag: 'voice',
+          );
           unawaited(ref.read(voiceControllerProvider(arg).notifier).join());
         }
       });
@@ -209,6 +277,11 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
 
     final epoch = ++_voiceSwitchEpoch;
     if (previousVoiceChannelId != null) {
+      log.d(
+        'voice ui: saindo da voz anterior antes de trocar '
+        '(previous=$previousVoiceChannelId, next=$channelId, epoch=$epoch)',
+        tag: 'voice',
+      );
       await ref
           .read(
             voiceControllerProvider((
@@ -218,14 +291,42 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
           )
           .leave();
     }
-    if (!mounted || epoch != _voiceSwitchEpoch) return;
+    if (!mounted || epoch != _voiceSwitchEpoch) {
+      log.w(
+        'voice ui: troca de voz cancelada antes do join '
+        '(mounted=$mounted, epoch=$epoch, currentEpoch=$_voiceSwitchEpoch, '
+        'channel=$channelId)',
+        tag: 'voice',
+      );
+      return;
+    }
     setState(() => _activeVoiceChannelId = channelId);
     // Pós-frame: o `watch` do provider só existe após o rebuild. Iniciar o
     // join aqui (só com `read`) deixaria o autoDispose sem listeners e a
     // instância seria descartada no frame seguinte, órfã da sala LiveKit.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || epoch != _voiceSwitchEpoch) return;
-      if (_activeVoiceChannelId != channelId) return;
+      if (!mounted || epoch != _voiceSwitchEpoch) {
+        log.w(
+          'voice ui: join pós-frame da troca cancelado '
+          '(mounted=$mounted, epoch=$epoch, currentEpoch=$_voiceSwitchEpoch, '
+          'channel=$channelId)',
+          tag: 'voice',
+        );
+        return;
+      }
+      if (_activeVoiceChannelId != channelId) {
+        log.w(
+          'voice ui: join pós-frame ignorado; voz ativa divergente '
+          '(activeVoice=$_activeVoiceChannelId, channel=$channelId)',
+          tag: 'voice',
+        );
+        return;
+      }
+      log.d(
+        'voice ui: disparando join pós-frame após troca '
+        '(server=${widget.serverId}, channel=$channelId, epoch=$epoch)',
+        tag: 'voice',
+      );
       unawaited(
         ref
             .read(
@@ -243,6 +344,13 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
     final channelId = _activeVoiceChannelId;
     if (channelId == null) return;
     ++_voiceSwitchEpoch;
+    ref
+        .read(appLoggerProvider)
+        .d(
+          'voice ui: leave ativo solicitado '
+          '(server=${widget.serverId}, channel=$channelId, epoch=$_voiceSwitchEpoch)',
+          tag: 'voice',
+        );
     unawaited(
       ref
           .read(

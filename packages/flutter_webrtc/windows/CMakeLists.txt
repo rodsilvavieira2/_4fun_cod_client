@@ -56,6 +56,14 @@ add_custom_command(
   COMMAND "${CARGO_EXECUTABLE}" build --manifest-path
           "${DEEPFILTER_BRIDGE_DIR}/Cargo.toml" --release
   WORKING_DIRECTORY "${DEEPFILTER_BRIDGE_DIR}"
+  # The .lib lives in the source tree (cargo target dir), so it survives
+  # `flutter clean` while the C++ objects don't. Without DEPENDS, CMake
+  # considers the existing .lib up to date and silently links a STALE Rust
+  # bridge next to fresh C++ objects. Depending on the bridge sources
+  # forces cargo to re-run (a no-op when fresh) on every Flutter build.
+  DEPENDS "${DEEPFILTER_BRIDGE_DIR}/Cargo.toml"
+          "${DEEPFILTER_BRIDGE_DIR}/Cargo.lock"
+          "${DEEPFILTER_BRIDGE_DIR}/src/lib.rs"
   COMMENT "Building fourfun DeepFilterNet bridge"
 )
 add_custom_target(fourfun_deepfilter_bridge_build

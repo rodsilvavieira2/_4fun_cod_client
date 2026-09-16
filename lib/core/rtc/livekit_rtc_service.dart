@@ -135,12 +135,22 @@ class LiveKitRtcService implements RtcService {
   }) {
     final useWebRtcSuppression =
         noiseSuppressionMode == RtcNoiseSuppressionMode.webrtc;
+    // Studio roda o pipeline próprio (DeepFilterNet + AGC/compressor/limiter
+    // nativos, após o AEC): desliga o NS e o AGC do WebRTC para nenhum
+    // estágio rodar em duplicidade. O AEC continua no WebRTC em todos os
+    // modos. Diagnóstico do silêncio (2026-09-16): a hipótese de gate do DF
+    // por falta de AGC caiu — inputPeak 30917 provou captura saudável em
+    // escala S16 e o clamp ±1 do pipeline zerava tudo. Com o AutoScale
+    // nativo normalizando a escala, o AGC próprio assume sozinho.
+    final useWebRtcAgc = noiseSuppressionMode != RtcNoiseSuppressionMode.studio;
     return AudioCaptureOptions(
       deviceId: deviceId,
       echoCancellation: true,
       noiseSuppression: useWebRtcSuppression,
-      autoGainControl: true,
-      highPassFilter: true,
+      autoGainControl: useWebRtcAgc,
+      // Studio usa o HPF RBJ 60 Hz próprio (pré-rede): desliga o HPF do
+      // WebRTC no modo studio para não filtrar duas vezes (round 10).
+      highPassFilter: noiseSuppressionMode != RtcNoiseSuppressionMode.studio,
       echoCancellationMode: defaults.echoCancellationMode,
       noiseSuppressionMode: defaults.noiseSuppressionMode,
       autoGainControlMode: defaults.autoGainControlMode,
@@ -210,6 +220,7 @@ class LiveKitRtcService implements RtcService {
   RtcNoiseSuppressionMode _effectiveNoiseSuppressionMode =
       RtcNoiseSuppressionMode.webrtc;
   bool _deepFilterNetAvailable = false;
+  bool _deepFilterNetInstalled = false;
 
   /// Volume de voz (fatia volumes): entrada `0.0..1.0`, demais `0.0..2.0`.
   /// Pendentes sem sala — aplicados em publicação/subscribe/reconexão/device.
@@ -313,6 +324,13 @@ class LiveKitRtcService implements RtcService {
     String token, {
     RtcTokenGenerator? tokenGenerator,
   }) async {
+    _rtcDebug(
+      'rtc connect solicitado '
+      '(url=$url, mic=$_microphoneEnabled, input=${_selectedAudioInputId ?? '-'}, '
+      'noiseRequested=${_noiseSuppressionMode.name}, '
+      'noiseEffective=${_effectiveNoiseSuppressionMode.name}, '
+      'deepFilterAvailable=$_deepFilterNetAvailable)',
+    );
     // Sempre parte de um estado limpo (idempotente com um connect anterior).
     // O await garante que o disconnect/dispose nativos do Room ANTERIOR
     // terminaram antes de criar o novo (sem dois Room/PeerConnection vivos).
@@ -320,13 +338,17 @@ class LiveKitRtcService implements RtcService {
     _tokenGenerator = tokenGenerator;
     _livekitUrl = url; // preservada para o loop de reconexão automática
 
-    final room = Room(roomOptions: _effectiveRoomOptions());
+    final effectiveOptions = _effectiveRoomOptions();
+    final room = Room(roomOptions: effectiveOptions);
     _room = room;
     _wire(room);
 
     try {
+      _rtcDebug('rtc room.connect iniciando (url=$url)');
       await room.connect(url, token);
-    } catch (_) {
+      _rtcDebug('rtc room.connect concluído (url=$url)');
+    } catch (error, stackTrace) {
+      _rtcError('rtc room.connect falhou (url=$url)', error, stackTrace);
       await _cleanupRoom();
       rethrow; // o controller trata o erro (token inválido, servidor fora etc.)
     }
@@ -341,12 +363,19 @@ class LiveKitRtcService implements RtcService {
       return;
     }
     try {
+      final captureOptions = _currentMicrophoneCaptureOptions(room);
+      _rtcDebug(
+        'rtc mic publish iniciando '
+        '(enabled=$_microphoneEnabled, options=${_describeAudioCaptureOptions(captureOptions)})',
+      );
       await localParticipant.setMicrophoneEnabled(
         _microphoneEnabled,
-        audioCaptureOptions: _currentMicrophoneCaptureOptions(room),
+        audioCaptureOptions: captureOptions,
       );
       await _applyInputVolumeToMicrophone();
-    } catch (_) {
+      _rtcDebug('rtc mic publish concluído (enabled=$_microphoneEnabled)');
+    } catch (error, stackTrace) {
+      _rtcError('rtc mic publish falhou', error, stackTrace);
       // Falha ao publicar o mic: NUNCA deixa o Room órfão — limpa e propaga.
       await _cleanupRoom();
       rethrow;
@@ -361,7 +390,10 @@ class LiveKitRtcService implements RtcService {
   }
 
   @override
-  Future<void> disconnect() => _cleanupRoom();
+  Future<void> disconnect() {
+    _rtcDebug('rtc disconnect solicitado');
+    return _cleanupRoom();
+  }
 
   @override
   Future<void> resumeAudio() async {
@@ -380,16 +412,26 @@ class LiveKitRtcService implements RtcService {
     final room = _room;
     if (room == null || _disposed) {
       if (!_disposed) _microphoneEnabled = true;
+      _rtcDebug(
+        'rtc enableMicrophone pendente '
+        '(room=${room != null}, disposed=$_disposed)',
+      );
       return;
     }
     final localParticipant = room.localParticipant;
     if (localParticipant == null) {
       _microphoneEnabled = true;
+      _rtcWarn('rtc enableMicrophone sem participante local');
       return;
     }
+    final options = _currentMicrophoneCaptureOptions(room);
+    _rtcDebug(
+      'rtc enableMicrophone aplicando '
+      '(options=${_describeAudioCaptureOptions(options)})',
+    );
     await localParticipant.setMicrophoneEnabled(
       true,
-      audioCaptureOptions: _currentMicrophoneCaptureOptions(room),
+      audioCaptureOptions: options,
     );
     _microphoneEnabled = true;
     await _applyInputVolumeToMicrophone();
@@ -402,13 +444,19 @@ class LiveKitRtcService implements RtcService {
     final room = _room;
     if (room == null || _disposed) {
       if (!_disposed) _microphoneEnabled = false;
+      _rtcDebug(
+        'rtc disableMicrophone pendente '
+        '(room=${room != null}, disposed=$_disposed)',
+      );
       return;
     }
     final localParticipant = room.localParticipant;
     if (localParticipant == null) {
       _microphoneEnabled = false;
+      _rtcWarn('rtc disableMicrophone sem participante local');
       return;
     }
+    _rtcDebug('rtc disableMicrophone aplicando');
     await localParticipant.setMicrophoneEnabled(false);
     _microphoneEnabled = false;
   }
@@ -1037,6 +1085,11 @@ class LiveKitRtcService implements RtcService {
   Future<RtcNoiseSuppressionStatus> setNoiseSuppressionMode(
     RtcNoiseSuppressionMode mode,
   ) async {
+    _rtcDebug(
+      'rtc noise mode solicitado '
+      '(requested=${mode.name}, currentRequested=${_noiseSuppressionMode.name}, '
+      'currentEffective=${_effectiveNoiseSuppressionMode.name})',
+    );
     if (_disposed) {
       return _noiseSuppressionStatus(requestedMode: mode);
     }
@@ -1046,12 +1099,20 @@ class LiveKitRtcService implements RtcService {
     final previousDeepFilterNetAvailable = _deepFilterNetAvailable;
 
     final status = await _resolveNoiseSuppressionMode(mode);
+    _rtcDebug(
+      'rtc noise mode resolvido '
+      '(requested=${status.requestedMode.name}, effective=${status.effectiveMode.name}, '
+      'deepFilterAvailable=${status.deepFilterNetAvailable}, message=${status.message ?? '-'})',
+    );
     _noiseSuppressionMode = status.requestedMode;
     _effectiveNoiseSuppressionMode = status.effectiveMode;
     _deepFilterNetAvailable = status.deepFilterNetAvailable;
 
     final room = _room;
-    if (room == null) return status;
+    if (room == null) {
+      _rtcDebug('rtc noise mode aplicado como pendente (sem sala ativa)');
+      return status;
+    }
 
     final localParticipant = room.localParticipant;
     final publication = localParticipant?.getTrackPublicationBySource(
@@ -1060,7 +1121,10 @@ class LiveKitRtcService implements RtcService {
     final track = publication?.track;
     final nextRoomOptions = _syncRoomAudioCaptureOptions(room);
 
-    if (track is! LocalAudioTrack) return status;
+    if (track is! LocalAudioTrack) {
+      _rtcWarn('rtc noise mode sem LocalAudioTrack para reiniciar');
+      return status;
+    }
 
     final previousTrackOptions = track.currentOptions;
     final nextTrackOptions = _microphoneCaptureOptions(
@@ -1070,18 +1134,25 @@ class LiveKitRtcService implements RtcService {
 
     try {
       if (publication?.muted ?? track.muted) {
+        _rtcDebug('rtc noise mode aplicado em track mutada (sem restart)');
         track.currentOptions = nextTrackOptions;
         return status;
       }
+      _rtcDebug(
+        'rtc noise mode reiniciando track '
+        '(options=${_describeAudioCaptureOptions(nextTrackOptions)})',
+      );
       await track.restartTrack(nextTrackOptions);
       await _applyInputVolumeToMicrophone();
+      _rtcDebug('rtc noise mode restart concluído');
       return status;
-    } catch (_) {
+    } catch (error, stackTrace) {
+      _rtcError('rtc noise mode falhou; revertendo', error, stackTrace);
       _noiseSuppressionMode = previousRequestedMode;
       _effectiveNoiseSuppressionMode = previousEffectiveMode;
       _deepFilterNetAvailable = previousDeepFilterNetAvailable;
       await _setDeepFilterNetEnabled(
-        previousEffectiveMode == RtcNoiseSuppressionMode.deepFilterNet,
+        previousEffectiveMode == RtcNoiseSuppressionMode.studio,
       );
       _syncRoomAudioCaptureOptions(room);
       track.currentOptions = previousTrackOptions;
@@ -1102,7 +1173,7 @@ class LiveKitRtcService implements RtcService {
   Future<RtcNoiseSuppressionStatus> _resolveNoiseSuppressionMode(
     RtcNoiseSuppressionMode requestedMode,
   ) async {
-    if (requestedMode != RtcNoiseSuppressionMode.deepFilterNet) {
+    if (requestedMode != RtcNoiseSuppressionMode.studio) {
       await _setDeepFilterNetEnabled(false);
       return RtcNoiseSuppressionStatus(
         requestedMode: requestedMode,
@@ -1114,29 +1185,77 @@ class LiveKitRtcService implements RtcService {
     final enabled = await _setDeepFilterNetEnabled(true);
     if (enabled) {
       return const RtcNoiseSuppressionStatus(
-        requestedMode: RtcNoiseSuppressionMode.deepFilterNet,
-        effectiveMode: RtcNoiseSuppressionMode.deepFilterNet,
+        requestedMode: RtcNoiseSuppressionMode.studio,
+        effectiveMode: RtcNoiseSuppressionMode.studio,
         deepFilterNetAvailable: true,
       );
     }
     return const RtcNoiseSuppressionStatus(
-      requestedMode: RtcNoiseSuppressionMode.deepFilterNet,
+      requestedMode: RtcNoiseSuppressionMode.studio,
       effectiveMode: RtcNoiseSuppressionMode.webrtc,
       deepFilterNetAvailable: false,
-      message: 'IA indisponível neste dispositivo. Usando Normal.',
+      message: 'Studio indisponível neste dispositivo. Usando Normal.',
     );
   }
 
   Future<bool> _setDeepFilterNetEnabled(bool enabled) async {
+    if (!enabled && !_deepFilterNetInstalled) {
+      _deepFilterNetAvailable = false;
+      _rtcDebug('rtc deepFilter desativação ignorada (não instalado)');
+      return false;
+    }
     try {
+      _rtcDebug('rtc deepFilter ${enabled ? 'ativando' : 'desativando'}');
       final available = await rtc
           .NativeAudioManagement.setDeepFilterNoiseSuppressionEnabled(enabled);
       _deepFilterNetAvailable = available;
+      _deepFilterNetInstalled = enabled && available;
+      _rtcDebug(
+        'rtc deepFilter retorno '
+        '(requested=$enabled, available=$available, installed=$_deepFilterNetInstalled)',
+      );
+      if (enabled && available) _scheduleDeepFilterStatsSample();
       return enabled ? available : false;
-    } catch (_) {
+    } catch (error, stackTrace) {
+      _rtcError(
+        'rtc deepFilter ${enabled ? 'ativar' : 'desativar'} falhou',
+        error,
+        stackTrace,
+      );
       _deepFilterNetAvailable = false;
+      _deepFilterNetInstalled = false;
       return false;
     }
+  }
+
+  /// Amostra os contadores nativos ~5 s após ativar o Studio e registra no
+  /// log. É a prova, no app rodando, de que o APM está (ou não) entregando
+  /// áudio à rede: `processedHops == 0` com `active == true` = bypass
+  /// silencioso.
+  void _scheduleDeepFilterStatsSample() {
+    Future.delayed(const Duration(seconds: 5), () async {
+      if (_disposed) return;
+      if (_effectiveNoiseSuppressionMode != RtcNoiseSuppressionMode.studio) {
+        return;
+      }
+      try {
+        final stats = await rtc.NativeAudioManagement.getDeepFilterStats();
+        _rtcDebug('rtc deepFilter stats $stats');
+        final active = stats['active'] == true;
+        final processedHops = (stats['processedHops'] as num?)?.toInt() ?? 0;
+        if (active && processedHops == 0) {
+          _rtcError(
+            'rtc deepFilter BYPASS: Studio ativo mas nenhum hop processado '
+            '(bypassedFrames=${stats['bypassedFrames']}, '
+            'lastRateHz=${stats['lastRateHz']})',
+            StateError('deepfilter-bypass'),
+            StackTrace.current,
+          );
+        }
+      } catch (error, stackTrace) {
+        _rtcError('rtc deepFilter stats falhou', error, stackTrace);
+      }
+    });
   }
 
   @override
@@ -1409,6 +1528,43 @@ class LiveKitRtcService implements RtcService {
     } else {
       debugPrint('[rtc] $message');
     }
+  }
+
+  void _rtcDebug(String message) {
+    final logger = _logger;
+    if (logger != null) {
+      logger.d(message, tag: 'voice');
+    } else {
+      debugPrint('[rtc] $message');
+    }
+  }
+
+  void _rtcWarn(String message) {
+    final logger = _logger;
+    if (logger != null) {
+      logger.w(message, tag: 'voice');
+    } else {
+      debugPrint('[rtc] WARNING $message');
+    }
+  }
+
+  void _rtcError(String message, Object error, StackTrace stackTrace) {
+    final logger = _logger;
+    if (logger != null) {
+      logger.e(message, error: error, stackTrace: stackTrace, tag: 'voice');
+    } else {
+      debugPrint('[rtc] ERROR $message: $error');
+    }
+  }
+
+  static String _describeAudioCaptureOptions(AudioCaptureOptions options) {
+    return 'device=${options.deviceId ?? '-'}, '
+        'aec=${options.echoCancellation}, '
+        'ns=${options.noiseSuppression}, '
+        'agc=${options.autoGainControl}, '
+        'hp=${options.highPassFilter}, '
+        'voiceIsolation=${options.voiceIsolation}, '
+        'typing=${options.typingNoiseDetection}';
   }
 
   /// Atualiza a efetiva e notifica a UI (sem duplicar o evento).
@@ -1901,6 +2057,10 @@ class LiveKitRtcService implements RtcService {
   /// Idempotente (chamado pelo próprio disconnect e pelo
   /// [RoomDisconnectedEvent] sem reconexão).
   Future<void> _cleanupRoom() async {
+    _rtcDebug(
+      'rtc cleanup iniciado '
+      '(hasRoom=${_room != null}, url=${_livekitUrl ?? '-'})',
+    );
     _tokenGenerator = null;
     _livekitUrl = null;
     _screenShareQuality = RtcScreenShareQuality.auto;
@@ -1909,6 +2069,7 @@ class LiveKitRtcService implements RtcService {
     _bumpScreenShareEpoch();
     _screenShareEncodingBaseline = null;
     await _teardownRoom();
+    _rtcDebug('rtc cleanup concluído');
   }
 
   AudioCaptureOptions _microphoneCaptureOptions({

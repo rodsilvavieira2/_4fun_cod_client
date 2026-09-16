@@ -93,7 +93,7 @@ class _FakeRtcService implements RtcService {
     return RtcNoiseSuppressionStatus(
       requestedMode: mode,
       effectiveMode: mode,
-      deepFilterNetAvailable: mode == RtcNoiseSuppressionMode.deepFilterNet,
+      deepFilterNetAvailable: mode == RtcNoiseSuppressionMode.studio,
     );
   }
 
@@ -270,7 +270,7 @@ void main() {
     expect(find.text('Supressão de ruído'), findsOneWidget);
     expect(find.text('Desativada'), findsOneWidget);
     expect(find.text('Normal'), findsOneWidget);
-    expect(find.text('IA'), findsOneWidget);
+    expect(find.text('Studio'), findsOneWidget);
     expect(
       container.read(voiceAudioProcessingProvider).requestedMode,
       RtcNoiseSuppressionMode.off,

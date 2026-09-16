@@ -21,11 +21,13 @@ typedef RtcTokenGenerator = Future<String> Function();
 /// áudio que acompanha um compartilhamento de tela (transmissão).
 enum RtcAudioSource { microphone, screenShareAudio }
 
-/// Modo de supressão de ruído aplicado ao microfone local.
+/// Modo de processamento do microfone local (pipeline Studio).
 ///
-/// [deepFilterNet] roda localmente no pipeline nativo de captura. Quando ele
-/// não está disponível, a implementação deve cair para [webrtc].
-enum RtcNoiseSuppressionMode { off, webrtc, deepFilterNet }
+/// [studio] roda localmente no pipeline nativo de captura: AEC do WebRTC +
+/// DeepFilterNet + AGC/compressor/limiter próprios, antes da codificação
+/// Opus. Quando o runtime do Studio não está disponível, a implementação
+/// cai para [webrtc].
+enum RtcNoiseSuppressionMode { off, webrtc, studio }
 
 class RtcNoiseSuppressionStatus {
   const RtcNoiseSuppressionStatus({

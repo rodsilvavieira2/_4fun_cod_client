@@ -1,0 +1,21 @@
+# venv canonico: ~/.venvs/studio_venv311 (python3.11). NAO usar /tmp — o
+# sistema limpa /tmp e evaporou venv+modelos em 2026-09-16. Recriar com:
+#   /home/rodrigo/.local/bin/python3.11 -m venv ~/.venvs/studio_venv311
+#   ~/.venvs/studio_venv311/bin/pip install -r requirements-w0.txt
+joblib==1.6.0
+librosa==0.11.0
+matplotlib==3.11.2
+numba==0.67.0
+numpy==2.4.6
+onnxruntime==1.30.0
+pandas==3.0.5
+pesq==0.0.4
+pystoi==0.4.1
+pywebrtc-audio==0.2.0
+PyYAML==6.0.3
+requests==2.34.2
+scipy==1.17.1
+soundfile==0.14.0
+sympy==1.14.0
+torch==2.14.0+cpu
+tqdm==4.70.1

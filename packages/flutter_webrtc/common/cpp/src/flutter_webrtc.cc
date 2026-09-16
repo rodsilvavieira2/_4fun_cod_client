@@ -22,23 +22,25 @@ FlutterWebRTC::FlutterWebRTC(FlutterWebRTCPlugin* plugin)
 
 FlutterWebRTC::~FlutterWebRTC() {}
 
-bool FlutterWebRTC::SetDeepFilterNoiseSuppressionEnabled(bool enabled) {
+bool FlutterWebRTC::SetStudioPipelineEnabled(bool enabled) {
   if (!audio_processing()) return false;
   if (!enabled) {
-    audio_processing()->SetCapturePostProcessing(nullptr);
-    deep_filter_audio_processor_.reset();
+    if (studio_pipeline_) {
+      audio_processing()->SetCapturePostProcessing(ensure_passthrough());
+      studio_pipeline_.reset();
+    }
     return false;
   }
 
-  auto processor = std::make_unique<DeepFilterAudioProcessor>();
+  auto processor = std::make_unique<AudioEnhancementPipeline>();
   if (!processor->runtime_available()) {
-    audio_processing()->SetCapturePostProcessing(nullptr);
-    deep_filter_audio_processor_.reset();
+    audio_processing()->SetCapturePostProcessing(ensure_passthrough());
+    studio_pipeline_.reset();
     return false;
   }
   auto* raw_processor = processor.get();
   audio_processing()->SetCapturePostProcessing(raw_processor);
-  deep_filter_audio_processor_ = std::move(processor);
+  studio_pipeline_ = std::move(processor);
   return true;
 }
 
@@ -155,8 +157,42 @@ void FlutterWebRTC::HandleMethodCall(
             ? EncodableMap()
             : GetValue<EncodableMap>(*method_call.arguments());
     const bool enabled = findBoolean(params, "enabled");
-    const bool available = SetDeepFilterNoiseSuppressionEnabled(enabled);
+    const bool available = SetStudioPipelineEnabled(enabled);
     result->Success(EncodableValue(available));
+  } else if (method_call.method_name().compare("getDeepFilterStats") == 0) {
+    // Live diagnostic counters for the Studio capture path. The audio
+    // thread updates them under lock; this runs on the method-channel
+    // thread. processed_hops == 0 with active == true means the APM is
+    // NOT delivering audio to the pipeline (bypass) — the "Studio on" but
+    // silent failure mode this endpoint exists to catch. agcGainDb and
+    // limitedFrames expose the own-dynamics stages (method-channel name
+    // kept for protocol stability with the Dart side).
+    EncodableMap map;
+    const bool active = studio_pipeline_ != nullptr;
+    map[EncodableValue("active")] = EncodableValue(active);
+    if (active) {
+      const AudioPipelineStats stats = studio_pipeline_->stats();
+      map[EncodableValue("processedHops")] =
+          EncodableValue(static_cast<int64_t>(stats.processed_hops));
+      map[EncodableValue("bypassedFrames")] =
+          EncodableValue(static_cast<int64_t>(stats.bypassed_frames));
+      map[EncodableValue("underruns")] =
+          EncodableValue(static_cast<int64_t>(stats.underruns));
+      map[EncodableValue("lastRateHz")] = EncodableValue(stats.last_rate_hz);
+      map[EncodableValue("failed")] = EncodableValue(
+          studio_pipeline_->failed());
+      map[EncodableValue("lastError")] =
+          EncodableValue(studio_pipeline_->last_error());
+      map[EncodableValue("agcGainDb")] =
+          EncodableValue(static_cast<double>(stats.agc_gain_db));
+      map[EncodableValue("limitedFrames")] =
+          EncodableValue(static_cast<int64_t>(stats.limited_frames));
+      map[EncodableValue("inputPeak")] =
+          EncodableValue(static_cast<double>(stats.input_peak));
+      map[EncodableValue("outputPeak")] =
+          EncodableValue(static_cast<double>(stats.output_peak));
+    }
+    result->Success(EncodableValue(map));
   } else if (method_call.method_name().compare("mediaStreamGetTracks") == 0) {
     if (!method_call.arguments()) {
       result->Error("Bad Arguments", "Null constraints arguments received");
@@ -1340,6 +1376,11 @@ void FlutterWebRTC::initLoggerCallback(RTCLoggingSeverity severity) {
     info[EncodableValue("data")] = message.c_string();
     eventChannelProxy->Success(EncodableValue(info), false);
   });
+  // Keep the native stderr (flutter run console) at the same level: without
+  // this, libwebrtc keeps its default INFO-to-stderr output (network.cc,
+  // bitrate_allocator.cc, rtc_audio_track_impl.cc, ...) even when the
+  // EventChannel sink is set to 'none'.
+  libwebrtc::LibWebRTCLogging::setMinDebugLogLevel(severity);
 }
 
 RTCLoggingSeverity FlutterWebRTC::str2LogSeverity(std::string str) {

@@ -9,6 +9,4 @@ name = "fourfun_deepfilter_bridge"
 crate-type = ["staticlib"]
 
 [dependencies]
-deep_filter = { package = "deep_filter", git = "https://github.com/Rikorose/DeepFilterNet", rev = "978576a", default-features = false, features = ["tract", "default-model"] }
-ndarray = "0.15"
-kstring = "=2.0.2"
+ort = { version = "=2.0.0-rc.13", features = ["ndarray"] }

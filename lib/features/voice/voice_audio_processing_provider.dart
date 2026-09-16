@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../core/logging/app_logger.dart';
 import '../../core/rtc/rtc_providers.dart';
 import '../../core/rtc/rtc_service.dart';
 
@@ -72,17 +73,37 @@ class VoiceAudioProcessingController
   Future<void> ensureInitialized() => _initialization ??= _initialize();
 
   Future<void> _initialize() async {
+    final log = ref.read(appLoggerProvider);
     try {
       final preferences = await SharedPreferences.getInstance();
       final mode = _readMode(preferences);
+      log.d(
+        'audio processing: preferência restaurada '
+        '(requested=${mode.name})',
+        tag: 'voice',
+      );
       if (_disposed) return;
       _preferences = preferences;
       final status = await ref
           .read(rtcServiceProvider)
           .setNoiseSuppressionMode(mode);
+      log.d(
+        'audio processing: modo aplicado '
+        '(requested=${status.requestedMode.name}, '
+        'effective=${status.effectiveMode.name}, '
+        'deepFilterAvailable=${status.deepFilterNetAvailable}, '
+        'message=${status.message ?? '-'})',
+        tag: 'voice',
+      );
       if (_disposed) return;
       state = _stateFromStatus(status, isApplying: false);
-    } catch (_) {
+    } catch (error, stackTrace) {
+      log.e(
+        'audio processing: falha ao restaurar processamento',
+        error: error,
+        stackTrace: stackTrace,
+        tag: 'voice',
+      );
       if (!_disposed) {
         state = state.copyWith(
           errorMessage: 'Não foi possível restaurar o processamento de áudio.',
@@ -107,6 +128,9 @@ class VoiceAudioProcessingController
 
   RtcNoiseSuppressionMode? _modeFromStorage(String? value) {
     if (value == null) return null;
+    // Migração 2026-09: o modo `deepFilterNet` (IA) virou `studio`
+    // (AEC WebRTC + DeepFilterNet + AGC/compressor/limiter próprios).
+    if (value == 'deepFilterNet') return RtcNoiseSuppressionMode.studio;
     for (final mode in RtcNoiseSuppressionMode.values) {
       if (mode.name == value) return mode;
     }
@@ -140,8 +164,22 @@ class VoiceAudioProcessingController
     );
 
     final rtc = ref.read(rtcServiceProvider);
+    final log = ref.read(appLoggerProvider);
+    log.d(
+      'audio processing: alterando modo '
+      '(from=${previous.requestedMode.name}, to=${mode.name})',
+      tag: 'voice',
+    );
     try {
       final status = await rtc.setNoiseSuppressionMode(mode);
+      log.d(
+        'audio processing: alteração aplicada '
+        '(requested=${status.requestedMode.name}, '
+        'effective=${status.effectiveMode.name}, '
+        'deepFilterAvailable=${status.deepFilterNetAvailable}, '
+        'message=${status.message ?? '-'})',
+        tag: 'voice',
+      );
       final preferences = _preferences;
       if (preferences != null) {
         await preferences.setString(noiseSuppressionModeKey, mode.name);
@@ -150,7 +188,13 @@ class VoiceAudioProcessingController
         state = _stateFromStatus(status, isApplying: false);
       }
       return true;
-    } catch (_) {
+    } catch (error, stackTrace) {
+      log.e(
+        'audio processing: falha ao alterar modo',
+        error: error,
+        stackTrace: stackTrace,
+        tag: 'voice',
+      );
       try {
         await rtc.setNoiseSuppressionMode(previous.requestedMode);
       } catch (_) {}

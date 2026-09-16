@@ -43,3 +43,21 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# studio_quality suite (SPEC 2026-09-16): fontes tracked, artefatos locais
+tools/studio_quality/corpus/
+tools/studio_quality/studio/
+tools/studio_quality/normal/
+tools/studio_quality/dnsmos_in/
+tools/studio_quality/dnsmos.csv
+tools/studio_quality/harness_studio
+tools/studio_quality/nisqa_in/
+tools/studio_quality/NISQA_results.csv
+tools/studio_quality/**/*.wav
+tools/studio_quality/**/*.csv
+tools/studio_quality/**/*.json
+
+# DPDFNet: onnx (10MB) baixa via build.rs (curl sherpa release) ou
+# $FOURFUN_DPDFNET_MODEL; norms .f32 (2KB) sao vendored de proposito.
+native/deepfilter_bridge/model/*.onnx
+tools/studio_quality/models/

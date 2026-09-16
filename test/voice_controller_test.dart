@@ -285,7 +285,7 @@ class FakeRtcService implements RtcService {
     return RtcNoiseSuppressionStatus(
       requestedMode: mode,
       effectiveMode: mode,
-      deepFilterNetAvailable: mode == RtcNoiseSuppressionMode.deepFilterNet,
+      deepFilterNetAvailable: mode == RtcNoiseSuppressionMode.studio,
     );
   }
 
