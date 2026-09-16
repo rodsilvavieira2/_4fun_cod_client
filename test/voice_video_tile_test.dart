@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fourfun_cod_client/core/rtc/rtc_providers.dart';
 import 'package:fourfun_cod_client/core/rtc/rtc_service.dart';
 import 'package:fourfun_cod_client/core/theme/app_theme.dart';
+import 'package:fourfun_cod_client/core/ui/transmit_tile_toolbar.dart';
 import 'package:fourfun_cod_client/features/voice/voice_video_tile.dart';
 
 class _FakeRtcService implements RtcService {
@@ -31,6 +32,8 @@ void main() {
     VoidCallback? onExpand,
     bool isWatching = true,
     VoidCallback? onTap,
+    VoidCallback? onToggleWatch,
+    VoidCallback? onStopShare,
     Size size = const Size(640, 360),
   }) async {
     await tester.pumpWidget(
@@ -51,6 +54,8 @@ void main() {
                 onExpand: onExpand,
                 isWatching: isWatching,
                 onTap: onTap,
+                onToggleWatch: onToggleWatch,
+                onStopShare: onStopShare,
               ),
             ),
           ),
@@ -402,5 +407,155 @@ void main() {
     expect(find.text('Sem vídeo'), findsOneWidget);
     expect(find.text('Assistir'), findsNothing);
     expect(find.text('LIVE'), findsNothing);
+  });
+
+  testWidgets(
+    'prompt Assistir da transmissão dispara onToggleWatch (toque só foca)',
+    (tester) async {
+      var watched = 0;
+      var tapped = 0;
+      await pumpTile(
+        tester,
+        participant: remoteScreen,
+        source: VoiceVideoSource.screen,
+        role: VoiceVideoTileRole.grid,
+        isWatching: false,
+        onTap: () => tapped++,
+        onToggleWatch: () => watched++,
+      );
+
+      await tester.tap(find.text('Assistir'));
+      expect(watched, 1);
+      expect(tapped, 0);
+
+      // Toque no tile (nome) só foca — nunca assiste.
+      await tester.tap(find.text('Remoto'));
+      expect(tapped, 1);
+      expect(watched, 1);
+    },
+  );
+
+  testWidgets('toolbar remota tem volume + parar (sem expandir)', (
+    tester,
+  ) async {
+    await pumpTile(
+      tester,
+      participant: remoteScreen,
+      source: VoiceVideoSource.screen,
+      role: VoiceVideoTileRole.grid,
+      isWatching: true,
+      onTap: () {},
+      onToggleWatch: () {},
+      onExpand: () {},
+    );
+
+    expect(find.byType(TransmitTileToolbar), findsOneWidget);
+    expect(find.byTooltip('Parar de assistir'), findsOneWidget);
+    expect(find.byTooltip('Assistir transmissão'), findsNothing);
+    // Fixture sem áudio de sistema → volume da transmissão mutado (dentro
+    // da toolbar — o overlay de nome tem o próprio botão de voz).
+    expect(
+      find.descendant(
+        of: find.byType(TransmitTileToolbar),
+        matching: find.byIcon(Icons.volume_off),
+      ),
+      findsOneWidget,
+    );
+    // Sem expandir na toolbar: o único fullscreen é o do topo.
+    expect(find.byIcon(Icons.fullscreen), findsOneWidget);
+  });
+
+  testWidgets('toolbar remota não assistida oferece assistir', (tester) async {
+    await pumpTile(
+      tester,
+      participant: remoteScreen,
+      source: VoiceVideoSource.screen,
+      role: VoiceVideoTileRole.grid,
+      isWatching: false,
+      onTap: () {},
+      onToggleWatch: () {},
+    );
+
+    expect(find.byType(TransmitTileToolbar), findsOneWidget);
+    expect(find.byTooltip('Assistir transmissão'), findsOneWidget);
+  });
+
+  testWidgets('toolbar local tem só parar share (sem volume)', (tester) async {
+    var stopped = 0;
+    await pumpTile(
+      tester,
+      participant: localScreen,
+      source: VoiceVideoSource.screen,
+      role: VoiceVideoTileRole.grid,
+      onTap: () {},
+      onStopShare: () => stopped++,
+      onExpand: () {},
+    );
+
+    expect(find.byType(TransmitTileToolbar), findsOneWidget);
+    expect(find.byTooltip('Parar compartilhamento'), findsOneWidget);
+    expect(find.byIcon(Icons.volume_off), findsNothing);
+    expect(find.byIcon(Icons.volume_down), findsNothing);
+    expect(find.byIcon(Icons.volume_up), findsNothing);
+
+    await tester.tap(find.byTooltip('Parar compartilhamento'));
+    expect(stopped, 1);
+  });
+
+  testWidgets('tile de câmera não tem toolbar', (tester) async {
+    await pumpTile(
+      tester,
+      participant: remoteCamera,
+      source: VoiceVideoSource.camera,
+      role: VoiceVideoTileRole.grid,
+      onTap: () {},
+    );
+
+    expect(find.byType(TransmitTileToolbar), findsNothing);
+  });
+
+  testWidgets('miniatura de screen não tem toolbar', (tester) async {
+    await pumpTile(
+      tester,
+      participant: remoteScreen,
+      source: VoiceVideoSource.screen,
+      role: VoiceVideoTileRole.miniature,
+      onTap: () {},
+      onToggleWatch: () {},
+      size: const Size(192, 120),
+    );
+
+    expect(find.byType(TransmitTileToolbar), findsNothing);
+  });
+
+  testWidgets('toolbar some após 2.5s sem hover (fade individual)', (
+    tester,
+  ) async {
+    await pumpTile(
+      tester,
+      participant: remoteScreen,
+      source: VoiceVideoSource.screen,
+      role: VoiceVideoTileRole.grid,
+      isWatching: true,
+      onTap: () {},
+      onToggleWatch: () {},
+    );
+
+    AnimatedOpacity opacityOfToolbar() {
+      return tester
+          .widgetList<AnimatedOpacity>(
+            find.descendant(
+              of: find.byType(TransmitTileToolbar),
+              matching: find.byType(AnimatedOpacity),
+            ),
+          )
+          .single;
+    }
+
+    expect(opacityOfToolbar().opacity, 1);
+
+    await tester.pump(const Duration(milliseconds: 2500));
+    await tester.pump();
+    expect(opacityOfToolbar().opacity, 0);
   });
 }

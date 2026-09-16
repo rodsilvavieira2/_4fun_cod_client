@@ -204,8 +204,11 @@ class VoiceScreen extends ConsumerWidget {
   }
 }
 
-/// Palco conectado com auto-hide Discord-like: o mouse parado por 2.5s
-/// esconde dock + header (imersivo); qualquer hover revela de novo.
+/// Palco conectado: sem dock global (controles moram na toolbar de cada
+/// tile de transmissão). O auto-hide de 2.5s permanece só para o fullscreen
+/// imersivo (hover revela badges/overlays, parado esconde — fica só o vídeo).
+/// Fora do fullscreen os overlays seguem sempre visíveis e cada toolbar tem
+/// seu próprio fade por hover no tile.
 /// O estado mora aqui (não no controller): é puro chrome de UI.
 class _ConnectedStage extends ConsumerStatefulWidget {
   const _ConnectedStage({
@@ -260,60 +263,29 @@ class _ConnectedStageState extends ConsumerState<_ConnectedStage> {
   Widget build(BuildContext context) {
     final state = widget.state;
     final notifier = widget.notifier;
-    final isSpotlight = state.spotlightParticipantId != null;
-    // Fullscreen imersivo: badges/overlays somem junto com o dock (fica só
-    // o vídeo); fora do fullscreen continuam sempre visíveis (Discord).
-    // O cursor some junto — hover revela tudo de novo.
+    // Fullscreen imersivo: badges/overlays somem (fica só o vídeo); fora do
+    // fullscreen continuam sempre visíveis (Discord). O cursor some junto —
+    // hover revela tudo de novo. As toolbars dos tiles têm fade próprio.
     final overlayVisible = !state.isFullscreen || _controlsVisible;
-    final controls = _Controls(
-      state: state,
-      isSpotlight: isSpotlight,
-      onJoin: notifier.join,
-      onLeave: widget.onLeave,
-      onToggleCamera: notifier.toggleCamera,
-      onToggleScreenShare: widget.onToggleScreenShare,
-      onToggleFilmstrip: notifier.toggleFilmstrip,
-    );
     return MouseRegion(
       cursor: overlayVisible
           ? SystemMouseCursors.basic
           : SystemMouseCursors.none,
       onEnter: (_) => _reveal(),
       onHover: (_) => _reveal(),
-      child: Stack(
+      child: Column(
         children: [
-          Column(
-            children: [
-              if (state.isReconnecting) const _ReconnectingBanner(),
-              if (state.isAudioBlocked)
-                _AudioBlockedBanner(onTap: notifier.resumeAudio),
-              Expanded(
-                child: _ParticipantsPanel(
-                  state: state,
-                  notifier: notifier,
-                  arg: widget.arg,
-                  transmitQuality: _transmitQualityLabel(state),
-                  onToggleFullscreen: widget.onToggleFullscreen,
-                  overlayVisible: overlayVisible,
-                ),
-              ),
-            ],
-          ),
-          // Dock inferior (auto-hide): em fullscreen os overlays dos tiles
-          // seguem o mesmo timer (some tudo, fica só o vídeo).
-          Positioned(
-            left: 16,
-            right: 16,
-            bottom: 16,
-            child: Center(
-              child: AnimatedOpacity(
-                duration: const Duration(milliseconds: 200),
-                opacity: _controlsVisible ? 1 : 0,
-                child: IgnorePointer(
-                  ignoring: !_controlsVisible,
-                  child: controls,
-                ),
-              ),
+          if (state.isReconnecting) const _ReconnectingBanner(),
+          if (state.isAudioBlocked)
+            _AudioBlockedBanner(onTap: notifier.resumeAudio),
+          Expanded(
+            child: _ParticipantsPanel(
+              state: state,
+              notifier: notifier,
+              arg: widget.arg,
+              transmitQuality: _transmitQualityLabel(state),
+              onToggleFullscreen: widget.onToggleFullscreen,
+              overlayVisible: overlayVisible,
             ),
           ),
         ],
@@ -699,17 +671,40 @@ bool _isWatching(VoiceController notifier, _VoiceMediaItem item) {
   );
 }
 
-/// Toque no tile do grid: local alterna spotlight (comportamento existente);
-/// remoto alterna assistir/parar (opt-in). Avatar sem vídeo não é tocável.
-/// Spotlight/filmstrip mantêm o toque atual (troca/dispensa destaque).
+/// Toque no tile do grid: SEMPRE foca/destaque (spotlight) — nunca assiste.
+/// Transmissão: assistir/parar vive só na toolbar do tile. Câmera remota
+/// mantém o opt-in por toque (sem toolbar própria). Avatar sem vídeo não é
+/// tocável. Spotlight/filmstrip mantêm o toque atual (troca/dispensa destaque).
 VoidCallback? _gridOnTap(VoiceController notifier, _VoiceMediaItem item) {
   if (item.source == VoiceVideoSource.avatar) return null;
   final id = item.participant.id;
   final source = _spotlightSource(item.source);
+  if (item.source == VoiceVideoSource.screen) {
+    return () => notifier.toggleSpotlight(id, source: source);
+  }
   if (notifier.isLocalParticipant(id)) {
     return () => notifier.toggleSpotlight(id, source: source);
   }
   return () => notifier.toggleWatch(id, source);
+}
+
+/// Assistir/parar da toolbar do tile de transmissão (remoto). Nulo para
+/// local (sempre visível), câmera e avatar (fora do escopo da toolbar).
+VoidCallback? _screenToggleWatch(
+  VoiceController notifier,
+  _VoiceMediaItem item,
+) {
+  if (item.source != VoiceVideoSource.screen) return null;
+  if (notifier.isLocalParticipant(item.participant.id)) return null;
+  return () =>
+      notifier.toggleWatch(item.participant.id, _spotlightSource(item.source));
+}
+
+/// Parar o share da toolbar do tile local. Nulo para remoto e não-screen.
+VoidCallback? _screenStopShare(VoiceController notifier, _VoiceMediaItem item) {
+  if (item.source != VoiceVideoSource.screen) return null;
+  if (!notifier.isLocalParticipant(item.participant.id)) return null;
+  return notifier.stopScreenShare;
 }
 
 /// Palco em grade: uma pessoa pode contribuir com dois tiles irmãos (tela e
@@ -790,6 +785,10 @@ class _VideoGrid extends StatelessWidget {
                         role: VoiceVideoTileRole.grid,
                         isWatching: _isWatching(notifier, item),
                         onTap: _gridOnTap(notifier, item),
+                        // Toolbar da transmissão: assistir/parar (remoto) ou
+                        // parar o share (local). Click no tile só foca.
+                        onToggleWatch: _screenToggleWatch(notifier, item),
+                        onStopShare: _screenStopShare(notifier, item),
                         // Overlay de transmissão: cada tile de tela tem o
                         // seu (LIVE + qualidade local); expandir = destacar.
                         qualityLabel: item.source == VoiceVideoSource.screen
@@ -949,6 +948,9 @@ class _SpotlightLayout extends StatelessWidget {
                 selected.participant.id,
                 source: _spotlightSource(selected.source),
               ),
+              // Toolbar da transmissão no destaque (mesma do grid).
+              onToggleWatch: _screenToggleWatch(notifier, selected),
+              onStopShare: _screenStopShare(notifier, selected),
               // Destaque de tela: overlay com LIVE + qualidade local;
               // expandir abre o takeover fullscreen.
               qualityLabel: selected.source == VoiceVideoSource.screen

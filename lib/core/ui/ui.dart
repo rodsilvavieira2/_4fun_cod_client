@@ -20,4 +20,5 @@ export 'section_header.dart';
 export 'server_entry_dialog.dart';
 export 'server_role_badge.dart';
 export 'surfaces/app_card.dart';
+export 'transmit_tile_toolbar.dart';
 export 'update_banner.dart';

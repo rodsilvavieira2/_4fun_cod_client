@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -8,6 +10,7 @@ import '../../core/theme/appearance_theme.dart';
 import '../../core/ui/ds_tokens.dart';
 import '../../core/ui/overlay_icon_button.dart';
 import '../../core/ui/participant_volume_popover.dart';
+import '../../core/ui/transmit_tile_toolbar.dart';
 import 'voice_providers.dart';
 
 /// Papel de um tile de vídeo no painel — define a qualidade de recepção
@@ -92,6 +95,8 @@ class VoiceVideoTile extends ConsumerStatefulWidget {
     required this.role,
     required this.source,
     this.onTap,
+    this.onToggleWatch,
+    this.onStopShare,
     this.qualityLabel,
     this.onExpand,
     this.isWatching = true,
@@ -110,7 +115,16 @@ class VoiceVideoTile extends ConsumerStatefulWidget {
 
   /// Ação de toque: grid/miniatura → destaque, destaque → grid. A screen
   /// decide quem pode (tile sem câmera não vira spotlight — toque ignorado).
+  /// Toque NUNCA assiste/desassiste: assistir/parar vive só na toolbar
+  /// ([onToggleWatch]) e no prompt central ([_WatchPrompt]).
   final VoidCallback? onTap;
+
+  /// Assistir/parar a transmissão (remoto, exclusivo da toolbar + prompt).
+  /// Nulo = sem botão de assistir na toolbar.
+  final VoidCallback? onToggleWatch;
+
+  /// Parar o compartilhamento local (toolbar do tile local). Nulo = sem botão.
+  final VoidCallback? onStopShare;
 
   /// Rótulo da qualidade transmitida pelo LOCAL (ex.: `1080p60`); nulo
   /// quando desconhecido. Só renderiza no tile de tela do participante
@@ -138,10 +152,39 @@ class VoiceVideoTile extends ConsumerStatefulWidget {
 }
 
 class _VoiceVideoTileState extends ConsumerState<VoiceVideoTile> {
+  /// Fade-out individual da toolbar (SPEC 2026-09-16): hover no tile revela,
+  /// 2.5s parado esconde. Puro chrome de UI — mora no tile, não no controller.
+  bool _toolbarVisible = true;
+  Timer? _hideTimer;
+
   @override
   void initState() {
     super.initState();
     _scheduleQuality();
+    _scheduleToolbarHide();
+  }
+
+  @override
+  void dispose() {
+    _hideTimer?.cancel();
+    super.dispose();
+  }
+
+  void _scheduleToolbarHide() {
+    _hideTimer?.cancel();
+    _hideTimer = Timer(const Duration(milliseconds: 2500), () {
+      if (mounted) setState(() => _toolbarVisible = false);
+    });
+  }
+
+  void _revealToolbar() {
+    _scheduleToolbarHide();
+    if (!_toolbarVisible && mounted) setState(() => _toolbarVisible = true);
+  }
+
+  void _hideToolbarNow() {
+    _hideTimer?.cancel();
+    if (_toolbarVisible && mounted) setState(() => _toolbarVisible = false);
   }
 
   @override
@@ -243,8 +286,13 @@ class _VoiceVideoTileState extends ConsumerState<VoiceVideoTile> {
                 ),
               // Opt-in: LIVE + "Assistir" sobre o avatar (grid/spotlight; na
               // miniatura o toque no tile já assiste — sem botão por espaço).
+              // Assistir mora na toolbar: o prompt usa o mesmo callback (o
+              // toque no tile só foca — nunca assiste).
               if (liveUnwatched && !isMiniature)
-                _WatchPrompt(source: widget.source, onWatch: widget.onTap),
+                _WatchPrompt(
+                  source: widget.source,
+                  onWatch: widget.onToggleWatch ?? widget.onTap,
+                ),
               if (isMiniature) const _MiniatureBottomScrim(),
               if (isMiniature)
                 _MiniatureOverlay(
@@ -273,6 +321,19 @@ class _VoiceVideoTileState extends ConsumerState<VoiceVideoTile> {
                   onExpand: widget.onExpand,
                   visible: widget.overlayVisible,
                 ),
+              // Toolbar individual da transmissão (grid/spotlight): mesma
+              // aparência do dock global extinto, fade-out próprio por tile.
+              if (widget.source == VoiceVideoSource.screen && !isMiniature)
+                TransmitTileToolbar(
+                  identity: participant.id,
+                  displayName: participant.name,
+                  isLocal: isLocal,
+                  isWatching: widget.isWatching,
+                  audioAvailable: participant.isSystemAudioEnabled,
+                  onToggleWatch: widget.onToggleWatch,
+                  onStopShare: widget.onStopShare,
+                  visible: widget.overlayVisible && _toolbarVisible,
+                ),
               // Moldura fixa para leitura sobre vídeo; fala ativa ganha primary.
               IgnorePointer(
                 child: DecoratedBox(
@@ -298,7 +359,17 @@ class _VoiceVideoTileState extends ConsumerState<VoiceVideoTile> {
         : (widget.onTap == null
               ? SystemMouseCursors.basic
               : SystemMouseCursors.click);
-    final interactiveTile = MouseRegion(cursor: effectiveCursor, child: tile);
+    // Hover individual do tile: revela a toolbar e rearma o fade de 2.5s.
+    final hasTileToolbar =
+        widget.source == VoiceVideoSource.screen &&
+        widget.role != VoiceVideoTileRole.miniature;
+    final interactiveTile = MouseRegion(
+      cursor: effectiveCursor,
+      onEnter: hasTileToolbar ? (_) => _revealToolbar() : null,
+      onHover: hasTileToolbar ? (_) => _revealToolbar() : null,
+      onExit: hasTileToolbar ? (_) => _hideToolbarNow() : null,
+      child: tile,
+    );
     return isLocal
         ? interactiveTile
         : ParticipantVolumeMenuRegion(
