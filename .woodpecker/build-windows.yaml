@@ -25,5 +25,18 @@ steps:
 
   - name: build
     image: powershell
+    environment:
+      API_URL:
+        from_secret: api_url
+      LIVEKIT_URL:
+        from_secret: livekit_url
+      OTEL_ENABLED:
+        from_secret: otel_enabled
+      OTEL_ENDPOINT:
+        from_secret: otel_endpoint
+      OTEL_ORG:
+        from_secret: otel_org
+      OTEL_VIA_API:
+        from_secret: otel_via_api
     commands:
-      - $env:ORT_CACHE_DIR = Join-Path $env:USERPROFILE '.cache\ort-cache'; New-Item -ItemType Directory -Force -Path $env:ORT_CACHE_DIR | Out-Null; $env:RUSTUP_TOOLCHAIN = 'stable'; $env:PATH = "$env:USERPROFILE\.rustup\toolchains\stable-x86_64-pc-windows-msvc\bin;$env:USERPROFILE\.cargo\bin;$env:PATH"; flutter build windows --release --dart-define=API_URL=https://api.srv1849611.hstgr.cloud --dart-define=OTEL_ENABLED=true --dart-define=OTEL_ENDPOINT=https://o2.srv1849611.hstgr.cloud
+      - $env:ORT_CACHE_DIR = Join-Path $env:USERPROFILE '.cache\ort-cache'; New-Item -ItemType Directory -Force -Path $env:ORT_CACHE_DIR | Out-Null; $env:RUSTUP_TOOLCHAIN = 'stable'; $env:PATH = "$env:USERPROFILE\.rustup\toolchains\stable-x86_64-pc-windows-msvc\bin;$env:USERPROFILE\.cargo\bin;$env:PATH"; flutter build windows --release --dart-define=API_URL=$env:API_URL --dart-define=LIVEKIT_URL=$env:LIVEKIT_URL --dart-define=OTEL_ENABLED=$env:OTEL_ENABLED --dart-define=OTEL_ENDPOINT=$env:OTEL_ENDPOINT --dart-define=OTEL_ORG=$env:OTEL_ORG --dart-define=OTEL_VIA_API=$env:OTEL_VIA_API
