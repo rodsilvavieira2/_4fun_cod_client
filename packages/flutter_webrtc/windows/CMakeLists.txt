@@ -51,7 +51,7 @@ find_program(CARGO_EXECUTABLE cargo)
 if(NOT CARGO_EXECUTABLE)
   message(FATAL_ERROR "cargo is required to build DeepFilterNet support")
 endif()
-set(FOURFUN_ORT_STAGE_DIR "${CMAKE_CURRENT_BINARY_DIR}/fourfun_ort_stage")
+set(FOURFUN_ORT_STAGE_DIR "${DEEPFILTER_BRIDGE_DIR}/target/stage-windows")
 get_filename_component(FOURFUN_MSVC_BINDIR "${CMAKE_LINKER}" DIRECTORY)
 find_program(FOURFUN_DUMPBIN_EXE NAMES dumpbin.exe
   PATHS "${FOURFUN_MSVC_BINDIR}" NO_DEFAULT_PATH)

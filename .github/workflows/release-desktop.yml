@@ -321,6 +321,40 @@ jobs:
       - name: Setup Rust (DeepFilterNet bridge via cargo no CMake)
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Build DeepFilterNet bridge (cargo + onnxruntime stage)
+        shell: pwsh
+        run: |
+          # Roda fora do MSBuild de proposito: o flutter invoca o msbuild com
+          # verbosity baixa e o stdout do custom command (cargo) e suprimido —
+          # falha virava MSB8066 sem log. Aqui o output do cargo aparece integral.
+          # O custom command no CMakeLists continua como fallback (gera os mesmos
+          # outputs no mesmo lugar; se este step ja gerou, fica up-to-date).
+          cargo build --release --manifest-path native/deepfilter_bridge/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          $roots = @()
+          $vswhere = 'C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe'
+          if (Test-Path $vswhere) {
+            $roots += & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          }
+          $dumpbin = $null
+          foreach ($r in ($roots | Where-Object { $_ } | Sort-Object -Unique)) {
+            $cand = Get-ChildItem "$r\VC\Tools\MSVC" -Filter dumpbin.exe -Recurse -ErrorAction SilentlyContinue |
+              Select-Object -First 1 -ExpandProperty FullName
+            if ($cand) { $dumpbin = $cand; break }
+          }
+          if (-not $dumpbin) { Write-Error 'dumpbin nao encontrado no runner'; exit 1 }
+          $libexe = Join-Path (Split-Path $dumpbin) 'lib.exe'
+          if (-not (Test-Path $libexe)) { Write-Error "lib.exe nao encontrado ao lado de $dumpbin"; exit 1 }
+
+          $bridge = Join-Path (Get-Location) 'native\deepfilter_bridge'
+          $stage = Join-Path $bridge 'target\stage-windows'
+          & cmake -DBRIDGE_DIR="$bridge" -DSTAGE_DIR="$stage" `
+            -DDUMPBIN_EXE="$dumpbin" -DLIB_EXE="$libexe" `
+            -P packages/flutter_webrtc/windows/stage_ort_windows.cmake
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-ChildItem $stage
+
       - name: Build Windows
         shell: pwsh
         env:
