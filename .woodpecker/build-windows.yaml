@@ -65,4 +65,4 @@ steps:
       UPDATER_PASSPHRASE:
         from_secret: updater_passphrase
     commands:
-      - '& ./tooling-woodpecker/release-windows.ps1; exit $LASTEXITCODE'
+      - 'Set-ExecutionPolicy -Scope Process Bypass -Force; & ./tooling-woodpecker/release-windows.ps1; exit $LASTEXITCODE'
