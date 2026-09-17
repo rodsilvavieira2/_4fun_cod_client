@@ -66,7 +66,9 @@ add_custom_command(
   # forces cargo to re-run (a no-op when fresh) on every Flutter build.
   DEPENDS "${DEEPFILTER_BRIDGE_DIR}/Cargo.toml"
           "${DEEPFILTER_BRIDGE_DIR}/Cargo.lock"
+          "${DEEPFILTER_BRIDGE_DIR}/build.rs"
           "${DEEPFILTER_BRIDGE_DIR}/src/lib.rs"
+          "${DEEPFILTER_BRIDGE_DIR}/src/dpdfnet.rs"
   COMMENT "Building fourfun DeepFilterNet bridge"
 )
 add_custom_target(fourfun_deepfilter_bridge_build

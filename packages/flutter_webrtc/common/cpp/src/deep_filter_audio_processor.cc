@@ -162,7 +162,7 @@ AudioEnhancementPipeline::AutoScale::~AutoScale() {
   // (inputPeak, outputPeak) directly shows what the pipeline did to level.
   const float out_peak = BufferPeak(buffer_, frames_);
   self_->output_peak_ =
-      std::max(self_->output_peak_ * kPeakDecayPerCall, out_peak);
+      (std::max)(self_->output_peak_ * kPeakDecayPerCall, out_peak);
 }
 
 void AudioEnhancementPipeline::LinearResampler::Process(
@@ -257,8 +257,8 @@ void AudioEnhancementPipeline::StudioDynamics::ProcessBlock(float* samples,
   // STUDIO_STAGE=1 freezes the AGC at unity (expander-only tuning stage).
   const bool run_agc = (stage_ == 0 || stage_ == 2);
   if (run_agc && rms_db > kAgcGateDbfs) {
-    const float desired = std::min(
-        kAgcMaxGainDb, std::max(kAgcMinGainDb, kAgcTargetDbfs - rms_db));
+    const float desired = (std::min)(
+        kAgcMaxGainDb, (std::max)(kAgcMinGainDb, kAgcTargetDbfs - rms_db));
     const double tau =
         (desired < agc_gain_db_) ? kAgcAttackSec : kAgcReleaseSec;
     const float coeff =
@@ -280,7 +280,7 @@ void AudioEnhancementPipeline::StudioDynamics::ProcessBlock(float* samples,
     } else {
       gate_want =
           -(kGateThresholdDbfs - rms_db) * (1.0f - 1.0f / kGateRatio);
-      gate_want = std::max(gate_want, -kGateDepthDb);
+      gate_want = (std::max)(gate_want, -kGateDepthDb);
     }
   } else {
     gate_hold_left_ =
@@ -339,7 +339,7 @@ void AudioEnhancementPipeline::StudioDynamics::ProcessBlock(float* samples,
     }  // run_comp_lim
 
     // Hard clamp: must never ship > 0 dBFS (clip/click protection).
-    samples[i] = std::min(1.0f, std::max(-1.0f, y));
+    samples[i] = (std::min)(1.0f, (std::max)(-1.0f, y));
   }
   last_gain_lin_ = end_gain;
   last_gate_lin_ = gate_end;
@@ -393,7 +393,7 @@ void AudioEnhancementPipeline::Process(int num_bands,
   // digital silence (capture-side problem); output==0 with input>0 means
   // the pipeline itself eats the audio (net gate or dynamics problem).
   const float in_peak = BufferPeak(buffer, num_frames);
-  input_peak_ = std::max(input_peak_ * kPeakDecayPerCall, in_peak);
+  input_peak_ = (std::max)(input_peak_ * kPeakDecayPerCall, in_peak);
   // Scale adapter: normalizes S16-scale wire audio to ±1 around the DF +
   // dynamics core and restores the exact wire scale (plus output-peak
   // telemetry) on scope exit. Covers every return below.

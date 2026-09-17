@@ -101,11 +101,31 @@ jobs:
           # P2 (review t_34728661): OTEL_BASIC_AUTH NUNCA baked via
           # --dart-define — release lê da env de runtime (ver AppConfig).
 
-          flutter build linux \
+          # -v com log em arquivo: o ninja so mostra o comando que falhou, e
+          # o driver clang engoliu o motivo do link v1.1.2. Em sucesso o log
+          # eh descartado; em falha, o tail entrega alvo + erro reais.
+          set -o pipefail
+          flutter build linux -v \
             --release \
             --build-name "$APP_VERSION" \
             --build-number "$GITHUB_RUN_NUMBER" \
-            "${DEFINES[@]}"
+            "${DEFINES[@]}" >"$RUNNER_TEMP/build-linux-verbose.log" 2>&1 || {
+            echo '--- build failed, verbose tail ---'
+            tail -c 2000000 "$RUNNER_TEMP/build-linux-verbose.log"
+            exit 1
+          }
+
+      # O link do plugin (onnxruntime estatico dentro do .a Rust) morreu uma
+      # vez sem diagnostics (v1.1.2). Se falhar de novo, este step entrega
+      # disco/RAM/OOM em vez de outra charada.
+      - name: Diagnose native link failure
+        if: failure()
+        shell: bash
+        run: |
+          df -h "$GITHUB_WORKSPACE" /tmp || true
+          free -g || true
+          ls -la native/deepfilter_bridge/target/release/libfourfun_deepfilter_bridge.a || true
+          dmesg 2>/dev/null | tail -5 || true
 
       - name: Bundle tray native deps (fecho transitivo)
         shell: bash

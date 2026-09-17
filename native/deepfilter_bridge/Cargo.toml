@@ -10,3 +10,8 @@ crate-type = ["staticlib"]
 
 [dependencies]
 ort = { version = "=2.0.0-rc.13", features = ["ndarray"] }
+
+# NOTE: no `strip` here on purpose. The crate is a staticlib (archived .o):
+# rustc `-C strip` does not apply at archive time, and measured debuginfo is
+# ~1MB of a ~138MB archive (10MB embedded ONNX + static onnxruntime). Link
+# memory is addressed at the plugin link, not here.
