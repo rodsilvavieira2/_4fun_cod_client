@@ -332,6 +332,20 @@ jobs:
           cargo build --release --manifest-path native/deepfilter_bridge/Cargo.toml
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+          # DIAG temporario (issue pipe Windows): o que o build script do
+          # ort-sys baixou/registrou? Remover quando o stage estabilizar.
+          Get-ChildItem native\deepfilter_bridge\target\release\build -Filter 'ort-sys-*' | ForEach-Object {
+            Write-Host "== $($_.FullName)"
+            Get-ChildItem $_.FullName | Format-Table Name, Length | Out-String | Write-Host
+            foreach ($f in @('output','stderr')) {
+              $p = Join-Path $_.FullName $f
+              if (Test-Path $p) { Write-Host "--- $f :"; Get-Content $p | Select-Object -First 15 | Write-Host }
+            }
+          }
+          Write-Host '== dfbin:'
+          Get-ChildItem "$env:LOCALAPPDATA\ort.pyke.io\dfbin" -Recurse -ErrorAction SilentlyContinue |
+            Select-Object -First 15 FullName | Write-Host
+
           $roots = @()
           $vswhere = 'C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe'
           if (Test-Path $vswhere) {
