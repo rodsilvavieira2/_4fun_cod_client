@@ -208,8 +208,13 @@ cat SHA256SUMS.txt
 cd ../..
 
 # --- upload p/ updates/<tag>/ + publica updates/latest/ + verifica ---
+# sftp -b ABORTA no primeiro erro: mkdir de dir existente mataria os puts.
+# mkdirs tolerantes vao em chamadas separadas (|| true); o batch so tem puts.
 setup_updates_ssh
 sftp_mkdir_tag
+printf 'mkdir %s/latest\n' "$UPDATES_ROOT" > "$TMPD/mkdir-latest.batch"
+# shellcheck disable=SC2086
+sftp $SFTP_OPTS -b "$TMPD/mkdir-latest.batch" "$UPDATES_USER@$UPDATES_HOST" >/dev/null 2>&1 || true
 {
   for f in dist/tag/*; do printf 'put %s %s/%s/\n' "$f" "$UPDATES_ROOT" "$TAG"; done
   printf 'put %s %s/%s/\n' "dist/${APP_SLUG}-windows-x64-${VERSION}-portable.zip" "$UPDATES_ROOT" "$TAG"
@@ -217,8 +222,7 @@ sftp_mkdir_tag
 } > "$TMPD/upload.batch"
 # shellcheck disable=SC2086
 sftp $SFTP_OPTS -b "$TMPD/upload.batch" "$UPDATES_USER@$UPDATES_HOST"
-printf 'mkdir %s/latest\nput %s %s/latest/\nput %s %s/latest/\nput %s %s/latest/\n' \
-  "$UPDATES_ROOT" \
+printf 'put %s %s/latest/\nput %s %s/latest/\nput %s %s/latest/\n' \
   dist/tag/"$APP_NAME"-*.zip "$UPDATES_ROOT" \
   dist/tag/release-*.json "$UPDATES_ROOT" \
   dist/tag/app-archive.json "$UPDATES_ROOT" > "$TMPD/latest.batch"

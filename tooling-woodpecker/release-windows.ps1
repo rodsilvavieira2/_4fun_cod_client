@@ -79,11 +79,26 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 Get-ChildItem 'dist\windows' | Out-String | Write-Host
 
 # --- updater: chave + package + sign ---
+# O store DPAPI (%LOCALAPPDATA%\desktop_updater\release-keys) persiste entre
+# pipelines na mesma VM, e o protect usa entropia aleatoria: re-importar a
+# MESMA chave sobre o arquivo existente sempre falha com "A different
+# private key already exists". Limpa o profile antes (dir so guarda essas
+# chaves) e mantem o retry da GHA contra flake do DPAPI.
+$keysProfile = (Get-Content desktop_updater.keys.json | ConvertFrom-Json).profileId
+$storeFile = Join-Path $env:LOCALAPPDATA "desktop_updater\release-keys\$keysProfile.json"
+Remove-Item $storeFile -Force -ErrorAction SilentlyContinue
+Remove-Item "$storeFile.lock" -Force -ErrorAction SilentlyContinue
 [System.IO.File]::WriteAllBytes("$env:TEMP\release-key.dukey", [System.Convert]::FromBase64String($env:UPDATER_BUNDLE_B64))
 $env:UPDATER_PASSPHRASE = $env:UPDATER_PASSPHRASE
-dart run desktop_updater:release keys import --input "$env:TEMP\release-key.dukey" --passphrase-env UPDATER_PASSPHRASE
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-Remove-Item "$env:TEMP\release-key.dukey" -Force
+$attempt = 0
+while ($true) {
+  $attempt++
+  dart run desktop_updater:release keys import --input "$env:TEMP\release-key.dukey" --passphrase-env UPDATER_PASSPHRASE
+  if ($LASTEXITCODE -eq 0) { break }
+  if ($attempt -ge 5) { Write-Error "keys import failed after $attempt attempts"; exit 1 }
+  Start-Sleep -Seconds (15 * $attempt)
+}
+Remove-Item "$env:TEMP\release-key.dukey" -Force -ErrorAction SilentlyContinue
 dart run desktop_updater:package --input $BUNDLE --output 'dist\updater\windows' `
   --package-id 'fourfun_cod_client' --app-name $APP_NAME --version $APP_VERSION --build-number $BN `
   --platform windows --channel stable `
