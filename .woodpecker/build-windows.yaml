@@ -58,8 +58,8 @@ steps:
         from_secret: otel_org
       OTEL_VIA_API:
         from_secret: otel_via_api
-      GH_TOKEN:
-        from_secret: github_token
+      UPDATES_DEPLOY_KEY_B64:
+        from_secret: updates_deploy_key
       UPDATER_BUNDLE_B64:
         from_secret: updater_bundle_b64
       UPDATER_PASSPHRASE:

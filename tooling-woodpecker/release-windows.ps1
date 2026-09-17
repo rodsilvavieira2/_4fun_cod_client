@@ -1,5 +1,6 @@
-# Release Windows — espelho de .github/workflows/release-desktop.yml (job build-windows + parte windows do job release).
+# Release Windows — build + sobe artefatos p/ o feed na VPS (SPEC spec-private-releases-vps).
 # Roda no step `release` de .woodpecker/build-windows.yaml (gate v* abaixo).
+# O job Linux aguarda o sentinel `.windows-done` e publica o feed (latest/).
 # Premissa: steps environment/dependencies/bridge/build já rodaram neste pipeline
 # (mesma VM, mesmo workspace) — cargo aqui é incremental, sem limpar o cache ORT.
 $ErrorActionPreference = 'Stop'
@@ -10,6 +11,14 @@ $APP_VERSION = $TAG.TrimStart('v')
 $BN = $env:CI_PIPELINE_NUMBER
 $APP_NAME = '4FunCode'
 $APP_SLUG = '4fun-cod'
+
+# --- feed na VPS ---
+$UPDATES_HOST = '179.197.236.24'
+$UPDATES_USER = 'updates-deploy'
+$UPDATES_ROOT = '/docker/updates/data'
+$UPDATES_BASE = "https://updates.srv1849611.hstgr.cloud/$TAG"
+$PINNED_HOSTKEY = '179.197.236.24 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGD9/TjlwFN/vbVM1IQvCyqXK51vAU5gsov+LI9EiUvt'
+
 Write-Host "Release Windows $APP_VERSION (build $BN) da tag $TAG"
 
 # --- version stamp (exe == feed) ---
@@ -77,19 +86,38 @@ Remove-Item "$env:TEMP\release-key.dukey" -Force
 dart run desktop_updater:package --input $BUNDLE --output 'dist\updater\windows' `
   --package-id 'fourfun_cod_client' --app-name $APP_NAME --version $APP_VERSION --build-number $BN `
   --platform windows --channel stable `
-  --artifact-url "https://github.com/rodsilvavieira2/_4fun_cod_client/releases/download/$TAG/$APP_NAME-$APP_VERSION-windows.zip"
+  --artifact-url "$UPDATES_BASE/$APP_NAME-$APP_VERSION-windows.zip"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 dart run desktop_updater:release sign --release 'dist\updater\windows\release.json'
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-# --- draft + uploads (sentinel release-windows.json por ultimo) ---
-$target = (git rev-list -n 1 $TAG).Trim()
-gh release create $TAG --draft --title $TAG --generate-notes --target $target `
-  (Get-ChildItem 'dist\windows\*.zip', 'dist\windows\*.exe' | ForEach-Object { $_.FullName })
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-gh release upload $TAG (Get-ChildItem 'dist\updater\windows\*.zip' | ForEach-Object { $_.FullName }) --clobber
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+# --- upload p/ updates/<tag>/ na VPS + sentinel .windows-done por ultimo ---
+if (-not (Get-Command sftp -ErrorAction SilentlyContinue)) { Write-Error 'sftp nao encontrado (OpenSSH Client?)'; exit 1 }
+if (-not $env:UPDATES_DEPLOY_KEY_B64) { Write-Error 'UPDATES_DEPLOY_KEY_B64 vazio (secret updates_deploy_key?)'; exit 1 }
+$sshDir = Join-Path $env:TEMP 'updates-ssh'
+New-Item -ItemType Directory -Force -Path $sshDir | Out-Null
+$keyFile = Join-Path $sshDir 'updates_deploy_key'
+[System.IO.File]::WriteAllBytes($keyFile, [System.Convert]::FromBase64String($env:UPDATES_DEPLOY_KEY_B64))
+$khFile = Join-Path $sshDir 'known_hosts'
+Set-Content -Encoding Ascii -Path $khFile -Value $PINNED_HOSTKEY
+$sshTarget = "${UPDATES_USER}@${UPDATES_HOST}"
+$sshOpts = @('-i', $keyFile, '-o', 'BatchMode=yes', '-o', 'IdentitiesOnly=yes', '-o', 'StrictHostKeyChecking=yes', "-o", "UserKnownHostsFile=$khFile", '-o', 'ConnectTimeout=30')
+$tagDir = "$UPDATES_ROOT/$TAG"
+$mkdirBatch = Join-Path $sshDir 'mkdir.batch'
+Set-Content -Encoding Ascii -Path $mkdirBatch -Value "mkdir $tagDir"
+& sftp @sshOpts -b $mkdirBatch $sshTarget | Out-String | Write-Host
+$upBatch = Join-Path $sshDir 'upload.batch'
+$lines = @()
+$lines += "put $portable $tagDir/"
+Get-ChildItem 'dist\windows\*.exe' | ForEach-Object { $lines += "put $($_.FullName) $tagDir/" }
+Get-ChildItem 'dist\updater\windows\*.zip' | ForEach-Object { $lines += "put $($_.FullName) $tagDir/" }
 Copy-Item 'dist\updater\windows\release.json' 'dist\updater\windows\release-windows.json' -Force
-gh release upload $TAG 'dist\updater\windows\release-windows.json' --clobber
+$lines += "put dist\updater\windows\release-windows.json $tagDir/"
+$sentinel = Join-Path $sshDir '.windows-done'
+Set-Content -Encoding Ascii -Path $sentinel -Value ''
+$lines += "put $sentinel $tagDir/.windows-done"
+Set-Content -Encoding Ascii -Path $upBatch -Value ($lines -join "`n")
+& sftp @sshOpts -b $upBatch $sshTarget | Out-String | Write-Host
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-Write-Host "draft $TAG pronto — sentinel publicado"
+Remove-Item -Recurse -Force $sshDir
+Write-Host "artefatos Windows em $UPDATES_BASE — sentinel publicado"
