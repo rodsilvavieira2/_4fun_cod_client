@@ -27,6 +27,9 @@ foreach(VAR IN ITEMS BRIDGE_DIR STAGE_DIR STAGE_DLL STAGE_LIB DUMPBIN_EXE LIB_EX
   if(NOT DEFINED ${VAR})
     message(FATAL_ERROR "stage_ort_windows.cmake: -D${VAR}=... is required")
   endif()
+  # (pwsh callers may pass -D values wrapped in literal quotes; the MSVC
+  # tools then see the quotes as part of the filename -> LNK1104.)
+  string(REGEX REPLACE "^\"(.*)\"$" "\\1" ${VAR} "${${VAR}}")
 endforeach()
 
 # 1. locate DirectML.dll (see header for source order).

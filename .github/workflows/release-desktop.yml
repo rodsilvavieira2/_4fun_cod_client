@@ -354,9 +354,11 @@ jobs:
 
           $bridge = Join-Path (Get-Location) 'native\deepfilter_bridge'
           $stage = Join-Path $bridge 'target\stage-windows'
-          & cmake -DBRIDGE_DIR="$bridge" -DSTAGE_DIR="$stage" `
-            -DSTAGE_DLL="$stage\DirectML.dll" -DSTAGE_LIB="$stage\DirectML.lib" `
-            -DDUMPBIN_EXE="$dumpbin" -DLIB_EXE="$libexe" `
+          # (Sem aspas nos -D: paths sem espacos; pwsh repassaria `\"` como
+          # parte literal do valor e o cmake as embutiria no path -> LNK1104.)
+          & cmake -DBRIDGE_DIR=$bridge -DSTAGE_DIR=$stage `
+            -DSTAGE_DLL=$stage\DirectML.dll -DSTAGE_LIB=$stage\DirectML.lib `
+            -DDUMPBIN_EXE=$dumpbin -DLIB_EXE=$libexe `
             -P packages/flutter_webrtc/windows/stage_ort_windows.cmake
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Get-ChildItem $stage
