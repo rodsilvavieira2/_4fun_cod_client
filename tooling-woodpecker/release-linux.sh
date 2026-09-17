@@ -222,10 +222,12 @@ sftp $SFTP_OPTS -b "$TMPD/mkdir-latest.batch" "$UPDATES_USER@$UPDATES_HOST" >/de
 } > "$TMPD/upload.batch"
 # shellcheck disable=SC2086
 sftp $SFTP_OPTS -b "$TMPD/upload.batch" "$UPDATES_USER@$UPDATES_HOST"
-printf 'put %s %s/latest/\nput %s %s/latest/\nput %s %s/latest/\n' \
-  dist/tag/"$APP_NAME"-*.zip "$UPDATES_ROOT" \
-  dist/tag/release-*.json "$UPDATES_ROOT" \
-  dist/tag/app-archive.json "$UPDATES_ROOT" > "$TMPD/latest.batch"
+# Um `put` por linha: glob com 2 arquivos na mesma linha vira remoto invalido.
+{
+  for f in dist/tag/"$APP_NAME"-*.zip dist/tag/release-*.json dist/tag/app-archive.json; do
+    printf 'put %s %s/latest/\n' "$f" "$UPDATES_ROOT"
+  done
+} > "$TMPD/latest.batch"
 # shellcheck disable=SC2086
 sftp $SFTP_OPTS -b "$TMPD/latest.batch" "$UPDATES_USER@$UPDATES_HOST" >/dev/null 2>&1 || \
 sftp $SFTP_OPTS -b "$TMPD/latest.batch" "$UPDATES_USER@$UPDATES_HOST"
