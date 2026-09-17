@@ -50,8 +50,8 @@ void main() {
   });
 
   group('update feed', () {
-    test('app archive url points to github releases', () {
-      expect(updateAppArchiveUrl.host, 'github.com');
+    test('app archive url points to the VPS feed', () {
+      expect(updateAppArchiveUrl.host, 'updates.srv1849611.hstgr.cloud');
       expect(updateAppArchiveUrl.pathSegments.last, 'app-archive.json');
     });
 

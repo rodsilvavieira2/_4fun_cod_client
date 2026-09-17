@@ -1,6 +1,7 @@
 /// Config pura do auto-update (sem dart:io → roda em teste e web).
 ///
-/// Cobertura: Windows + Linux portátil, feed em GitHub Releases.
+/// Cobertura: Windows + Linux portátil, feed na VPS
+/// (`updates.srv1849611.hstgr.cloud/latest`).
 /// Web é no-op (stub) e macOS/mobile estão fora de escopo (AGENTS.md).
 library;
 
@@ -21,9 +22,9 @@ const String linuxPackageId = 'io.github.rodsilvavieira2.fourfun';
 const String updateChannel = 'stable';
 
 /// Base do feed: `app-archive.json` sai de `<baseUrl>/app-archive.json`
-/// (anexo da latest release). Ver `desktop_updater.yaml`.
+/// (feed estático na VPS — SPEC spec-private-releases-vps 2026-09-17).
 const String updateBaseUrl =
-    'https://github.com/rodsilvavieira2/_4fun_cod_client/releases/latest/download';
+    'https://updates.srv1849611.hstgr.cloud/latest';
 
 /// Página de releases (fallback de download manual).
 const String updateReleasesPageUrl =
