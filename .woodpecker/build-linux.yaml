@@ -17,4 +17,4 @@ steps:
       - flutter pub get
       - flutter analyze lib test
       - flutter test
-      - flutter build linux --release
+      - flutter build linux --release --dart-define=API_URL=https://api.srv1849611.hstgr.cloud --dart-define=OTEL_ENABLED=true --dart-define=OTEL_ENDPOINT=https://o2.srv1849611.hstgr.cloud
