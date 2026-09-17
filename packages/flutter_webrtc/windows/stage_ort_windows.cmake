@@ -22,6 +22,8 @@
 #  2. dumps its exports with dumpbin and builds an import lib with lib.exe.
 #
 # Inputs (-D): BRIDGE_DIR, STAGE_DIR, STAGE_DLL, STAGE_LIB, DUMPBIN_EXE, LIB_EXE.
+# Optional (-D): FOURFUN_DFBIN_DLL — exact DirectML.dll path (CI passes the
+# dfbin file it already verified; skips the fragile search below).
 
 # (Macro args carry Windows backslash paths; NEW preserves them verbatim
 # instead of reading \U \t etc. as escape sequences.)
@@ -49,6 +51,10 @@ macro(_fourfun_take_dll CAND)
   endif()
 endmacro()
 set(SRC_DLL "")
+if(DEFINED FOURFUN_DFBIN_DLL AND NOT "${FOURFUN_DFBIN_DLL}" STREQUAL "")
+  _fourfun_take_dll("${FOURFUN_DFBIN_DLL}")
+endif()
+if(NOT SRC_DLL)
 file(GLOB CAND_DLL "${BRIDGE_DIR}/target/release/DirectML.dll")
 foreach(C IN LISTS CAND_DLL)
   if(NOT SRC_DLL)
@@ -84,6 +90,7 @@ if(NOT SRC_DLL)
       _fourfun_take_dll("${C}")
     endif()
   endforeach()
+endif()
 endif()
 if(NOT SRC_DLL)
   message(FATAL_ERROR
