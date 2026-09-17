@@ -48,9 +48,10 @@ foreach ($r in ($roots | Where-Object { $_ } | Sort-Object -Unique)) {
   if ($cand) { $dumpbin = $cand; break }
 }
 if (-not $dumpbin) { Write-Error 'dumpbin nao encontrado'; exit 1 }
+$libexe = Join-Path (Split-Path $dumpbin) 'lib.exe'
 $cmake = $null
 try { $cmake = (Get-Command cmake -ErrorAction Stop).Source } catch { $cmake = 'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe' }
-$cargs = @("-DBRIDGE_DIR=$bridge", "-DSTAGE_DIR=$stage", "-DSTAGE_DLL=$stage\DirectML.dll", "-DSTAGE_LIB=$stage\DirectML.lib", "-DSTAGE_DEF=$stage\directml.def", "-DDUMPBIN=$dumpbin", "-DFOURFUN_DFBIN_DLL=$dfbinDll")
+$cargs = @("-DBRIDGE_DIR=$bridge", "-DSTAGE_DIR=$stage", "-DSTAGE_DLL=$stage\DirectML.dll", "-DSTAGE_LIB=$stage\DirectML.lib", "-DDUMPBIN_EXE=$dumpbin", "-DLIB_EXE=$libexe", "-DFOURFUN_DFBIN_DLL=$dfbinDll")
 & $cmake @cargs -P packages/flutter_webrtc/windows/stage_ort_windows.cmake
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 flutter build windows --release --build-name $APP_VERSION --build-number $BN `
