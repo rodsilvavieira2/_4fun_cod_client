@@ -124,8 +124,8 @@ endforeach()
 file(WRITE "${STAGE_DIR}/directml.def" "${DEF_BODY}")
 
 execute_process(
-  COMMAND "${LIB_EXE}" /DEF:"${STAGE_DIR}/directml.def"
-    /OUT:"${STAGE_LIB}" /MACHINE:X64
+  COMMAND "${LIB_EXE}" /DEF:${STAGE_DIR}/directml.def
+    /OUT:${STAGE_LIB} /MACHINE:X64
   RESULT_VARIABLE LIB_RES
 )
 if(NOT LIB_RES EQUAL 0)

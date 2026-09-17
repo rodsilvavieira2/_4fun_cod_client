@@ -1,3 +1,8 @@
+#if defined(_MSC_VER) && !defined(_CRT_SECURE_NO_WARNINGS)
+// MSVC 14.44 promotes getenv deprecation (C4996) under /W4; the
+// three STUDIO_* reads below are one-shot init reads, no overflow risk.
+#define _CRT_SECURE_NO_WARNINGS
+#endif
 #include "deep_filter_audio_processor.h"
 
 #include <algorithm>
@@ -247,9 +252,9 @@ void AudioEnhancementPipeline::StudioDynamics::ProcessBlock(float* samples,
     }
     sum_sq += static_cast<double>(s) * static_cast<double>(s);
   }
-  const float rms_db =
+  const float rms_db = static_cast<float>(
       20.0f * std::log10(std::sqrt(sum_sq / static_cast<double>(count)) +
-                         1e-9f);
+                         1e-9f));
 
   // Slow AGC: steer the hop RMS toward the target level. Gated on silence
   // so pauses don't ramp the gain into the noise floor, and asymmetric
