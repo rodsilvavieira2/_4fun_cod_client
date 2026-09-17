@@ -9,7 +9,7 @@ when:
 
 steps:
   - name: ci
-    image: ghcr.io/cirruslabs/flutter:stable
+    image: mobiledevops/flutter-sdk-image:3.44.4
     commands:
       - apt-get update && apt-get install -y clang cmake git ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev
       - flutter --version

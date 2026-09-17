@@ -21,4 +21,5 @@ steps:
   - name: build
     image: powershell
     commands:
+      - $env:PATH = "$env:USERPROFILE\.cargo\bin;$env:PATH"
       - flutter build windows --release
