@@ -321,7 +321,7 @@ jobs:
       - name: Setup Rust (DeepFilterNet bridge via cargo no CMake)
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Build DeepFilterNet bridge (cargo + onnxruntime stage)
+      - name: Build DeepFilterNet bridge (cargo + DirectML stage)
         shell: pwsh
         run: |
           # Roda fora do MSBuild de proposito: o flutter invoca o msbuild com
@@ -332,19 +332,10 @@ jobs:
           cargo build --release --manifest-path native/deepfilter_bridge/Cargo.toml
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-          # DIAG temporario (issue pipe Windows): o que o build script do
-          # ort-sys baixou/registrou? Remover quando o stage estabilizar.
-          Get-ChildItem native\deepfilter_bridge\target\release\build -Filter 'ort-sys-*' | ForEach-Object {
-            Write-Host "== $($_.FullName)"
-            Get-ChildItem $_.FullName | Format-Table Name, Length | Out-String | Write-Host
-            foreach ($f in @('output','stderr')) {
-              $p = Join-Path $_.FullName $f
-              if (Test-Path $p) { Write-Host "--- $f :"; Get-Content $p | Select-Object -First 15 | Write-Host }
-            }
-          }
-          Write-Host '== dfbin:'
-          Get-ChildItem "$env:LOCALAPPDATA\ort.pyke.io\dfbin" -Recurse -ErrorAction SilentlyContinue |
-            Select-Object -First 15 FullName | Write-Host
+          # DIAG temporario (issue pipe Windows): confirma que o copy-dylibs
+          # largou DirectML.dll no profile root. Remover quando verde.
+          Get-ChildItem native\deepfilter_bridge\target\release\*.dll -ErrorAction SilentlyContinue |
+            Format-Table Name, Length | Out-String | Write-Host
 
           $roots = @()
           $vswhere = 'C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe'
@@ -364,6 +355,7 @@ jobs:
           $bridge = Join-Path (Get-Location) 'native\deepfilter_bridge'
           $stage = Join-Path $bridge 'target\stage-windows'
           & cmake -DBRIDGE_DIR="$bridge" -DSTAGE_DIR="$stage" `
+            -DSTAGE_DLL="$stage\DirectML.dll" -DSTAGE_LIB="$stage\DirectML.lib" `
             -DDUMPBIN_EXE="$dumpbin" -DLIB_EXE="$libexe" `
             -P packages/flutter_webrtc/windows/stage_ort_windows.cmake
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

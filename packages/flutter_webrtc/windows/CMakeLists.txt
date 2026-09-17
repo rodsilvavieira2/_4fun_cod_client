@@ -64,13 +64,15 @@ if(NOT FOURFUN_DUMPBIN_EXE OR NOT FOURFUN_LIB_EXE)
 endif()
 add_custom_command(
   OUTPUT "${DEEPFILTER_BRIDGE_LIB}"
-         "${FOURFUN_ORT_STAGE_DIR}/onnxruntime.dll"
-         "${FOURFUN_ORT_STAGE_DIR}/onnxruntime.lib"
+         "${FOURFUN_ORT_STAGE_DIR}/DirectML.dll"
+         "${FOURFUN_ORT_STAGE_DIR}/DirectML.lib"
   COMMAND "${CARGO_EXECUTABLE}" build --manifest-path
           "${DEEPFILTER_BRIDGE_DIR}/Cargo.toml" --release
   COMMAND ${CMAKE_COMMAND}
     -DBRIDGE_DIR="${DEEPFILTER_BRIDGE_DIR}"
     -DSTAGE_DIR="${FOURFUN_ORT_STAGE_DIR}"
+    -DSTAGE_DLL="${FOURFUN_ORT_STAGE_DIR}/DirectML.dll"
+    -DSTAGE_LIB="${FOURFUN_ORT_STAGE_DIR}/DirectML.lib"
     -DDUMPBIN_EXE="${FOURFUN_DUMPBIN_EXE}"
     -DLIB_EXE="${FOURFUN_LIB_EXE}"
     -P "${CMAKE_CURRENT_SOURCE_DIR}/stage_ort_windows.cmake"
@@ -92,20 +94,17 @@ add_custom_target(fourfun_deepfilter_bridge_build
 add_library(fourfun_deepfilter_bridge STATIC IMPORTED GLOBAL)
 set_target_properties(fourfun_deepfilter_bridge PROPERTIES
   IMPORTED_LOCATION "${DEEPFILTER_BRIDGE_LIB}")
-# On MSVC the ort crate links onnxruntime dynamically: stage the downloaded
-# DLL at build time (after cargo) and ship it. Linux needs none of this -
-# onnxruntime is statically inside the .a (verified: no DT_NEEDED, Ort
-# symbols defined in the plugin .so).
-#
-# The ort download cache path contains a version hash (unstable), and
-# copy-dylibs only surfaces the .dll - never the import .lib the MSVC link
-# needs. So the stage script takes the DLL (copy-dylibs drops it at the cargo
-# profile root) and rebuilds an import lib from its exports with the MSVC
-# tools living next to the linker.
-if(NOT TARGET fourfun_onnxruntime)
-add_library(fourfun_onnxruntime STATIC IMPORTED GLOBAL)
-set_target_properties(fourfun_onnxruntime PROPERTIES
-  IMPORTED_LOCATION "${FOURFUN_ORT_STAGE_DIR}/onnxruntime.lib")
+# On MSVC the bridge .lib already contains onnxruntime STATICALLY (pyke
+# Windows dist ships a 341MB static onnxruntime.lib - verified, no DLL).
+# What remains for the final plugin link (per ort-sys build/static_link):
+# DX12 system libs (dxguid DXCORE DXGI D3D12, from the Windows SDK) plus a
+# DirectML import lib - the dist ships DirectML.dll but no DirectML.lib,
+# so the stage script rebuilds one from its exports. DirectML.dll ships
+# at runtime via the bundled libraries below. Linux needs none of this.
+if(NOT TARGET fourfun_directml)
+add_library(fourfun_directml STATIC IMPORTED GLOBAL)
+set_target_properties(fourfun_directml PROPERTIES
+  IMPORTED_LOCATION "${FOURFUN_ORT_STAGE_DIR}/DirectML.lib")
 endif()
 
 
@@ -129,7 +128,11 @@ target_link_libraries(${PLUGIN_NAME} PRIVATE
   flutter
   flutter_wrapper_plugin
   fourfun_deepfilter_bridge
-  fourfun_onnxruntime
+  dxguid
+  DXCORE
+  DXGI
+  D3D12
+  fourfun_directml
   "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/libwebrtc/lib/libwebrtc.dll.lib"
   avrt.lib
   ksuser.lib
@@ -148,6 +151,6 @@ add_dependencies(${PLUGIN_NAME} fourfun_deepfilter_bridge_build)
 # List of absolute paths to libraries that should be bundled with the plugin
 set(flutter_webrtc_bundled_libraries
   "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/libwebrtc/lib/libwebrtc.dll"
-  "${FOURFUN_ORT_STAGE_DIR}/onnxruntime.dll"
+  "${FOURFUN_ORT_STAGE_DIR}/DirectML.dll"
   PARENT_SCOPE
 )
