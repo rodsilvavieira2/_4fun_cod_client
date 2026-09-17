@@ -94,6 +94,7 @@ if(NOT FOURFUN_DUMPBIN_EXE OR NOT FOURFUN_LIB_EXE)
     "fourfun: dumpbin.exe/lib.exe not found next to ${CMAKE_LINKER} - "
     "cannot stage onnxruntime for the DeepFilterNet bridge")
 endif()
+if(NOT TARGET fourfun_ort_stage)
 add_custom_command(
   OUTPUT "${FOURFUN_ORT_STAGE_DIR}/onnxruntime.dll"
          "${FOURFUN_ORT_STAGE_DIR}/onnxruntime.lib"
@@ -109,32 +110,13 @@ add_custom_command(
 add_custom_target(fourfun_ort_stage
   DEPENDS "${FOURFUN_ORT_STAGE_DIR}/onnxruntime.dll"
           "${FOURFUN_ORT_STAGE_DIR}/onnxruntime.lib")
+endif()
+if(NOT TARGET fourfun_onnxruntime)
 add_library(fourfun_onnxruntime STATIC IMPORTED GLOBAL)
 set_target_properties(fourfun_onnxruntime PROPERTIES
   IMPORTED_LOCATION "${FOURFUN_ORT_STAGE_DIR}/onnxruntime.lib")
+endif()
 
-
-# On MSVC the ort crate links onnxruntime dynamically: stage the downloaded
-# DLL + import lib at build time (after cargo), link the import lib, and
-# ship the DLL. Linux needs none of this - onnxruntime is statically inside
-# the .a (verified: no DT_NEEDED, Ort symbols defined in the plugin .so).
-set(FOURFUN_ORT_STAGE_DIR "${CMAKE_CURRENT_BINARY_DIR}/fourfun_ort_stage")
-add_custom_command(
-  OUTPUT "${FOURFUN_ORT_STAGE_DIR}/onnxruntime.dll"
-         "${FOURFUN_ORT_STAGE_DIR}/onnxruntime.lib"
-  COMMAND ${CMAKE_COMMAND}
-    -DBRIDGE_DIR="${DEEPFILTER_BRIDGE_DIR}"
-    -DSTAGE_DIR="${FOURFUN_ORT_STAGE_DIR}"
-    -P "${CMAKE_CURRENT_SOURCE_DIR}/stage_ort_windows.cmake"
-  DEPENDS "${DEEPFILTER_BRIDGE_LIB}"
-  COMMENT "Staging onnxruntime binaries for flutter_webrtc"
-)
-add_custom_target(fourfun_ort_stage
-  DEPENDS "${FOURFUN_ORT_STAGE_DIR}/onnxruntime.dll"
-          "${FOURFUN_ORT_STAGE_DIR}/onnxruntime.lib")
-add_library(fourfun_onnxruntime STATIC IMPORTED GLOBAL)
-set_target_properties(fourfun_onnxruntime PROPERTIES
-  IMPORTED_LOCATION "${FOURFUN_ORT_STAGE_DIR}/onnxruntime.lib")
 
 include_directories(
   "${CMAKE_CURRENT_SOURCE_DIR}"
@@ -157,7 +139,6 @@ target_link_libraries(${PLUGIN_NAME} PRIVATE
   flutter_wrapper_plugin
   fourfun_deepfilter_bridge
   fourfun_onnxruntime
-  fourfun_onnxruntime
   "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/libwebrtc/lib/libwebrtc.dll.lib"
   avrt.lib
   ksuser.lib
@@ -173,12 +154,10 @@ target_link_libraries(${PLUGIN_NAME} PRIVATE
 )
 add_dependencies(${PLUGIN_NAME} fourfun_deepfilter_bridge_build)
 add_dependencies(${PLUGIN_NAME} fourfun_ort_stage)
-add_dependencies(${PLUGIN_NAME} fourfun_ort_stage)
 
 # List of absolute paths to libraries that should be bundled with the plugin
 set(flutter_webrtc_bundled_libraries
   "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/libwebrtc/lib/libwebrtc.dll"
-  "${FOURFUN_ORT_STAGE_DIR}/onnxruntime.dll"
   "${FOURFUN_ORT_STAGE_DIR}/onnxruntime.dll"
   PARENT_SCOPE
 )
