@@ -32,13 +32,23 @@ foreach(VAR IN ITEMS BRIDGE_DIR STAGE_DIR STAGE_DLL STAGE_LIB DUMPBIN_EXE LIB_EX
   string(REGEX REPLACE "^\"(.*)\"$" "\\1" ${VAR} "${${VAR}}")
 endforeach()
 
-# 1. locate DirectML.dll (see header for source order).
+# 1. locate DirectML.dll (see header for source order). Empty files are
+#      rejected: ort's copy-dylibs has been observed leaving a 0-byte
+#      DirectML.dll at the profile root (dumpbin then fails on it) while the
+#      dfbin original is intact.
+macro(_fourfun_take_dll CAND)
+  file(SIZE "${CAND}" _SZ)
+  if(_SZ GREATER 0)
+    set(SRC_DLL "${CAND}")
+  endif()
+endmacro()
 set(SRC_DLL "")
 file(GLOB CAND_DLL "${BRIDGE_DIR}/target/release/DirectML.dll")
-list(LENGTH CAND_DLL N_DLL)
-if(N_DLL GREATER 0)
-  list(GET CAND_DLL 0 SRC_DLL)
-endif()
+foreach(C IN LISTS CAND_DLL)
+  if(NOT SRC_DLL)
+    _fourfun_take_dll("${C}")
+  endif()
+endforeach()
 if(NOT SRC_DLL)
   file(GLOB ORT_BUILD_OUT "${BRIDGE_DIR}/target/release/build/ort-sys-*/output")
   foreach(OUT_FILE IN LISTS ORT_BUILD_OUT)
@@ -49,8 +59,10 @@ if(NOT SRC_DLL)
         # (cargo may emit the line with trailing whitespace/control chars)
         string(STRIP "${LINK_DIR}" LINK_DIR)
         if(EXISTS "${LINK_DIR}/DirectML.dll")
-          set(SRC_DLL "${LINK_DIR}/DirectML.dll")
-          break()
+          _fourfun_take_dll("${LINK_DIR}/DirectML.dll")
+          if(SRC_DLL)
+            break()
+          endif()
         endif()
       endif()
     endforeach()
@@ -61,10 +73,11 @@ if(NOT SRC_DLL)
 endif()
 if(NOT SRC_DLL)
   file(GLOB_RECURSE CAND_DLL "$ENV{LOCALAPPDATA}/ort.pyke.io/dfbin/*/DirectML.dll")
-  list(LENGTH CAND_DLL N_DLL)
-  if(N_DLL GREATER 0)
-    list(GET CAND_DLL 0 SRC_DLL)
-  endif()
+  foreach(C IN LISTS CAND_DLL)
+    if(NOT SRC_DLL)
+      _fourfun_take_dll("${C}")
+    endif()
+  endforeach()
 endif()
 if(NOT SRC_DLL)
   message(FATAL_ERROR
@@ -81,10 +94,11 @@ file(COPY_FILE "${SRC_DLL}" "${STAGE_DLL}"
 execute_process(
   COMMAND "${DUMPBIN_EXE}" /EXPORTS "${SRC_DLL}"
   OUTPUT_FILE "${STAGE_DIR}/directml.exports.txt"
+  ERROR_VARIABLE DUMP_ERR
   RESULT_VARIABLE DUMP_RES
 )
 if(NOT DUMP_RES EQUAL 0)
-  message(FATAL_ERROR "dumpbin /EXPORTS failed for ${SRC_DLL}")
+  message(FATAL_ERROR "dumpbin /EXPORTS failed for ${SRC_DLL}: ${DUMP_ERR}")
 endif()
 
 file(STRINGS "${STAGE_DIR}/directml.exports.txt" EXP_LINES)
