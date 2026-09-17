@@ -23,6 +23,12 @@
 #
 # Inputs (-D): BRIDGE_DIR, STAGE_DIR, STAGE_DLL, STAGE_LIB, DUMPBIN_EXE, LIB_EXE.
 
+# (Macro args carry Windows backslash paths; NEW preserves them verbatim
+# instead of reading \U \t etc. as escape sequences.)
+if(POLICY CMP0219)
+  cmake_policy(SET CMP0219 NEW)
+endif()
+
 foreach(VAR IN ITEMS BRIDGE_DIR STAGE_DIR STAGE_DLL STAGE_LIB DUMPBIN_EXE LIB_EXE)
   if(NOT DEFINED ${VAR})
     message(FATAL_ERROR "stage_ort_windows.cmake: -D${VAR}=... is required")
