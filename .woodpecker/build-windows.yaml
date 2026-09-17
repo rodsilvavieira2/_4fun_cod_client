@@ -65,4 +65,4 @@ steps:
       UPDATER_PASSPHRASE:
         from_secret: updater_passphrase
     commands:
-      - '& ./.woodpecker/scripts/release-windows.ps1; exit $LASTEXITCODE'
+      - '& ./tooling-woodpecker/release-windows.ps1; exit $LASTEXITCODE'

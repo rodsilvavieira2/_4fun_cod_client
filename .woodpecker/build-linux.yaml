@@ -57,4 +57,4 @@ steps:
         from_secret: updater_passphrase
     commands:
       - 'case "$CI_COMMIT_TAG" in v*) ;; *) echo "skip: nao e tag v*"; exit 78;; esac'
-      - bash .woodpecker/scripts/release-linux.sh
+      - bash tooling-woodpecker/release-linux.sh
