@@ -21,7 +21,20 @@ apt-get update && apt-get install -y --no-install-recommends clang cmake git nin
   liblzma-dev software-properties-common lsb-release \
   wget curl xz-utils zip unzip file patchelf zsync desktop-file-utils openssh-client ca-certificates
 export PATH="$HOME/.cargo/bin:$HOME/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin:$PATH"
-if ! command -v cargo >/dev/null; then
+# A imagem ja traz cargo (/usr/bin, 1.75) mas o Cargo.lock e v4 (>=1.78):
+# o `command -v` puro aceitava o velho e o CMake (find_program cargo)
+# travava no parse do lock. Checa a versao e forca rustup se insuficiente.
+need_rust=1
+if command -v cargo >/dev/null; then
+  ver="$(cargo --version | grep -o -E '[0-9]+\.[0-9]+' | head -1)"
+  major="${ver%%.*}"; minor="${ver##*.}"
+  if [ "$major" -gt 1 ] || { [ "$major" -eq 1 ] && [ "$minor" -ge 78 ]; }; then
+    need_rust=0
+  else
+    echo "cargo $ver insuficiente (lock v4 quer >=1.78), instalando stable via rustup"
+  fi
+fi
+if [ "$need_rust" = 1 ]; then
   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
 fi
 rustc --version && cargo --version
