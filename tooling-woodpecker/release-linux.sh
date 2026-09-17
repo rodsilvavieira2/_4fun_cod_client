@@ -171,9 +171,9 @@ ls -lh dist/ dist/updater/updater-windows/
 
 # --- feed (linux + windows): estende o publicado (VPS, fallback GitHub, ou novo) ---
 mkdir -p dist/updater/feed
-cp dist/updater/updater-linux/release.json dist/updater/feed/release-linux.json
-cp dist/updater/updater-windows/release.json dist/updater/feed/release-windows.json
-cp dist/updater/updater-linux/*.zip dist/updater/feed/
+cp dist/updater/linux/release.json dist/updater/feed/release-linux.json
+cp dist/updater/updater-windows/release-windows.json dist/updater/feed/release-windows.json
+cp dist/updater/linux/*.zip dist/updater/feed/
 cp dist/updater/updater-windows/*.zip dist/updater/feed/
 if curl -sfL "$UPDATES_LATEST/app-archive.json" -o dist/updater/feed/app-archive.json; then
   echo "extending VPS feed"
