@@ -1,8 +1,10 @@
-# Release Windows - build + sobe artefatos p/ o feed na VPS (SPEC spec-private-releases-vps).
+# Release Windows - build UNICO versionado + deposita no share (fan-in Opcao A).
 # Roda no step `release` de .woodpecker/build-windows.yaml (gate v* abaixo).
-# O job Linux aguarda o sentinel `.windows-done` e publica o feed (latest/).
-# Premissa: steps environment/dependencies/bridge/build ja rodaram neste pipeline
-# (mesma VM, mesmo workspace) - cargo aqui e incremental, sem limpar o cache ORT.
+# Nao compila duas vezes: o step `build` do yaml so builda em tags nao-v*.
+# Nao assina nem sobe nada: sem DPAPI na VM, sem sftp pelo NAT.
+# O workflow `publish` (depends_on) recolhe do share, assina, monta o feed
+# e faz o upload unico pelo link rapido do host.
+# Destino: Z:\<tag>\windows\ (= <repo>/infra/windows/<tag>/windows no host).
 $ErrorActionPreference = 'Stop'
 
 $TAG = $env:CI_COMMIT_TAG
@@ -11,17 +13,11 @@ $APP_VERSION = $TAG.TrimStart('v')
 $BN = $env:CI_PIPELINE_NUMBER
 $APP_NAME = '4FunCode'
 $APP_SLUG = '4fun-cod'
-
-# --- feed na VPS ---
-$UPDATES_HOST = '179.197.236.24'
-$UPDATES_USER = 'updates-deploy'
-$UPDATES_ROOT = '/docker/updates/data'
 $UPDATES_BASE = "https://updates.srv1849611.hstgr.cloud/$TAG"
-$PINNED_HOSTKEY = '179.197.236.24 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGD9/TjlwFN/vbVM1IQvCyqXK51vAU5gsov+LI9EiUvt'
 
 Write-Host "Release Windows $APP_VERSION (build $BN) da tag $TAG"
 
-# --- version stamp (exe == feed) ---
+# --- version stamp ANTES do build unico (exe == feed) ---
 (Get-Content pubspec.yaml) -replace '^version: .*', "version: $APP_VERSION+$BN" | Set-Content pubspec.yaml
 Select-String '^version:' pubspec.yaml
 
@@ -35,7 +31,7 @@ $dfbinDll = Get-ChildItem (Join-Path $env:ORT_CACHE_DIR 'dfbin') -Recurse -Filte
   Where-Object { $_.Length -gt 0 } | Select-Object -First 1 -ExpandProperty FullName
 if (-not $dfbinDll) { Write-Error 'DirectML.dll nao baixado'; exit 1 }
 
-# --- build versionado ---
+# --- build unico versionado ---
 $bridge = Join-Path (Get-Location) 'native\deepfilter_bridge'
 $stage = Join-Path $bridge 'target\stage-windows'
 $vswhere = 'C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe'
@@ -78,62 +74,19 @@ if (-not (Test-Path $iscc)) { $iscc = 'C:\Program Files (x86)\Inno Setup 6\ISCC.
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 Get-ChildItem 'dist\windows' | Out-String | Write-Host
 
-# --- updater: chave + package + sign ---
-# O store DPAPI (%LOCALAPPDATA%\desktop_updater\release-keys) persiste entre
-# pipelines na mesma VM, e o protect usa entropia aleatoria: re-importar a
-# MESMA chave sobre o arquivo existente sempre falha com "A different
-# private key already exists". Limpa o profile antes (dir so guarda essas
-# chaves) e mantem o retry da GHA contra flake do DPAPI.
-$keysProfile = (Get-Content desktop_updater.keys.json | ConvertFrom-Json).profileId
-$storeFile = Join-Path $env:LOCALAPPDATA "desktop_updater\release-keys\$keysProfile.json"
-Remove-Item $storeFile -Force -ErrorAction SilentlyContinue
-Remove-Item "$storeFile.lock" -Force -ErrorAction SilentlyContinue
-[System.IO.File]::WriteAllBytes("$env:TEMP\release-key.dukey", [System.Convert]::FromBase64String($env:UPDATER_BUNDLE_B64))
-$env:UPDATER_PASSPHRASE = $env:UPDATER_PASSPHRASE
-$attempt = 0
-while ($true) {
-  $attempt++
-  dart run desktop_updater:release keys import --input "$env:TEMP\release-key.dukey" --passphrase-env UPDATER_PASSPHRASE
-  if ($LASTEXITCODE -eq 0) { break }
-  if ($attempt -ge 5) { Write-Error "keys import failed after $attempt attempts"; exit 1 }
-  Start-Sleep -Seconds (15 * $attempt)
-}
-Remove-Item "$env:TEMP\release-key.dukey" -Force -ErrorAction SilentlyContinue
+# --- updater package (SEM sign: publish assina tudo de uma vez no host) ---
 dart run desktop_updater:package --input $BUNDLE --output 'dist\updater\windows' `
   --package-id 'fourfun_cod_client' --app-name $APP_NAME --version $APP_VERSION --build-number $BN `
   --platform windows --channel stable `
   --artifact-url "$UPDATES_BASE/$APP_NAME-$APP_VERSION-windows.zip"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-dart run desktop_updater:release sign --release 'dist\updater\windows\release.json'
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-# --- upload p/ updates/<tag>/ na VPS + sentinel .windows-done por ultimo ---
-if (-not (Get-Command sftp -ErrorAction SilentlyContinue)) { Write-Error 'sftp nao encontrado (OpenSSH Client?)'; exit 1 }
-if (-not $env:UPDATES_DEPLOY_KEY_B64) { Write-Error 'UPDATES_DEPLOY_KEY_B64 vazio (secret updates_deploy_key?)'; exit 1 }
-$sshDir = Join-Path $env:TEMP 'updates-ssh'
-New-Item -ItemType Directory -Force -Path $sshDir | Out-Null
-$keyFile = Join-Path $sshDir 'updates_deploy_key'
-[System.IO.File]::WriteAllBytes($keyFile, [System.Convert]::FromBase64String($env:UPDATES_DEPLOY_KEY_B64))
-$khFile = Join-Path $sshDir 'known_hosts'
-Set-Content -Encoding Ascii -Path $khFile -Value $PINNED_HOSTKEY
-$sshTarget = "${UPDATES_USER}@${UPDATES_HOST}"
-$sshOpts = @('-i', $keyFile, '-o', 'BatchMode=yes', '-o', 'IdentitiesOnly=yes', '-o', 'StrictHostKeyChecking=yes', "-o", "UserKnownHostsFile=$khFile", '-o', 'ConnectTimeout=30', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=4')
-$tagDir = "$UPDATES_ROOT/$TAG"
-$mkdirBatch = Join-Path $sshDir 'mkdir.batch'
-Set-Content -Encoding Ascii -Path $mkdirBatch -Value "mkdir $tagDir"
-& sftp @sshOpts -b $mkdirBatch $sshTarget | Out-String | Write-Host
-$upBatch = Join-Path $sshDir 'upload.batch'
-$lines = @()
-$lines += "put $portable $tagDir/"
-Get-ChildItem 'dist\windows\*.exe' | ForEach-Object { $lines += "put $($_.FullName) $tagDir/" }
-Get-ChildItem 'dist\updater\windows\*.zip' | ForEach-Object { $lines += "put $($_.FullName) $tagDir/" }
-Copy-Item 'dist\updater\windows\release.json' 'dist\updater\windows\release-windows.json' -Force
-$lines += "put dist\updater\windows\release-windows.json $tagDir/"
-$sentinel = Join-Path $sshDir '.windows-done'
-Set-Content -Encoding Ascii -Path $sentinel -Value ''
-$lines += "put $sentinel $tagDir/.windows-done"
-Set-Content -Encoding Ascii -Path $upBatch -Value ($lines -join "`n")
-& sftp @sshOpts -b $upBatch $sshTarget | Out-String | Write-Host
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-Remove-Item -Recurse -Force $sshDir
-Write-Host "artefatos Windows em $UPDATES_BASE - sentinel publicado"
+# --- deposita no share p/ o publish recolher (copia local, segundos) ---
+$share = "Z:\$TAG\windows"
+New-Item -ItemType Directory -Force -Path $share | Out-Null
+Copy-Item $portable "$share\" -Force
+Get-ChildItem 'dist\windows\*.exe' | Copy-Item -Destination $share -Force
+Get-ChildItem 'dist\updater\windows\*.zip' | Copy-Item -Destination $share -Force
+Copy-Item 'dist\updater\windows\release.json' "$share\release.json" -Force
+Get-ChildItem $share | Out-String | Write-Host
+Write-Host "artefatos Windows em $share - publish assume daqui"

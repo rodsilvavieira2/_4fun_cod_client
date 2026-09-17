@@ -39,10 +39,12 @@ steps:
       OTEL_VIA_API:
         from_secret: otel_via_api
     commands:
-      - $env:ORT_CACHE_DIR = Join-Path $env:USERPROFILE '.cache\ort-cache'; New-Item -ItemType Directory -Force -Path $env:ORT_CACHE_DIR | Out-Null; $env:RUSTUP_TOOLCHAIN = 'stable'; $env:PATH = "$env:USERPROFILE\.rustup\toolchains\stable-x86_64-pc-windows-msvc\bin;$env:USERPROFILE\.cargo\bin;$env:PATH"; flutter build windows --release --dart-define=API_URL=$env:API_URL --dart-define=LIVEKIT_URL=$env:LIVEKIT_URL --dart-define=OTEL_ENABLED=$env:OTEL_ENABLED --dart-define=OTEL_ENDPOINT=$env:OTEL_ENDPOINT --dart-define=OTEL_ORG=$env:OTEL_ORG --dart-define=OTEL_VIA_API=$env:OTEL_VIA_API
+      # Build aqui so em tags nao-v*: em v* o step `release` faz o build UNICO
+      # ja versionado. (manual sem tag tambem builda: CI_COMMIT_TAG vazio.)
+      - 'if ($env:CI_COMMIT_TAG -and $env:CI_COMMIT_TAG.StartsWith("v")) { Write-Host "skip: build versionado no step release" } else { $env:ORT_CACHE_DIR = Join-Path $env:USERPROFILE ".cache\ort-cache"; New-Item -ItemType Directory -Force -Path $env:ORT_CACHE_DIR | Out-Null; $env:RUSTUP_TOOLCHAIN = "stable"; $env:PATH = "$env:USERPROFILE\.rustup\toolchains\stable-x86_64-pc-windows-msvc\bin;$env:USERPROFILE\.cargo\bin;$env:PATH"; flutter build windows --release --dart-define=API_URL=$env:API_URL --dart-define=LIVEKIT_URL=$env:LIVEKIT_URL --dart-define=OTEL_ENABLED=$env:OTEL_ENABLED --dart-define=OTEL_ENDPOINT=$env:OTEL_ENDPOINT --dart-define=OTEL_ORG=$env:OTEL_ORG --dart-define=OTEL_VIA_API=$env:OTEL_VIA_API }'
 
-  # Release (tags v*): mesmos artefatos da release-desktop.yml. Gate v* dentro do
-  # script (exit 78 = skipped nas ci-*). Steps de CI acima seguem intocados.
+  # Release (tags v*): build UNICO versionado + deposita no share p/ o publish.
+  # Gate v* dentro do script (exit 78 = skipped nas ci-*).
   - name: release
     image: powershell
     environment:
@@ -58,11 +60,5 @@ steps:
         from_secret: otel_org
       OTEL_VIA_API:
         from_secret: otel_via_api
-      UPDATES_DEPLOY_KEY_B64:
-        from_secret: updates_deploy_key
-      UPDATER_BUNDLE_B64:
-        from_secret: updater_bundle_b64
-      UPDATER_PASSPHRASE:
-        from_secret: updater_passphrase
     commands:
       - 'Set-ExecutionPolicy -Scope Process Bypass -Force; & ./tooling-woodpecker/release-windows.ps1; exit $LASTEXITCODE'

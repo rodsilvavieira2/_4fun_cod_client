@@ -1,0 +1,28 @@
+# Client Flutter — Publish (fan-in). Roda DEPOIS de build-linux + build-windows
+# (depends_on = barreira: so executa se os dois passarem; falha de um pula este).
+# Recolhe os artefatos do share host<->VM, assina, monta o feed e faz o upload
+# unico p/ a VPS pelo link rapido do host. Unico escritor na VPS.
+# Requer repo trusted (Settings -> Trusted -> volumes) p/ montar o share.
+labels:
+  runner: linux-docker
+
+depends_on: [build-linux, build-windows]
+
+when:
+  - event: [tag, manual]
+
+steps:
+  - name: publish
+    image: mobiledevops/flutter-sdk-image:3.44.4
+    volumes:
+      - /home/rodrigo/Personal/4fun_cod/infra/windows:/share
+    environment:
+      UPDATES_DEPLOY_KEY_B64:
+        from_secret: updates_deploy_key
+      UPDATER_BUNDLE_B64:
+        from_secret: updater_bundle_b64
+      UPDATER_PASSPHRASE:
+        from_secret: updater_passphrase
+    commands:
+      - 'case "$CI_COMMIT_TAG" in v*) ;; *) echo "skip: nao e tag v*"; exit 78;; esac'
+      - bash tooling-woodpecker/publish.sh

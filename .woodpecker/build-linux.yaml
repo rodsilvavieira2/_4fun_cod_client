@@ -30,12 +30,16 @@ steps:
       - flutter pub get
       - flutter analyze lib test
       - flutter test
-      - flutter build linux --release --dart-define=API_URL=$API_URL --dart-define=LIVEKIT_URL=$LIVEKIT_URL --dart-define=OTEL_ENABLED=$OTEL_ENABLED --dart-define=OTEL_ENDPOINT=$OTEL_ENDPOINT --dart-define=OTEL_ORG=$OTEL_ORG --dart-define=OTEL_VIA_API=$OTEL_VIA_API
+      # Build aqui so em tags nao-v*: em v* o step `release` faz o build UNICO
+      # ja versionado (sem carimbo o updater nunca veria update).
+      - 'case "${CI_COMMIT_TAG:-}" in v*) echo "skip: build versionado no step release";; *) flutter build linux --release --dart-define=API_URL=$API_URL --dart-define=LIVEKIT_URL=$LIVEKIT_URL --dart-define=OTEL_ENABLED=$OTEL_ENABLED --dart-define=OTEL_ENDPOINT=$OTEL_ENDPOINT --dart-define=OTEL_VIA_API=$OTEL_VIA_API;; esac'
 
-  # Release (tags v*): mesmos artefatos da release-desktop.yml. Gate v* na 1a linha;
-  # nas ci-* o step entra como skipped (exit 78). CI acima segue intocado.
+  # Release (tags v*): build UNICO versionado + deposita no share p/ o publish.
+  # Gate v* na 1a linha; nas ci-* o step entra como skipped (exit 78).
   - name: release
     image: mobiledevops/flutter-sdk-image:3.44.4
+    volumes:
+      - /home/rodrigo/Personal/4fun_cod/infra/windows:/share
     environment:
       API_URL:
         from_secret: api_url
@@ -49,12 +53,6 @@ steps:
         from_secret: otel_org
       OTEL_VIA_API:
         from_secret: otel_via_api
-      UPDATES_DEPLOY_KEY_B64:
-        from_secret: updates_deploy_key
-      UPDATER_BUNDLE_B64:
-        from_secret: updater_bundle_b64
-      UPDATER_PASSPHRASE:
-        from_secret: updater_passphrase
     commands:
       - 'case "$CI_COMMIT_TAG" in v*) ;; *) echo "skip: nao e tag v*"; exit 78;; esac'
       - bash tooling-woodpecker/release-linux.sh
