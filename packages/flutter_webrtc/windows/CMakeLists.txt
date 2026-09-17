@@ -51,10 +51,29 @@ find_program(CARGO_EXECUTABLE cargo)
 if(NOT CARGO_EXECUTABLE)
   message(FATAL_ERROR "cargo is required to build DeepFilterNet support")
 endif()
+set(FOURFUN_ORT_STAGE_DIR "${CMAKE_CURRENT_BINARY_DIR}/fourfun_ort_stage")
+get_filename_component(FOURFUN_MSVC_BINDIR "${CMAKE_LINKER}" DIRECTORY)
+find_program(FOURFUN_DUMPBIN_EXE NAMES dumpbin.exe
+  PATHS "${FOURFUN_MSVC_BINDIR}" NO_DEFAULT_PATH)
+find_program(FOURFUN_LIB_EXE NAMES lib.exe
+  PATHS "${FOURFUN_MSVC_BINDIR}" NO_DEFAULT_PATH)
+if(NOT FOURFUN_DUMPBIN_EXE OR NOT FOURFUN_LIB_EXE)
+  message(FATAL_ERROR
+    "fourfun: dumpbin.exe/lib.exe not found next to ${CMAKE_LINKER} - "
+    "cannot stage onnxruntime for the DeepFilterNet bridge")
+endif()
 add_custom_command(
   OUTPUT "${DEEPFILTER_BRIDGE_LIB}"
+         "${FOURFUN_ORT_STAGE_DIR}/onnxruntime.dll"
+         "${FOURFUN_ORT_STAGE_DIR}/onnxruntime.lib"
   COMMAND "${CARGO_EXECUTABLE}" build --manifest-path
           "${DEEPFILTER_BRIDGE_DIR}/Cargo.toml" --release
+  COMMAND ${CMAKE_COMMAND}
+    -DBRIDGE_DIR="${DEEPFILTER_BRIDGE_DIR}"
+    -DSTAGE_DIR="${FOURFUN_ORT_STAGE_DIR}"
+    -DDUMPBIN_EXE="${FOURFUN_DUMPBIN_EXE}"
+    -DLIB_EXE="${FOURFUN_LIB_EXE}"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/stage_ort_windows.cmake"
   WORKING_DIRECTORY "${DEEPFILTER_BRIDGE_DIR}"
   # The .lib lives in the source tree (cargo target dir), so it survives
   # `flutter clean` while the C++ objects don't. Without DEPENDS, CMake
@@ -83,34 +102,6 @@ set_target_properties(fourfun_deepfilter_bridge PROPERTIES
 # needs. So the stage script takes the DLL (copy-dylibs drops it at the cargo
 # profile root) and rebuilds an import lib from its exports with the MSVC
 # tools living next to the linker.
-set(FOURFUN_ORT_STAGE_DIR "${CMAKE_CURRENT_BINARY_DIR}/fourfun_ort_stage")
-get_filename_component(FOURFUN_MSVC_BINDIR "${CMAKE_LINKER}" DIRECTORY)
-find_program(FOURFUN_DUMPBIN_EXE NAMES dumpbin.exe
-  PATHS "${FOURFUN_MSVC_BINDIR}" NO_DEFAULT_PATH)
-find_program(FOURFUN_LIB_EXE NAMES lib.exe
-  PATHS "${FOURFUN_MSVC_BINDIR}" NO_DEFAULT_PATH)
-if(NOT FOURFUN_DUMPBIN_EXE OR NOT FOURFUN_LIB_EXE)
-  message(FATAL_ERROR
-    "fourfun: dumpbin.exe/lib.exe not found next to ${CMAKE_LINKER} - "
-    "cannot stage onnxruntime for the DeepFilterNet bridge")
-endif()
-if(NOT TARGET fourfun_ort_stage)
-add_custom_command(
-  OUTPUT "${FOURFUN_ORT_STAGE_DIR}/onnxruntime.dll"
-         "${FOURFUN_ORT_STAGE_DIR}/onnxruntime.lib"
-  COMMAND ${CMAKE_COMMAND}
-    -DBRIDGE_DIR="${DEEPFILTER_BRIDGE_DIR}"
-    -DSTAGE_DIR="${FOURFUN_ORT_STAGE_DIR}"
-    -DDUMPBIN_EXE="${FOURFUN_DUMPBIN_EXE}"
-    -DLIB_EXE="${FOURFUN_LIB_EXE}"
-    -P "${CMAKE_CURRENT_SOURCE_DIR}/stage_ort_windows.cmake"
-  DEPENDS "${DEEPFILTER_BRIDGE_LIB}"
-  COMMENT "Staging onnxruntime binaries for flutter_webrtc"
-)
-add_custom_target(fourfun_ort_stage
-  DEPENDS "${FOURFUN_ORT_STAGE_DIR}/onnxruntime.dll"
-          "${FOURFUN_ORT_STAGE_DIR}/onnxruntime.lib")
-endif()
 if(NOT TARGET fourfun_onnxruntime)
 add_library(fourfun_onnxruntime STATIC IMPORTED GLOBAL)
 set_target_properties(fourfun_onnxruntime PROPERTIES
@@ -153,7 +144,6 @@ target_link_libraries(${PLUGIN_NAME} PRIVATE
   ws2_32.lib
 )
 add_dependencies(${PLUGIN_NAME} fourfun_deepfilter_bridge_build)
-add_dependencies(${PLUGIN_NAME} fourfun_ort_stage)
 
 # List of absolute paths to libraries that should be bundled with the plugin
 set(flutter_webrtc_bundled_libraries
