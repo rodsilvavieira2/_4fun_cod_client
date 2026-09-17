@@ -26,7 +26,7 @@ export PATH="$HOME/.cargo/bin:$HOME/.rustup/toolchains/stable-x86_64-unknown-lin
 # travava no parse do lock. Checa a versao e forca rustup se insuficiente.
 need_rust=1
 if command -v cargo >/dev/null; then
-  ver="$(cargo --version | grep -o -E '[0-9]+\.[0-9]+' | head -1)"
+  ver="$(cargo --version | grep -o -E '[0-9]+\.[0-9]+' | sed -n '1p')"
   major="${ver%%.*}"; minor="${ver##*.}"
   if [ "$major" -gt 1 ] || { [ "$major" -eq 1 ] && [ "$minor" -ge 78 ]; }; then
     need_rust=0
@@ -64,6 +64,9 @@ flutter build linux -v \
 }
 
 # --- bundle tray native deps (fecho transitivo ayatana/appindicator) ---
+# ldconfig uma vez p/ arquivo: `ldconfig -p | grep -m1` em pipe e loteria de
+# SIGPIPE (grep fecha cedo, pipefail=141, set -e mata o script). Em arquivo nao.
+ldconfig -p > "$TMPD/ldconfig.txt" 2>/dev/null || true
 BUNDLE="build/linux/x64/release/bundle"
 PAT='lib(ayatana|appindicator|indicator|ido|dbusmenu)[^ ]*\.so\.[0-9]+'
 for pass in 1 2 3 4; do
@@ -72,7 +75,7 @@ for pass in 1 2 3 4; do
     [ -f "$so" ] || continue
     for need in $(readelf -d "$so" 2>/dev/null | grep -o -E "$PAT" | sort -u); do
       if [ ! -f "$BUNDLE/lib/$need" ]; then
-        path="$(ldconfig -p | grep -m1 -F "$need" | awk '{print $NF}')"
+        path="$(grep -m1 -F "$need" "$TMPD/ldconfig.txt" 2>/dev/null | awk '{print $NF}')"
         if [ -n "$path" ]; then
           cp -L "$path" "$BUNDLE/lib/"
           echo "bundled: $need"
