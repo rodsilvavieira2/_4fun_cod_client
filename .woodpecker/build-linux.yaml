@@ -31,3 +31,30 @@ steps:
       - flutter analyze lib test
       - flutter test
       - flutter build linux --release --dart-define=API_URL=$API_URL --dart-define=LIVEKIT_URL=$LIVEKIT_URL --dart-define=OTEL_ENABLED=$OTEL_ENABLED --dart-define=OTEL_ENDPOINT=$OTEL_ENDPOINT --dart-define=OTEL_ORG=$OTEL_ORG --dart-define=OTEL_VIA_API=$OTEL_VIA_API
+
+  # Release (tags v*): mesmos artefatos da release-desktop.yml. Gate v* na 1a linha;
+  # nas ci-* o step entra como skipped (exit 78). CI acima segue intocado.
+  - name: release
+    image: mobiledevops/flutter-sdk-image:3.44.4
+    environment:
+      API_URL:
+        from_secret: api_url
+      LIVEKIT_URL:
+        from_secret: livekit_url
+      OTEL_ENABLED:
+        from_secret: otel_enabled
+      OTEL_ENDPOINT:
+        from_secret: otel_endpoint
+      OTEL_ORG:
+        from_secret: otel_org
+      OTEL_VIA_API:
+        from_secret: otel_via_api
+      GH_TOKEN:
+        from_secret: github_token
+      UPDATER_BUNDLE_B64:
+        from_secret: updater_bundle_b64
+      UPDATER_PASSPHRASE:
+        from_secret: updater_passphrase
+    commands:
+      - 'case "$CI_COMMIT_TAG" in v*) ;; *) echo "skip: nao e tag v*"; exit 78;; esac'
+      - bash .woodpecker/scripts/release-linux.sh

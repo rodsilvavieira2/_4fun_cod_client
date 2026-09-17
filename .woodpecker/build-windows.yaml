@@ -40,3 +40,29 @@ steps:
         from_secret: otel_via_api
     commands:
       - $env:ORT_CACHE_DIR = Join-Path $env:USERPROFILE '.cache\ort-cache'; New-Item -ItemType Directory -Force -Path $env:ORT_CACHE_DIR | Out-Null; $env:RUSTUP_TOOLCHAIN = 'stable'; $env:PATH = "$env:USERPROFILE\.rustup\toolchains\stable-x86_64-pc-windows-msvc\bin;$env:USERPROFILE\.cargo\bin;$env:PATH"; flutter build windows --release --dart-define=API_URL=$env:API_URL --dart-define=LIVEKIT_URL=$env:LIVEKIT_URL --dart-define=OTEL_ENABLED=$env:OTEL_ENABLED --dart-define=OTEL_ENDPOINT=$env:OTEL_ENDPOINT --dart-define=OTEL_ORG=$env:OTEL_ORG --dart-define=OTEL_VIA_API=$env:OTEL_VIA_API
+
+  # Release (tags v*): mesmos artefatos da release-desktop.yml. Gate v* dentro do
+  # script (exit 78 = skipped nas ci-*). Steps de CI acima seguem intocados.
+  - name: release
+    image: powershell
+    environment:
+      API_URL:
+        from_secret: api_url
+      LIVEKIT_URL:
+        from_secret: livekit_url
+      OTEL_ENABLED:
+        from_secret: otel_enabled
+      OTEL_ENDPOINT:
+        from_secret: otel_endpoint
+      OTEL_ORG:
+        from_secret: otel_org
+      OTEL_VIA_API:
+        from_secret: otel_via_api
+      GH_TOKEN:
+        from_secret: github_token
+      UPDATER_BUNDLE_B64:
+        from_secret: updater_bundle_b64
+      UPDATER_PASSPHRASE:
+        from_secret: updater_passphrase
+    commands:
+      - '& ./.woodpecker/scripts/release-windows.ps1; exit $LASTEXITCODE'
