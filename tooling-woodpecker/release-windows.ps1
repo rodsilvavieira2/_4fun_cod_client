@@ -117,7 +117,7 @@ $keyFile = Join-Path $sshDir 'updates_deploy_key'
 $khFile = Join-Path $sshDir 'known_hosts'
 Set-Content -Encoding Ascii -Path $khFile -Value $PINNED_HOSTKEY
 $sshTarget = "${UPDATES_USER}@${UPDATES_HOST}"
-$sshOpts = @('-i', $keyFile, '-o', 'BatchMode=yes', '-o', 'IdentitiesOnly=yes', '-o', 'StrictHostKeyChecking=yes', "-o", "UserKnownHostsFile=$khFile", '-o', 'ConnectTimeout=30')
+$sshOpts = @('-i', $keyFile, '-o', 'BatchMode=yes', '-o', 'IdentitiesOnly=yes', '-o', 'StrictHostKeyChecking=yes', "-o", "UserKnownHostsFile=$khFile", '-o', 'ConnectTimeout=30', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=4')
 $tagDir = "$UPDATES_ROOT/$TAG"
 $mkdirBatch = Join-Path $sshDir 'mkdir.batch'
 Set-Content -Encoding Ascii -Path $mkdirBatch -Value "mkdir $tagDir"

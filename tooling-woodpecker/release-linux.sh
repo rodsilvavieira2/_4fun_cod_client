@@ -28,7 +28,7 @@ setup_updates_ssh() {
   echo "$UPDATES_DEPLOY_KEY_B64" | base64 -d > "$TMPD/updates_deploy_key"
   chmod 600 "$TMPD/updates_deploy_key"
   printf '%s\n' "$PINNED_HOSTKEY" > "$TMPD/updates_known_hosts"
-  SFTP_OPTS="-i $TMPD/updates_deploy_key -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$TMPD/updates_known_hosts -o ConnectTimeout=30"
+  SFTP_OPTS="-i $TMPD/updates_deploy_key -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$TMPD/updates_known_hosts -o ConnectTimeout=30 -o ServerAliveInterval=15 -o ServerAliveCountMax=4"
   export SFTP_OPTS
 }
 
