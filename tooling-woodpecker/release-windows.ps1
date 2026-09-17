@@ -1,8 +1,8 @@
-# Release Windows — build + sobe artefatos p/ o feed na VPS (SPEC spec-private-releases-vps).
+# Release Windows - build + sobe artefatos p/ o feed na VPS (SPEC spec-private-releases-vps).
 # Roda no step `release` de .woodpecker/build-windows.yaml (gate v* abaixo).
 # O job Linux aguarda o sentinel `.windows-done` e publica o feed (latest/).
-# Premissa: steps environment/dependencies/bridge/build já rodaram neste pipeline
-# (mesma VM, mesmo workspace) — cargo aqui é incremental, sem limpar o cache ORT.
+# Premissa: steps environment/dependencies/bridge/build ja rodaram neste pipeline
+# (mesma VM, mesmo workspace) - cargo aqui e incremental, sem limpar o cache ORT.
 $ErrorActionPreference = 'Stop'
 
 $TAG = $env:CI_COMMIT_TAG
@@ -120,4 +120,4 @@ Set-Content -Encoding Ascii -Path $upBatch -Value ($lines -join "`n")
 & sftp @sshOpts -b $upBatch $sshTarget | Out-String | Write-Host
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 Remove-Item -Recurse -Force $sshDir
-Write-Host "artefatos Windows em $UPDATES_BASE — sentinel publicado"
+Write-Host "artefatos Windows em $UPDATES_BASE - sentinel publicado"
