@@ -1,0 +1,17 @@
+# Smoke test do agent Windows — rodar MANUALMENTE primeiro (Fase 6).
+# Sucesso = repo clonado via plugin-git + comandos executando na VM.
+labels:
+  runner: windows-build
+
+when:
+  - event: manual
+
+steps:
+  - name: system-info
+    image: powershell
+    commands:
+      - hostname
+      - whoami
+      - git --version
+      - flutter --version
+      - flutter doctor -v

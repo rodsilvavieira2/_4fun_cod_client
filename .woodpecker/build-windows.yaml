@@ -1,0 +1,24 @@
+# Client Flutter — Windows (agent local na VM). Backend local: `image` e o shell.
+# Trocar para `pwsh` se PowerShell 7 estiver instalado na VM.
+labels:
+  runner: windows-build
+  platform: windows/amd64
+
+when:
+  - event: [tag, manual]
+
+steps:
+  - name: environment
+    image: powershell
+    commands:
+      - flutter doctor -v
+
+  - name: dependencies
+    image: powershell
+    commands:
+      - flutter pub get
+
+  - name: build
+    image: powershell
+    commands:
+      - flutter build windows --release
