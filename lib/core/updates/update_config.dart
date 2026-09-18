@@ -23,8 +23,7 @@ const String updateChannel = 'stable';
 
 /// Base do feed: `app-archive.json` sai de `<baseUrl>/app-archive.json`
 /// (feed estático na VPS — SPEC spec-private-releases-vps 2026-09-17).
-const String updateBaseUrl =
-    'https://updates.srv1849611.hstgr.cloud/latest';
+const String updateBaseUrl = 'https://updates.srv1849611.hstgr.cloud/latest';
 
 /// Página de releases (fallback de download manual).
 const String updateReleasesPageUrl =
