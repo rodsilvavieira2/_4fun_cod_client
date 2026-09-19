@@ -372,8 +372,6 @@ class _TheaterHeader extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.appColors;
-    final voice = ref.watch(voiceControllerProvider(arg));
-    final count = voice.participants.length;
     return Container(
       height: 44,
       padding: const EdgeInsets.symmetric(horizontal: kTheaterGap),
@@ -448,15 +446,6 @@ class _TheaterHeader extends ConsumerWidget {
                 ),
               ),
               const SizedBox(width: 10),
-              Icon(Icons.people_outline, size: 14, color: colors.textMuted),
-              const SizedBox(width: 4),
-              Text(
-                '$count na sala',
-                style: Theme.of(
-                  context,
-                ).textTheme.labelMedium?.copyWith(color: colors.textMuted),
-              ),
-              const SizedBox(width: 8),
               TheaterPresenceStack(arg: arg),
               const SizedBox(width: 4),
               AppIconButton(
