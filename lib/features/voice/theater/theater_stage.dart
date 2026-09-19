@@ -6,8 +6,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/rtc/rtc_service.dart';
 import '../../../core/theme/appearance_theme.dart';
 import '../../../core/ui/app_icon.dart';
+import '../../../core/ui/ds_tokens.dart';
 import '../voice_providers.dart';
 import '../voice_video_tile.dart';
+import 'theater_empty_illustration.dart';
 import 'theater_menus.dart';
 import 'theater_stream_tile.dart';
 import 'theater_ui_provider.dart';
@@ -71,12 +73,23 @@ VoiceSpotlightSource _spotlightOf(VoiceVideoSource source) =>
 /// spotlight do default); o expandir do overlay abre o menu `⋮` da stream.
 /// Troca de foco só move widgets (chaves estáveis) — nunca reinscreve tracks.
 class TheaterStage extends ConsumerWidget {
-  const TheaterStage({super.key, required this.arg, this.onToggleFullscreen});
+  const TheaterStage({
+    super.key,
+    required this.arg,
+    this.onToggleFullscreen,
+    this.onShareScreen,
+  });
 
   final ({String serverId, String channelId}) arg;
 
   /// Fullscreen da sala (fornecido pelo [TheaterScreen]).
   final VoidCallback? onToggleFullscreen;
+
+  /// Fluxo "Compartilhar tela" (modal Go Live + `startScreenShare`,
+  /// fornecido pelo [TheaterScreen]). Nulo no takeover fullscreen — lá o
+  /// CTA de share do estado vazio fica desabilitado (a câmera continua
+  /// ligável direto pelo provider).
+  final VoidCallback? onShareScreen;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -84,13 +97,45 @@ class TheaterStage extends ConsumerWidget {
     final ui = ref.watch(theaterUiControllerProvider(arg));
     final voiceNotifier = ref.read(voiceControllerProvider(arg).notifier);
     final uiNotifier = ref.read(theaterUiControllerProvider(arg).notifier);
-
-    if (voice.status != VoiceSessionStatus.connected) {
-      return const Center(child: CircularProgressIndicator(strokeWidth: 3));
-    }
+    final colors = context.appColors;
     final items = theaterStreamingItems(voice.participants);
-    if (items.isEmpty) return const TheaterEmptyStage();
 
+    final Widget body;
+    if (voice.status != VoiceSessionStatus.connected) {
+      body = const Center(child: CircularProgressIndicator(strokeWidth: 3));
+    } else if (items.isEmpty) {
+      body = TheaterEmptyStage(arg: arg, onShareScreen: onShareScreen);
+    } else {
+      body = _streamingBody(context, ref, ui, voiceNotifier, uiNotifier, items);
+    }
+
+    // Fundo temático do palco em TODOS os estados (loading, vazio, grid,
+    // focus): glows do accent + anéis vazados atrás de spinners, cards e
+    // tiles — nunca hardcoded, sempre do tema atual.
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: TheaterStageBackdrop(
+            accent: colors.accent,
+            ring: colors.borderHairline,
+          ),
+        ),
+        Positioned.fill(child: body),
+      ],
+    );
+  }
+
+  /// Palco com transmissões (grid `auto`/`grid` ou destaque `focus`):
+  /// extraído do `build` para que o backdrop temático envolva todos os
+  /// estados sem duplicar a decoração.
+  Widget _streamingBody(
+    BuildContext context,
+    WidgetRef ref,
+    TheaterUiState ui,
+    VoiceController voiceNotifier,
+    TheaterUiController uiNotifier,
+    List<TheaterMediaItem> items,
+  ) {
     // Remove pins de streams encerradas sem tocar no resto do estado.
     final validKeys = {for (final i in items) i.key};
     if (ui.pinnedStreamIds.any((k) => !validKeys.contains(k))) {
@@ -512,47 +557,246 @@ class _TheaterBottomStrip extends StatelessWidget {
   }
 }
 
-/// Estado vazio: sem transmissão, com CTA de câmera/share (usa tema atual).
-class TheaterEmptyStage extends StatelessWidget {
-  const TheaterEmptyStage({super.key});
+/// Estado vazio: sem transmissão, com ilustração undraw recolorida no accent
+/// do tema, CTAs de câmera/share e ajuda. O fundo temático vem do
+/// [TheaterStage], que o mantém atrás do palco em todos os estados —
+/// aqui só o card central.
+class TheaterEmptyStage extends ConsumerWidget {
+  const TheaterEmptyStage({super.key, required this.arg, this.onShareScreen});
+
+  final ({String serverId, String channelId}) arg;
+
+  /// Ver [TheaterStage.onShareScreen].
+  final VoidCallback? onShareScreen;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.appColors;
+    final voice = ref.watch(voiceControllerProvider(arg));
+    final voiceNotifier = ref.read(voiceControllerProvider(arg).notifier);
+    final busy = voice.isReconnecting;
+    final shareAction = busy ? null : onShareScreen;
+
     return Center(
-      child: Container(
-        constraints: const BoxConstraints(maxWidth: 340),
-        margin: const EdgeInsets.all(20),
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 22),
-        decoration: BoxDecoration(
-          color: colors.surface1,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: colors.borderSubtle),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            AppIcon(AppIcons.theater, size: 30, color: colors.textSecondary),
-            const SizedBox(height: 10),
-            Text(
-              'Nenhuma transmissão ativa',
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Inicie sua câmera ou compartilhe sua tela.',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontFamily: 'Geist',
-                fontSize: 12,
-                height: 1.35,
-                color: colors.textMuted,
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(20),
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 400),
+          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+          decoration: BoxDecoration(
+            color: colors.surface1,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: colors.accent.withValues(alpha: 0.22)),
+            boxShadow: AppShadows.popover,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const TheaterEmptyIllustration(height: 148),
+              const SizedBox(height: 16),
+              Text(
+                'Nenhuma transmissão ativa',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: colors.textPrimary,
+                ),
               ),
-            ),
-          ],
+              const SizedBox(height: 6),
+              Text(
+                'Inicie sua câmera ou compartilhe sua tela para começar',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontFamily: 'Geist',
+                  fontSize: 13,
+                  height: 1.4,
+                  color: colors.textMuted,
+                ),
+              ),
+              const SizedBox(height: 20),
+              Wrap(
+                alignment: WrapAlignment.center,
+                spacing: 12,
+                runSpacing: 8,
+                children: [
+                  FilledButton.icon(
+                    onPressed: busy ? null : voiceNotifier.toggleCamera,
+                    icon: const AppIcon(AppIcons.video, size: 16),
+                    label: const Text('Iniciar câmera'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: colors.accent,
+                      foregroundColor: colors.onAccent,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 12,
+                      ),
+                      shape: const StadiumBorder(),
+                    ),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: shareAction,
+                    icon: const AppIcon(AppIcons.screenShare, size: 16),
+                    label: const Text('Compartilhar tela'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: colors.textPrimary,
+                      side: BorderSide(
+                        color: colors.accent.withValues(alpha: 0.55),
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 12,
+                      ),
+                      shape: const StadiumBorder(),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Divider(height: 1, color: colors.borderHairline),
+              const SizedBox(height: 8),
+              TextButton.icon(
+                onPressed: () => showTheaterEmptyHelp(context),
+                icon: AppIcon(AppIcons.info, size: 14, color: colors.textMuted),
+                label: Text(
+                  'Saiba como funciona',
+                  style: TextStyle(
+                    fontFamily: 'Geist',
+                    fontSize: 12,
+                    color: colors.textMuted,
+                    decoration: TextDecoration.underline,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
+}
+
+/// Ajuda do estado vazio: diálogo simples na língua dos modais do app.
+Future<void> showTheaterEmptyHelp(BuildContext context) {
+  final colors = context.appColors;
+  return showDialog<void>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      backgroundColor: colors.surface2,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppRadius.xl),
+        side: BorderSide(color: colors.borderSubtle),
+      ),
+      title: Text(
+        'Como funciona o Modo Teatro',
+        style: Theme.of(
+          dialogContext,
+        ).textTheme.titleMedium?.copyWith(color: colors.textPrimary),
+      ),
+      content: Text(
+        'Quando alguém ligar a câmera ou compartilhar a tela, a transmissão '
+        'aparece aqui no palco. Use os botões acima para iniciar a sua — ou '
+        'os controles abaixo para microfone, câmera e tela a qualquer momento.',
+        style: TextStyle(
+          fontFamily: 'Geist',
+          fontSize: 13,
+          height: 1.45,
+          color: colors.textSecondary,
+        ),
+      ),
+      actions: [
+        FilledButton(
+          onPressed: () => Navigator.of(dialogContext).pop(),
+          style: FilledButton.styleFrom(
+            backgroundColor: colors.accent,
+            foregroundColor: colors.onAccent,
+          ),
+          child: const Text('Entendi'),
+        ),
+      ],
+    ),
+  );
+}
+
+/// Fundo temático do palco do Modo Teatro: glow do accent no topo + dois
+/// anéis vazados nas laterais. Montado pelo [TheaterStage] atrás do conteúdo
+/// em TODOS os estados (loading, vazio, grid, focus) — nunca hardcoded,
+/// sempre do tema atual.
+class TheaterStageBackdrop extends StatelessWidget {
+  const TheaterStageBackdrop({
+    super.key,
+    required this.accent,
+    required this.ring,
+  });
+
+  final Color accent;
+  final Color ring;
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      painter: _TheaterStageBackdropPainter(accent: accent, ring: ring),
+    );
+  }
+}
+
+class _TheaterStageBackdropPainter extends CustomPainter {
+  _TheaterStageBackdropPainter({required this.accent, required this.ring});
+
+  final Color accent;
+  final Color ring;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.isEmpty) return;
+    // Glow principal: topo-centro, na cor do tema.
+    canvas.drawRect(
+      Offset.zero & size,
+      Paint()
+        ..shader =
+            RadialGradient(
+              colors: [accent.withValues(alpha: 0.14), Colors.transparent],
+            ).createShader(
+              Rect.fromCircle(
+                center: Offset(size.width / 2, -size.height * 0.1),
+                radius: size.width * 0.5,
+              ),
+            ),
+    );
+    // Glows laterais suaves (eco dos cantos da referência).
+    for (final center in [
+      Offset(size.width * 0.08, -size.height * 0.05),
+      Offset(size.width * 0.92, -size.height * 0.05),
+    ]) {
+      canvas.drawRect(
+        Offset.zero & size,
+        Paint()
+          ..shader =
+              RadialGradient(
+                colors: [accent.withValues(alpha: 0.07), Colors.transparent],
+              ).createShader(
+                Rect.fromCircle(center: center, radius: size.width * 0.22),
+              ),
+      );
+    }
+    // Anéis vazados nas laterais, parcialmente fora da tela.
+    final ringPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1
+      ..color = ring;
+    final radius = math.min(size.width, size.height) * 0.42;
+    canvas.drawCircle(
+      Offset(-radius * 0.4, size.height * 0.52),
+      radius,
+      ringPaint,
+    );
+    canvas.drawCircle(
+      Offset(size.width + radius * 0.4, size.height * 0.52),
+      radius,
+      ringPaint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_TheaterStageBackdropPainter oldDelegate) =>
+      oldDelegate.accent != accent || oldDelegate.ring != ring;
 }

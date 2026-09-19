@@ -38,6 +38,9 @@ dependencies:
   # Ícones Hugeicons (oficial SVG, 6000+ stroke-rounded) — identidade do app.
   # Uso via lib/core/ui/app_icon.dart (AppIcon/AppIcons), nunca HugeIcon direto.
   hugeicons: ^1.2.0
+  # Ilustração do empty state do Modo Teatro (undraw recolorida com o accent
+  # do tema em runtime) — renderizada via SvgPicture.string, nunca HugeIcon.
+  flutter_svg: ^2.3.0
   flutter_riverpod: ^2.6.1
   go_router: ^17.5.0
   dio: ^5.11.0
@@ -109,6 +112,9 @@ flutter:
   assets:
     - assets/certs/ca.crt
     - assets/branding/app_logo.png
+    # Ilustração undraw do empty state do Modo Teatro (primário recolorido
+    # com o accent do tema em runtime; ver theater_empty_illustration.dart).
+    - assets/svgs/undraw_remote-worker.svg
     # Ícones usados pelo system tray no Linux (PNG) e Windows (ICO).
     - web/favicon.png
     - windows/runner/resources/app_icon.ico

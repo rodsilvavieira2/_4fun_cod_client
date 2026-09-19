@@ -248,6 +248,7 @@ class _TheaterScreenState extends ConsumerState<TheaterScreen> {
                                             arg: arg,
                                             onToggleFullscreen:
                                                 _toggleFullscreen,
+                                            onShareScreen: _toggleScreenShare,
                                           ),
                                   ),
                                   TheaterStrip(arg: arg),
@@ -324,7 +325,9 @@ class _TheaterScreenState extends ConsumerState<TheaterScreen> {
                                   channelId: widget.channelId,
                                   onClose: () => ref
                                       .read(
-                                        theaterUiControllerProvider(arg).notifier,
+                                        theaterUiControllerProvider(
+                                          arg,
+                                        ).notifier,
                                       )
                                       .toggleChat(),
                                 ),
