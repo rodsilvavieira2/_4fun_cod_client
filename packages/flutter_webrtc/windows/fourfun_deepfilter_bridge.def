@@ -1,0 +1,8 @@
+LIBRARY fourfun_deepfilter_bridge
+EXPORTS
+    fourfun_deepfilter_runtime_available
+    fourfun_deepfilter_create
+    fourfun_deepfilter_process
+    fourfun_deepfilter_reset
+    fourfun_deepfilter_flush
+    fourfun_deepfilter_destroy
