@@ -48,7 +48,7 @@ class DmChatArea extends ConsumerWidget {
                   children: [
                     if (userId != null && onBack != null) ...[
                       AppIconButton(
-                        icon: Icons.arrow_back,
+                        icon: AppIcons.back,
                         tooltip: 'Voltar para conversas',
                         onPressed: onBack,
                       ),
@@ -69,19 +69,19 @@ class DmChatArea extends ConsumerWidget {
                     ),
                     const Spacer(),
                     AppIconButton(
-                      icon: Icons.search,
+                      icon: AppIcons.search,
                       tooltip: 'Buscar',
                       onPressed: () {},
                     ),
                     const SizedBox(width: 4),
                     AppIconButton(
-                      icon: Icons.call_outlined,
+                      icon: AppIcons.call,
                       tooltip: 'Chamada de voz',
                       onPressed: () {},
                     ),
                     const SizedBox(width: 4),
                     AppIconButton(
-                      icon: Icons.videocam_outlined,
+                      icon: AppIcons.video,
                       tooltip: 'Chamada de vídeo',
                       onPressed: () {},
                     ),

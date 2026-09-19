@@ -152,7 +152,7 @@ class _SettingsBody extends StatelessWidget {
               ),
               const Spacer(),
               AppIconButton(
-                icon: Icons.close,
+                icon: AppIcons.close,
                 tooltip: 'Fechar (ESC)',
                 onPressed: onClose,
               ),

@@ -47,7 +47,7 @@ class ServerRail extends ConsumerWidget {
         ),
         error: (error, _) => Center(
           child: IconButton(
-            icon: const Icon(Icons.refresh, size: 18),
+            icon: AppIcon(AppIcons.refresh, size: 18),
             tooltip: 'Tentar novamente',
             onPressed: () => ref.invalidate(serversProvider),
           ),
@@ -358,8 +358,8 @@ class _AddServerRailItemState extends State<_AddServerRailItem> {
                     ),
                   ),
                   alignment: Alignment.center,
-                  child: Icon(
-                    Icons.add,
+                  child: AppIcon(
+                    AppIcons.add,
                     size: compact ? 16 : 20,
                     color: _hovered ? colors.onAccent : colors.textSecondary,
                   ),

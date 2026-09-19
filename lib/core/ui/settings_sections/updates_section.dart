@@ -46,7 +46,7 @@ class UpdatesSection extends ConsumerWidget {
               title: 'Status',
               children: [
                 SettingsRow(
-                  icon: Icons.inventory_2_outlined,
+                  icon: AppIcons.package,
                   title: 'Versão instalada',
                   trailing: SizedBox(
                     width: 150,
@@ -57,7 +57,7 @@ class UpdatesSection extends ConsumerWidget {
                   ),
                 ),
                 SettingsRow(
-                  icon: Icons.cloud_download_outlined,
+                  icon: AppIcons.cloudDownload,
                   title: 'Última disponível',
                   trailing: SizedBox(
                     width: 150,
@@ -68,7 +68,7 @@ class UpdatesSection extends ConsumerWidget {
                   ),
                 ),
                 SettingsRow(
-                  icon: Icons.info_outline,
+                  icon: AppIcons.info,
                   title: 'Estado',
                   trailing: AppBadge(
                     label: _statusLabel(status, backend),
@@ -93,11 +93,11 @@ class UpdatesSection extends ConsumerWidget {
               children: [
                 if (backend.isSupported)
                   SettingsRow(
-                    icon: Icons.sync_outlined,
+                    icon: AppIcons.sync,
                     title: 'Verificar atualizações',
                     trailing: AppButton(
                       label: 'Verificar',
-                      icon: Icons.refresh,
+                      icon: AppIcons.refresh,
                       size: AppButtonSize.sm,
                       variant: AppButtonVariant.secondary,
                       onPressed: status == AppUpdateStatus.checking
@@ -111,11 +111,11 @@ class UpdatesSection extends ConsumerWidget {
                     status == AppUpdateStatus.available &&
                     !backend.isDismissed)
                   SettingsRow(
-                    icon: Icons.download_outlined,
+                    icon: AppIcons.download,
                     title: 'Atualização disponível',
                     trailing: AppButton(
                       label: 'Baixar',
-                      icon: Icons.download_outlined,
+                      icon: AppIcons.download,
                       size: AppButtonSize.sm,
                       variant: AppButtonVariant.accent,
                       onPressed: () =>
@@ -125,11 +125,11 @@ class UpdatesSection extends ConsumerWidget {
                 if (backend.isSupported &&
                     status == AppUpdateStatus.readyToInstall)
                   SettingsRow(
-                    icon: Icons.restart_alt,
+                    icon: AppIcons.reload,
                     title: 'Instalação pronta',
                     trailing: AppButton(
                       label: 'Reiniciar',
-                      icon: Icons.restart_alt,
+                      icon: AppIcons.reload,
                       size: AppButtonSize.sm,
                       variant: AppButtonVariant.accent,
                       onPressed: () =>
@@ -137,11 +137,11 @@ class UpdatesSection extends ConsumerWidget {
                     ),
                   ),
                 SettingsRow(
-                  icon: Icons.link_outlined,
+                  icon: AppIcons.link,
                   title: 'Link de download',
                   trailing: AppButton(
                     label: 'Copiar',
-                    icon: Icons.copy,
+                    icon: AppIcons.copy,
                     size: AppButtonSize.sm,
                     variant: AppButtonVariant.ghost,
                     onPressed: () async {

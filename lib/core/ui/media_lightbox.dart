@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../theme/appearance_theme.dart';
 import 'app_file_image.dart';
+import 'app_icon.dart';
 import 'app_icon_button.dart';
 import 'chat_image_actions.dart';
 import 'ds_tokens.dart';
@@ -299,7 +300,7 @@ class _MediaLightboxViewState extends ConsumerState<_MediaLightboxView> {
                 bottom: 0,
                 child: Center(
                   child: _NavArrow(
-                    icon: Icons.chevron_left,
+                    icon: AppIcons.chevronLeft,
                     tooltip: 'Anterior',
                     onPressed: () => _goTo(_index - 1),
                   ),
@@ -311,7 +312,7 @@ class _MediaLightboxViewState extends ConsumerState<_MediaLightboxView> {
                 bottom: 0,
                 child: Center(
                   child: _NavArrow(
-                    icon: Icons.chevron_right,
+                    icon: AppIcons.chevronRight,
                     tooltip: 'Próxima',
                     onPressed: () => _goTo(_index + 1),
                   ),
@@ -470,7 +471,7 @@ class _Header extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 AppIconButton(
-                  icon: Icons.zoom_out,
+                  icon: AppIcons.zoomOut,
                   tooltip: 'Reduzir zoom',
                   minSize: 28,
                   iconSize: 16,
@@ -491,7 +492,7 @@ class _Header extends StatelessWidget {
                     ),
                   ),
                 AppIconButton(
-                  icon: Icons.zoom_in,
+                  icon: AppIcons.zoomIn,
                   tooltip: 'Ampliar zoom',
                   minSize: 28,
                   iconSize: 16,
@@ -499,21 +500,21 @@ class _Header extends StatelessWidget {
                 ),
                 if (zoomed)
                   AppIconButton(
-                    icon: Icons.restart_alt,
+                    icon: AppIcons.reload,
                     tooltip: 'Resetar zoom (100%)',
                     minSize: 28,
                     iconSize: 16,
                     onPressed: onZoomReset,
                   ),
                 AppIconButton(
-                  icon: Icons.copy_outlined,
+                  icon: AppIcons.copy,
                   tooltip: 'Copiar imagem',
                   minSize: 28,
                   iconSize: 16,
                   onPressed: onCopy,
                 ),
                 AppIconButton(
-                  icon: Icons.download_outlined,
+                  icon: AppIcons.download,
                   tooltip: 'Salvar imagem',
                   minSize: 28,
                   iconSize: 16,
@@ -530,7 +531,7 @@ class _Header extends StatelessWidget {
               border: Border.all(color: colors.borderSubtle, width: 1),
             ),
             child: AppIconButton(
-              icon: Icons.close,
+              icon: AppIcons.close,
               tooltip: 'Fechar (Esc)',
               minSize: 28,
               iconSize: 16,
@@ -653,15 +654,15 @@ class _ViewerError extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const SizedBox(
+    return SizedBox(
       width: 480,
       height: 320,
       child: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              Icons.broken_image_outlined,
+            AppIcon(
+              AppIcons.imageMissing,
               color: AppTokens.textMuted,
               size: 28,
             ),
@@ -712,7 +713,7 @@ class _NavArrow extends StatelessWidget {
     required this.onPressed,
   });
 
-  final IconData icon;
+  final List<List<dynamic>> icon;
   final String tooltip;
   final VoidCallback onPressed;
 
@@ -735,7 +736,7 @@ class _NavArrow extends StatelessWidget {
               shape: BoxShape.circle,
               border: Border.all(color: colors.borderSubtle, width: 1),
             ),
-            child: Icon(icon, size: 20, color: colors.textPrimary),
+            child: AppIcon(icon, size: 20, color: colors.textPrimary),
           ),
         ),
       ),
@@ -768,8 +769,8 @@ class _PlayPauseButton extends StatelessWidget {
               shape: BoxShape.circle,
               border: Border.all(color: colors.borderSubtle, width: 1),
             ),
-            child: Icon(
-              playing ? Icons.pause : Icons.play_arrow,
+            child: AppIcon(
+              playing ? AppIcons.pause : AppIcons.play,
               size: 20,
               color: colors.textPrimary,
             ),

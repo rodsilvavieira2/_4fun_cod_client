@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/appearance_theme.dart';
+import '../../../core/ui/app_icon.dart';
 import '../../../core/ui/ds_tokens.dart';
 import '../../../core/ui/menus/app_menu.dart';
 import '../voice_providers.dart';
@@ -53,7 +54,7 @@ class TheaterControlBar extends ConsumerWidget {
           children: [
             _barButton(
               context,
-              icon: voice.isMicrophoneEnabled ? Icons.mic : Icons.mic_off,
+              icon: voice.isMicrophoneEnabled ? AppIcons.mic : AppIcons.micOff,
               tooltip: voice.isMicrophoneEnabled
                   ? 'Desativar microfone'
                   : 'Ativar microfone',
@@ -62,7 +63,7 @@ class TheaterControlBar extends ConsumerWidget {
             ),
             _barButton(
               context,
-              icon: voice.isDeafened ? Icons.headset_off : Icons.headset_mic,
+              icon: voice.isDeafened ? AppIcons.headsetOff : AppIcons.headset,
               tooltip: voice.isDeafened
                   ? 'Ativar áudio'
                   : 'Ensurdecer (deafen)',
@@ -71,7 +72,7 @@ class TheaterControlBar extends ConsumerWidget {
             ),
             _barButton(
               context,
-              icon: voice.isCameraEnabled ? Icons.videocam : Icons.videocam_off,
+              icon: voice.isCameraEnabled ? AppIcons.video : AppIcons.videoOff,
               tooltip: voice.isCameraEnabled
                   ? 'Desativar câmera'
                   : 'Ativar câmera',
@@ -80,7 +81,7 @@ class TheaterControlBar extends ConsumerWidget {
             ),
             _barButton(
               context,
-              icon: Icons.present_to_all,
+              icon: AppIcons.screenShare,
               tooltip: voice.isScreenSharing
                   ? 'Parar compartilhamento'
                   : 'Compartilhar tela',
@@ -89,21 +90,21 @@ class TheaterControlBar extends ConsumerWidget {
             ),
             _barButton(
               context,
-              icon: Icons.chat_bubble_outline,
+              icon: AppIcons.chat,
               tooltip: ui.chatOpen ? 'Fechar chat' : 'Abrir chat',
               active: ui.chatOpen,
               onPressed: uiNotifier.toggleChat,
             ),
             _barButton(
               context,
-              icon: Icons.settings_outlined,
+              icon: AppIcons.settings,
               tooltip: 'Configurações',
               onPressed: onOpenSettings,
             ),
             _moreButton(context, ref, ui),
             _barButton(
               context,
-              icon: Icons.fullscreen,
+              icon: AppIcons.fullscreen,
               tooltip: 'Tela cheia',
               onPressed: onToggleFullscreen,
             ),
@@ -115,7 +116,7 @@ class TheaterControlBar extends ConsumerWidget {
                 backgroundColor: AppTokens.accentDanger,
                 foregroundColor: Colors.white,
               ),
-              icon: const Icon(Icons.call_end),
+              icon: AppIcon(AppIcons.callEnd),
             ),
           ],
         ),
@@ -142,14 +143,14 @@ class TheaterControlBar extends ConsumerWidget {
           shape: BoxShape.circle,
         ),
         alignment: Alignment.center,
-        child: Icon(Icons.more_horiz, color: colors.textPrimary),
+        child: AppIcon(AppIcons.more, color: colors.textPrimary),
       ),
     );
   }
 
   Widget _barButton(
     BuildContext context, {
-    required IconData icon,
+    required List<List<dynamic>> icon,
     required String tooltip,
     required VoidCallback? onPressed,
     bool active = false,
@@ -163,7 +164,7 @@ class TheaterControlBar extends ConsumerWidget {
         backgroundColor: active ? AppTokens.accentDanger : null,
         foregroundColor: colors.textPrimary,
       ),
-      icon: Icon(icon),
+      icon: AppIcon(icon),
     );
   }
 }

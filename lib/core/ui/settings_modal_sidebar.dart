@@ -7,16 +7,16 @@ import 'ui.dart';
 
 /// Seções do modal de configurações (wireframe v4).
 enum SettingsSection {
-  account('Conta', Icons.person_outline),
-  voiceVideo('Voz e vídeo', Icons.headset_mic_outlined),
-  notifications('Notificações', Icons.notifications_none),
-  appearance('Aparência', Icons.palette_outlined),
-  updates('Atualizações', Icons.system_update_alt);
+  account('Conta', AppIcons.user),
+  voiceVideo('Voz e vídeo', AppIcons.headset),
+  notifications('Notificações', AppIcons.notifications),
+  appearance('Aparência', AppIcons.palette),
+  updates('Atualizações', AppIcons.systemUpdate);
 
   const SettingsSection(this.title, this.icon);
 
   final String title;
-  final IconData icon;
+  final List<List<dynamic>> icon;
 }
 
 /// Sidebar escura do modal de configurações com alto contraste e ícones visíveis.
@@ -201,7 +201,7 @@ class _SidebarItemState extends State<_SidebarItem> {
                 ),
               ),
               const SizedBox(width: 7),
-              Icon(widget.item.icon, size: 14.5, color: fgColor),
+              AppIcon(widget.item.icon, size: 14.5, color: fgColor),
               const SizedBox(width: 7),
               Expanded(
                 child: Text(
@@ -261,9 +261,9 @@ class _SignOutButtonState extends State<_SignOutButton> {
             color: bgColor,
             borderRadius: BorderRadius.circular(AppRadius.sm),
           ),
-          child: const Row(
+          child: Row(
             children: [
-              Icon(Icons.logout, size: 14.5, color: Colors.white),
+              AppIcon(AppIcons.logout, size: 14.5, color: Colors.white),
               SizedBox(width: 8),
               Expanded(
                 child: Text(

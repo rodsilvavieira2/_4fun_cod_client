@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:fourfun_cod_client/core/ui/app_icon.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
@@ -148,7 +149,7 @@ void main() {
 
       expect(find.text('Membros e cargos'), findsOneWidget);
       expect(find.text('Configurações do servidor'), findsNothing);
-      expect(find.byIcon(Icons.settings_outlined), findsNothing);
+      expect(find.byWidgetPredicate((w) => w is AppIcon && w.icon == AppIcons.settings), findsNothing);
     },
   );
 
@@ -167,7 +168,7 @@ void main() {
 
       final settingsItem = find.text('Configurações do servidor');
       expect(settingsItem, findsOneWidget);
-      expect(find.byIcon(Icons.settings_outlined), findsOneWidget);
+      expect(find.byWidgetPredicate((w) => w is AppIcon && w.icon == AppIcons.settings), findsOneWidget);
 
       await tester.tap(settingsItem);
       await tester.pumpAndSettle();

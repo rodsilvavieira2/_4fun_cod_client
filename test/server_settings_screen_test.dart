@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:fourfun_cod_client/core/ui/app_icon.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -106,7 +107,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Configurações do servidor'), findsOneWidget);
-      expect(find.byIcon(Icons.lock_outline), findsOneWidget);
+      expect(find.byWidgetPredicate((w) => w is AppIcon && w.icon == AppIcons.lock), findsOneWidget);
       expect(
         find.text(
           'Apenas administradores podem acessar as configurações do servidor.',

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../rtc/rtc_service.dart';
 import '../theme/appearance_theme.dart';
+import 'app_icon.dart';
 import 'ds_tokens.dart';
 import 'participant_volume_popover.dart';
 
@@ -60,7 +61,7 @@ class TransmitTileToolbar extends StatelessWidget {
       if (!isLocal && onToggleWatch != null)
         _toolbarToggleButton(
           colors: colors,
-          icon: isWatching ? Icons.visibility_off : Icons.visibility,
+          icon: isWatching ? AppIcons.viewOff : AppIcons.view,
           tooltip: isWatching ? 'Parar de assistir' : 'Assistir transmissão',
           // Live disponível (ainda não assistindo) = verde para convidar
           // o opt-in; assistindo volta ao tonal padrão.
@@ -71,7 +72,7 @@ class TransmitTileToolbar extends StatelessWidget {
       if (isLocal && onStopShare != null)
         _toolbarToggleButton(
           colors: colors,
-          icon: Icons.call_end,
+          icon: AppIcons.callEnd,
           active: true,
           activeColor: AppTokens.accentDanger,
           tooltip: 'Parar compartilhamento',
@@ -118,7 +119,7 @@ class TransmitTileToolbar extends StatelessWidget {
   /// branco para contraste sobre a cor cheia.
   Widget _toolbarToggleButton({
     required AppThemePalette colors,
-    required IconData icon,
+    required List<List<dynamic>> icon,
     required String tooltip,
     required VoidCallback? onPressed,
     bool active = false,
@@ -132,7 +133,7 @@ class TransmitTileToolbar extends StatelessWidget {
         backgroundColor: active ? activeColor : null,
         foregroundColor: active ? Colors.white : colors.textPrimary,
       ),
-      icon: Icon(icon),
+      icon: AppIcon(icon),
     );
   }
 }

@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
 import '../native/native_media_backend.dart';
+import '../ui/app_icon.dart';
 
 /// Modal Flutter próprio para seleção de compartilhamento de tela.
 ///
@@ -359,14 +360,14 @@ class _KindSwitch extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             _TabButton(
-              icon: Icons.web_asset_outlined,
+              icon: AppIcons.browser,
               label: windowTabText,
               selected: activeKind == RtcScreenShareSourceKind.window,
               enabled: canUseWindow,
               onTap: () => onChanged(RtcScreenShareSourceKind.window),
             ),
             _TabButton(
-              icon: Icons.desktop_windows_outlined,
+              icon: AppIcons.monitor,
               label: screenTabText,
               selected: activeKind == RtcScreenShareSourceKind.display,
               enabled: canUseDisplay,
@@ -388,7 +389,7 @@ class _TabButton extends StatelessWidget {
     required this.onTap,
   });
 
-  final IconData icon;
+  final List<List<dynamic>> icon;
   final String label;
   final bool selected;
   final bool enabled;
@@ -411,7 +412,7 @@ class _TabButton extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 18, color: foreground),
+            AppIcon(icon, size: 18, color: foreground),
             const SizedBox(width: 6),
             Text(
               label,
@@ -567,7 +568,7 @@ class _WindowSourceTile extends StatelessWidget {
                 width: 34,
                 height: 34,
                 thumbnail: source.thumbnail,
-                icon: Icons.web_asset_outlined,
+                icon: AppIcons.browser,
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -625,7 +626,7 @@ class _DisplaySourceCard extends StatelessWidget {
                   width: double.infinity,
                   height: double.infinity,
                   thumbnail: source.thumbnail,
-                  icon: Icons.desktop_windows_outlined,
+                  icon: AppIcons.monitor,
                 ),
                 Center(
                   child: Padding(
@@ -659,7 +660,7 @@ class _ThumbnailBox extends StatelessWidget {
   final double width;
   final double height;
   final Uint8List? thumbnail;
-  final IconData icon;
+  final List<List<dynamic>> icon;
 
   @override
   Widget build(BuildContext context) {
@@ -673,13 +674,13 @@ class _ThumbnailBox extends StatelessWidget {
           borderRadius: BorderRadius.circular(6),
         ),
         child: bytes == null
-            ? Icon(icon, color: const Color(0xFFE1E3E8), size: 18)
+            ? AppIcon(icon, color: const Color(0xFFE1E3E8), size: 18)
             : Image.memory(
                 bytes,
                 fit: BoxFit.cover,
                 gaplessPlayback: true,
                 errorBuilder: (_, _, _) =>
-                    Icon(icon, color: const Color(0xFFE1E3E8), size: 18),
+                    AppIcon(icon, color: const Color(0xFFE1E3E8), size: 18),
               ),
       ),
     );

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../theme/appearance_theme.dart';
+import '../app_icon.dart';
 import '../ds_tokens.dart';
 
 /// Padrão compacto de menus popup do app (Discord-like, dark-only).
@@ -132,7 +133,7 @@ class AppMenuItem<T> extends PopupMenuItem<T> {
     super.key,
     required T value,
     required String label,
-    IconData? icon,
+    List<List<dynamic>>? icon,
     super.enabled = true,
     super.onTap,
   }) : super(
@@ -170,14 +171,14 @@ class AppMenuCheckedItem<T> extends PopupMenuItem<T> {
     bool checked = false,
     super.enabled = true,
     required String label,
-    IconData? icon,
-    IconData selectedIcon = Icons.check,
+    List<List<dynamic>>? icon,
+    List<List<dynamic>>? selectedIcon,
   }) : super(
          value: value,
          height: AppMenu.itemHeight,
          padding: AppMenu.itemPadding,
          child: _LabeledMenuChild(
-           icon: checked ? selectedIcon : icon,
+           icon: checked ? (selectedIcon ?? AppIcons.check) : icon,
            label: label,
            selected: checked,
          ),
@@ -208,7 +209,7 @@ class _LabeledMenuChild extends StatelessWidget {
   });
 
   final String label;
-  final IconData? icon;
+  final List<List<dynamic>>? icon;
   final bool selected;
 
   @override
@@ -221,7 +222,7 @@ class _LabeledMenuChild extends StatelessWidget {
     }
     return Row(
       children: [
-        Icon(
+        AppIcon(
           icon,
           size: 16,
           color: selected ? colors.textPrimary : colors.textSecondary,

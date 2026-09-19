@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../theme/appearance_theme.dart';
+import '../app_icon.dart';
 import '../ds_tokens.dart';
 
 enum AppButtonVariant {
@@ -49,8 +50,8 @@ class AppButton extends StatefulWidget {
   final VoidCallback? onPressed;
   final AppButtonVariant variant;
   final AppButtonSize size;
-  final IconData? icon;
-  final IconData? trailingIcon;
+  final List<List<dynamic>>? icon;
+  final List<List<dynamic>>? trailingIcon;
   final bool loading;
   final bool expanded;
 
@@ -150,7 +151,7 @@ class _AppButtonState extends State<AppButton> {
           ),
           const SizedBox(width: 8),
         ] else if (widget.icon != null) ...[
-          Icon(widget.icon, size: iconSize, color: fgColor),
+          AppIcon(widget.icon!, size: iconSize, color: fgColor),
           const SizedBox(width: 6),
         ],
         Text(
@@ -165,7 +166,7 @@ class _AppButtonState extends State<AppButton> {
         ),
         if (widget.trailingIcon != null && !widget.loading) ...[
           const SizedBox(width: 6),
-          Icon(widget.trailingIcon, size: iconSize, color: fgColor),
+          AppIcon(widget.trailingIcon!, size: iconSize, color: fgColor),
         ],
       ],
     );

@@ -50,7 +50,7 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
               title: 'Dados da conta',
               children: [
                 SettingsRow(
-                  icon: Icons.alternate_email,
+                  icon: AppIcons.mention,
                   title: 'E-mail',
                   subtitle: _emailVisible
                       ? user.email ?? '—'
@@ -67,7 +67,7 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
                       ),
                       const SizedBox(width: 4),
                       AppIconButton(
-                        icon: Icons.edit_outlined,
+                        icon: AppIcons.edit,
                         tooltip: 'Editar e-mail',
                         onPressed: () => _openEmailDialog(context, user),
                       ),
@@ -75,7 +75,7 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
                   ),
                 ),
                 SettingsRow(
-                  icon: Icons.tag_outlined,
+                  icon: AppIcons.channelText,
                   title: 'ID da conta',
                   subtitle: user.id,
                 ),
@@ -85,7 +85,7 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
               title: 'Segurança',
               children: [
                 SettingsRow(
-                  icon: Icons.lock_outline,
+                  icon: AppIcons.lock,
                   title: 'Senha',
                   subtitle: '••••••••',
                   trailing: AppButton(
@@ -180,7 +180,7 @@ class _ProfileSummary extends StatelessWidget {
           const SizedBox(width: 8),
           AppButton(
             label: 'Editar',
-            icon: Icons.edit_outlined,
+            icon: AppIcons.edit,
             size: AppButtonSize.sm,
             variant: AppButtonVariant.secondary,
             onPressed: onEdit,

@@ -30,11 +30,11 @@ class VoiceVideoSection extends ConsumerWidget {
             onPressed: state.isLoading
                 ? null
                 : () => unawaited(controller.refresh()),
-            icon: Icons.refresh,
+            icon: AppIcons.refresh,
           ),
           children: [
             _AudioDeviceField(
-              icon: Icons.mic_none,
+              icon: AppIcons.mic,
               label: 'Entrada',
               devices: state.inputs,
               selectedId: state.preferredInputId,
@@ -43,7 +43,7 @@ class VoiceVideoSection extends ConsumerWidget {
               onChanged: (id) => unawaited(controller.selectInput(id)),
             ),
             _AudioDeviceField(
-              icon: Icons.volume_up_outlined,
+              icon: AppIcons.volumeHigh,
               label: 'Saída',
               devices: state.outputs,
               selectedId: state.preferredOutputId,
@@ -92,7 +92,7 @@ class _NoiseSuppressionField extends ConsumerWidget {
         ? 'Studio indisponível neste dispositivo. Usando Normal.'
         : state.errorMessage;
     return SettingsRow(
-      icon: Icons.graphic_eq_outlined,
+      icon: AppIcons.wave,
       title: 'Supressão de ruído',
       subtitle: fallbackMessage,
       subtitleColor: context.appColors.accent,
@@ -111,17 +111,17 @@ class _NoiseSuppressionField extends ConsumerWidget {
                 SegmentItem(
                   value: RtcNoiseSuppressionMode.off,
                   label: 'Desativada',
-                  icon: Icons.mic_none_outlined,
+                  icon: AppIcons.mic,
                 ),
                 SegmentItem(
                   value: RtcNoiseSuppressionMode.webrtc,
                   label: 'Normal',
-                  icon: Icons.graphic_eq_outlined,
+                  icon: AppIcons.wave,
                 ),
                 SegmentItem(
                   value: RtcNoiseSuppressionMode.studio,
                   label: 'Studio',
-                  icon: Icons.auto_awesome_outlined,
+                  icon: AppIcons.sparkles,
                 ),
               ],
             ),
@@ -143,7 +143,7 @@ class _AudioDeviceField extends StatelessWidget {
     required this.onChanged,
   });
 
-  final IconData icon;
+  final List<List<dynamic>> icon;
   final String label;
   final List<RtcAudioDevice> devices;
   final String? selectedId;
@@ -214,7 +214,7 @@ class _CameraField extends StatelessWidget {
         ? selectedId
         : null;
     return _DeviceFieldShell(
-      icon: Icons.videocam_outlined,
+      icon: AppIcons.video,
       label: 'Câmera',
       unavailable: unavailable,
       child: DropdownButtonFormField<String>(
@@ -260,7 +260,7 @@ class _InputVolumeField extends ConsumerWidget {
     );
     final controller = ref.read(voiceVolumeProvider.notifier);
     return _VolumeField(
-      icon: Icons.keyboard_voice_outlined,
+      icon: AppIcons.voice,
       label: 'Volume de entrada',
       subtitle: 'Ganho publicado do microfone',
       percent: percent,
@@ -285,7 +285,7 @@ class _OutputVolumeField extends ConsumerWidget {
     );
     final controller = ref.read(voiceVolumeProvider.notifier);
     return _VolumeField(
-      icon: Icons.speaker_outlined,
+      icon: AppIcons.speaker,
       label: 'Volume de saída',
       subtitle: 'Volume mestre local',
       percent: percent,
@@ -307,7 +307,7 @@ class _VolumeField extends StatelessWidget {
     required this.onReset,
   });
 
-  final IconData icon;
+  final List<List<dynamic>> icon;
   final String label;
   final String subtitle;
   final int percent;
@@ -354,7 +354,7 @@ class _VolumeField extends StatelessWidget {
             ),
             const SizedBox(width: 6),
             AppIconButton(
-              icon: Icons.restart_alt,
+              icon: AppIcons.reload,
               tooltip: 'Redefinir para 100%',
               onPressed: onReset,
             ),
@@ -373,7 +373,7 @@ class _DeviceFieldShell extends StatelessWidget {
     required this.child,
   });
 
-  final IconData icon;
+  final List<List<dynamic>> icon;
   final String label;
   final bool unavailable;
   final Widget child;
@@ -440,7 +440,7 @@ class _PushToTalkSettings extends ConsumerWidget {
           title: 'Push to Talk',
           children: [
             SettingsRow(
-              icon: Icons.radio_button_checked,
+              icon: AppIcons.record,
               title: 'Modo',
               subtitle: statusLabel,
               trailing: SettingsSwitch(
@@ -452,7 +452,7 @@ class _PushToTalkSettings extends ConsumerWidget {
               ),
             ),
             SettingsRow(
-              icon: Icons.keyboard_alt_outlined,
+              icon: AppIcons.keyboard,
               title: 'Atalho',
               subtitle: shortcutLabel,
               trailing: Row(
@@ -461,8 +461,8 @@ class _PushToTalkSettings extends ConsumerWidget {
                   AppButton(
                     label: state.isRecordingPushToTalk ? 'Cancelar' : 'Gravar',
                     icon: state.isRecordingPushToTalk
-                        ? Icons.close
-                        : Icons.fiber_manual_record,
+                        ? AppIcons.close
+                        : AppIcons.recordDot,
                     size: AppButtonSize.sm,
                     variant: state.isRecordingPushToTalk
                         ? AppButtonVariant.ghost
@@ -479,7 +479,7 @@ class _PushToTalkSettings extends ConsumerWidget {
                       tooltip: 'Limpar atalho',
                       onPressed: () =>
                           unawaited(controller.clearPushToTalkBinding()),
-                      icon: Icons.clear,
+                      icon: AppIcons.close,
                     ),
                   ],
                 ],
@@ -543,7 +543,7 @@ class _PushToTalkDelayField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SettingsRow(
-      icon: Icons.timelapse_outlined,
+      icon: AppIcons.timer,
       title: 'Atraso de liberação',
       subtitle: enabled ? null : 'Disponível após definir um atalho',
       minHeight: 58,

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:fourfun_cod_client/core/ui/app_icon.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -89,7 +90,7 @@ void main() {
 
     final fieldRect = tester.getRect(find.byType(TextField));
     final actionRect = tester.getRect(find.text('Ação direita'));
-    final sendRect = tester.getRect(find.byIcon(Icons.arrow_upward));
+    final sendRect = tester.getRect(find.byWidgetPredicate((w) => w is AppIcon && w.icon == AppIcons.send));
 
     expect(actionRect.left, greaterThan(fieldRect.right));
     expect(sendRect.left, greaterThan(actionRect.right));

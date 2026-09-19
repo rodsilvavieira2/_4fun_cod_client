@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme/appearance_theme.dart';
+import 'app_icon.dart';
 import 'ds_tokens.dart';
 
 class SettingsStack extends StatelessWidget {
@@ -107,7 +108,7 @@ class SettingsRow extends StatelessWidget {
     this.destructive = false,
   });
 
-  final IconData? icon;
+  final List<List<dynamic>>? icon;
   final String title;
   final String? subtitle;
   final Color? subtitleColor;
@@ -206,7 +207,7 @@ class SettingsNotice extends StatelessWidget {
 
   final String message;
   final SettingsNoticeTone tone;
-  final IconData? icon;
+  final List<List<dynamic>>? icon;
 
   @override
   Widget build(BuildContext context) {
@@ -244,7 +245,7 @@ class SettingsNotice extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon ?? _noticeIcon(tone), size: 14, color: foreground),
+          AppIcon(icon ?? _noticeIcon(tone), size: 14, color: foreground),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
@@ -297,7 +298,7 @@ class SettingsValueText extends StatelessWidget {
 class _SettingsRowIcon extends StatelessWidget {
   const _SettingsRowIcon({required this.icon, required this.destructive});
 
-  final IconData icon;
+  final List<List<dynamic>> icon;
   final bool destructive;
 
   @override
@@ -313,7 +314,7 @@ class _SettingsRowIcon extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppRadius.sm),
         border: Border.all(color: colors.borderHairline, width: 1),
       ),
-      child: Icon(icon, size: 15, color: color),
+      child: AppIcon(icon, size: 15, color: color),
     );
   }
 }
@@ -378,11 +379,11 @@ List<Widget> _withSpacing(List<Widget> children, double gap) {
   return spaced;
 }
 
-IconData _noticeIcon(SettingsNoticeTone tone) {
+List<List<dynamic>> _noticeIcon(SettingsNoticeTone tone) {
   return switch (tone) {
-    SettingsNoticeTone.neutral => Icons.info_outline,
-    SettingsNoticeTone.success => Icons.check_circle_outline,
-    SettingsNoticeTone.warning => Icons.warning_amber_outlined,
-    SettingsNoticeTone.danger => Icons.error_outline,
+    SettingsNoticeTone.neutral => AppIcons.info,
+    SettingsNoticeTone.success => AppIcons.checkCircle,
+    SettingsNoticeTone.warning => AppIcons.warning,
+    SettingsNoticeTone.danger => AppIcons.error,
   };
 }

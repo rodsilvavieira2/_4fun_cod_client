@@ -28,7 +28,7 @@ class MembersScreen extends ConsumerWidget {
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (error, _) => Center(
             child: IconButton(
-              icon: const Icon(Icons.refresh),
+              icon: AppIcon(AppIcons.refresh),
               tooltip: 'Tentar novamente',
               onPressed: () => ref.invalidate(serverDetailProvider(serverId)),
             ),
@@ -287,7 +287,7 @@ class _MemberAdminTile extends StatelessWidget {
             if (canRemove) ...[
               const SizedBox(width: 4),
               AppIconButton(
-                icon: Icons.person_remove_outlined,
+                icon: AppIcons.userRemove,
                 tooltip: 'Remover do servidor',
                 onPressed: onRemove,
               ),

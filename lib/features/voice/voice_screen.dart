@@ -326,7 +326,7 @@ class _TheaterEntryButton extends StatelessWidget {
             ),
           );
         },
-        icon: const Icon(Icons.theater_comedy, size: 16),
+        icon: AppIcon(AppIcons.theater, size: 16),
         label: const Text('Modo Teatro'),
       ),
     );
@@ -432,8 +432,8 @@ class _AudioBlockedBanner extends StatelessWidget {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(
-                Icons.volume_off,
+              AppIcon(
+                AppIcons.volumeMute,
                 size: 18,
                 color: theme.colorScheme.onErrorContainer,
               ),
@@ -498,8 +498,8 @@ class _ParticipantsPanel extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(
-                  Icons.error_outline,
+                AppIcon(
+                  AppIcons.error,
                   size: 40,
                   color: theme.colorScheme.error,
                 ),
@@ -872,8 +872,8 @@ class _EmptyVoiceStage extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              Icons.videocam_off_outlined,
+            AppIcon(
+              AppIcons.videoOff,
               size: 30,
               color: colors.textSecondary,
             ),
@@ -1025,7 +1025,7 @@ class _SpotlightLayout extends StatelessWidget {
                     minimumSize: const Size.square(32),
                     foregroundColor: context.appColors.textSecondary,
                   ),
-                  icon: const Icon(Icons.visibility_off, size: 18),
+                  icon: AppIcon(AppIcons.viewOff, size: 18),
                 ),
               ],
             ),
@@ -1068,7 +1068,7 @@ class _SpotlightLayout extends StatelessWidget {
             child: Center(
               child: TextButton.icon(
                 onPressed: notifier.toggleFilmstrip,
-                icon: const Icon(Icons.visibility, size: 16),
+                icon: AppIcon(AppIcons.view, size: 16),
                 label: Text('Mostrar miniaturas (${others.length})'),
               ),
             ),
@@ -1118,7 +1118,7 @@ class _Controls extends StatelessWidget {
                 height: 16,
                 child: CircularProgressIndicator(strokeWidth: 2),
               )
-            : const Icon(Icons.headset),
+            : AppIcon(AppIcons.headset),
         label: Text(connecting ? 'Conectando…' : 'Tentar novamente'),
       );
     }
@@ -1140,7 +1140,7 @@ class _Controls extends StatelessWidget {
           children: [
             _mediaToggleButton(
               colors: colors,
-              icon: state.isCameraEnabled ? Icons.videocam : Icons.videocam_off,
+              icon: state.isCameraEnabled ? AppIcons.video : AppIcons.videoOff,
               active: state.isCameraEnabled,
               activeColor: AppTokens.accentDanger,
               tooltip: state.isCameraEnabled
@@ -1150,7 +1150,7 @@ class _Controls extends StatelessWidget {
             ),
             _mediaToggleButton(
               colors: colors,
-              icon: Icons.present_to_all,
+              icon: AppIcons.screenShare,
               active: state.isScreenSharing,
               activeColor: AppTokens.accentDanger,
               tooltip: state.isScreenSharing
@@ -1162,8 +1162,8 @@ class _Controls extends StatelessWidget {
               _mediaToggleButton(
                 colors: colors,
                 icon: state.filmstripVisible
-                    ? Icons.visibility_off
-                    : Icons.visibility,
+                    ? AppIcons.viewOff
+                    : AppIcons.view,
                 active: false,
                 activeColor: AppTokens.accentDanger,
                 tooltip: state.filmstripVisible
@@ -1179,7 +1179,7 @@ class _Controls extends StatelessWidget {
                 backgroundColor: AppTokens.accentDanger,
                 foregroundColor: Colors.white,
               ),
-              icon: const Icon(Icons.call_end),
+              icon: AppIcon(AppIcons.callEnd),
             ),
           ],
         ),
@@ -1191,7 +1191,7 @@ class _Controls extends StatelessWidget {
   /// qualquer largura, quebrando linhas só quando a janela fica estreita.
   Widget _mediaToggleButton({
     required AppThemePalette colors,
-    required IconData icon,
+    required List<List<dynamic>> icon,
     required bool active,
     required Color activeColor,
     required String tooltip,
@@ -1205,7 +1205,7 @@ class _Controls extends StatelessWidget {
         backgroundColor: active ? activeColor : null,
         foregroundColor: colors.textPrimary,
       ),
-      icon: Icon(icon),
+      icon: AppIcon(icon),
     );
   }
 }
@@ -1240,8 +1240,8 @@ class CameraPreviewSurface extends StatelessWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(
-                    Icons.videocam_off,
+                  AppIcon(
+                    AppIcons.videoOff,
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
                   if (error != null) ...[

@@ -28,8 +28,8 @@ class ChannelHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.appColors;
     final icon = channelType == ChannelType.text
-        ? Icons.tag
-        : Icons.volume_up_outlined;
+        ? AppIcons.channelText
+        : AppIcons.volumeHigh;
 
     return ClipRect(
       child: BackdropFilter(
@@ -47,13 +47,13 @@ class ChannelHeader extends StatelessWidget {
             children: [
               if (onBack != null) ...[
                 AppIconButton(
-                  icon: Icons.arrow_back,
+                  icon: AppIcons.back,
                   tooltip: 'Voltar para canais',
                   onPressed: onBack,
                 ),
                 const SizedBox(width: 6),
               ],
-              Icon(icon, size: 16, color: colors.textSecondary),
+              AppIcon(icon, size: 16, color: colors.textSecondary),
               const SizedBox(width: 8),
               Expanded(
                 child: Row(
@@ -97,20 +97,20 @@ class ChannelHeader extends StatelessWidget {
                 ),
               ),
               AppIconButton(
-                icon: Icons.group_outlined,
+                icon: AppIcons.userGroup,
                 tooltip: 'Membros',
                 onPressed: onOpenMembers,
               ),
               const SizedBox(width: 4),
               AppIconButton(
-                icon: Icons.link,
+                icon: AppIcons.link,
                 tooltip: 'Convites',
                 onPressed: onOpenInvites,
               ),
               if (onOpenSettings != null) ...[
                 const SizedBox(width: 4),
                 AppIconButton(
-                  icon: Icons.settings_outlined,
+                  icon: AppIcons.settings,
                   tooltip: 'Configurações do servidor',
                   onPressed: onOpenSettings,
                 ),

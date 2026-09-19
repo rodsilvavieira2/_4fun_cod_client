@@ -6,8 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/api/api_exception.dart';
 import '../../core/logging/app_logger.dart';
-import '../../core/theme/app_theme.dart';
-import '../../core/ui/invite_dialog.dart';
+import '../../core/ui/ui.dart';
 import '../../core/ui/settings_modal.dart';
 import '../../core/websocket/socket_service.dart';
 import '../../shared/models/servers.dart';
@@ -685,7 +684,7 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
               ),
               error: (error, _) => Center(
                 child: IconButton(
-                  icon: const Icon(Icons.refresh),
+                  icon: AppIcon(AppIcons.refresh),
                   tooltip: 'Tentar novamente',
                   onPressed: () =>
                       ref.invalidate(serverDetailProvider(widget.serverId)),
@@ -837,7 +836,7 @@ class _NoChannelSelected extends StatelessWidget {
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 360),
-        child: const Padding(
+        child: Padding(
           padding: EdgeInsets.all(32),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -849,8 +848,8 @@ class _NoChannelSelected extends StatelessWidget {
                 ),
                 child: Padding(
                   padding: EdgeInsets.all(18),
-                  child: Icon(
-                    Icons.forum_outlined,
+                  child: AppIcon(
+                    AppIcons.forum,
                     size: 30,
                     color: AppTokens.textSecondary,
                   ),

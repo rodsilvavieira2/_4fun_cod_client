@@ -46,7 +46,7 @@ class _AppearanceSectionState extends ConsumerState<AppearanceSection> {
           title: 'Interface',
           children: [
             SettingsRow(
-              icon: Icons.dark_mode_outlined,
+              icon: AppIcons.moon,
               title: 'Tema',
               subtitle: 'Escuro',
               trailing: AppBadge(
@@ -107,7 +107,7 @@ class _AppearanceSectionState extends ConsumerState<AppearanceSection> {
         const SettingsNotice(
           message:
               'A cor fica salva neste desktop e é aplicada instantaneamente no app.',
-          icon: Icons.palette_outlined,
+          icon: AppIcons.palette,
         ),
       ],
     );
@@ -223,8 +223,8 @@ class _PresetSwatchState extends State<_PresetSwatch> {
                         shape: BoxShape.circle,
                         border: Border.all(color: colors.onAccent, width: 1),
                       ),
-                      child: Icon(
-                        Icons.check,
+                      child: AppIcon(
+                        AppIcons.check,
                         size: 12,
                         color: colors.onAccent,
                       ),
@@ -294,8 +294,8 @@ class _CustomColorEditor extends StatelessWidget {
                   decoration: InputDecoration(
                     hintText: '#5865F2',
                     errorText: errorText,
-                    prefixIcon: Icon(
-                      Icons.tag,
+                    prefixIcon: AppIcon(
+                      AppIcons.channelText,
                       size: 15,
                       color: palette.textSecondary,
                     ),
@@ -314,7 +314,7 @@ class _CustomColorEditor extends StatelessWidget {
           const SizedBox(height: 14),
           Row(
             children: [
-              Icon(Icons.colorize_outlined, size: 16, color: palette.textMuted),
+              AppIcon(AppIcons.palette, size: 16, color: palette.textMuted),
               const SizedBox(width: 10),
               Expanded(
                 child: SliderTheme(

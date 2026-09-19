@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../notifications/notification_preferences.dart';
+import '../app_icon.dart';
 import '../settings_section_layout.dart';
 
 class NotificationsSection extends ConsumerWidget {
@@ -23,7 +24,7 @@ class NotificationsSection extends ConsumerWidget {
               title: 'Conversas',
               children: [
                 SettingsRow(
-                  icon: Icons.tag,
+                  icon: AppIcons.channelText,
                   title: 'Mensagens em canais',
                   trailing: SettingsSwitch(
                     value: value.channelMessages,
@@ -31,7 +32,7 @@ class NotificationsSection extends ConsumerWidget {
                   ),
                 ),
                 SettingsRow(
-                  icon: Icons.alternate_email,
+                  icon: AppIcons.mention,
                   title: 'Menções com @',
                   trailing: SettingsSwitch(
                     value: value.mentions,
@@ -44,7 +45,7 @@ class NotificationsSection extends ConsumerWidget {
               title: 'Alertas',
               children: [
                 SettingsRow(
-                  icon: Icons.volume_up_outlined,
+                  icon: AppIcons.volumeHigh,
                   title: 'Sons de notificação',
                   trailing: SettingsSwitch(
                     value: value.sounds,

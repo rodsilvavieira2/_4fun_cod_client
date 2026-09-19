@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../updates/app_update_state.dart';
 import '../updates/update_providers.dart';
 import 'buttons/app_button.dart';
+import 'app_icon.dart';
 import 'ds_tokens.dart';
 import '../theme/appearance_theme.dart';
 
@@ -88,7 +89,7 @@ class _AvailableBody extends StatelessWidget {
       children: [
         Row(
           children: [
-            Icon(Icons.system_update_alt, size: 18, color: colors.accent),
+            AppIcon(AppIcons.systemUpdate, size: 18, color: colors.accent),
             const SizedBox(width: 8),
             Expanded(
               child: Text(

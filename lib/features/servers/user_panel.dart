@@ -167,8 +167,8 @@ class UserPanel extends ConsumerWidget {
                   children: [
                     _SplitMediaControl(
                       icon: controls.isMicrophoneEnabled
-                          ? Icons.mic_none
-                          : Icons.mic_off_outlined,
+                          ? AppIcons.mic
+                          : AppIcons.micOff,
                       isActive: !controls.isMicrophoneEnabled,
                       activeColor: AppTokens.accentDanger,
                       tooltip: controls.isDeafened
@@ -192,7 +192,7 @@ class UserPanel extends ConsumerWidget {
                         unavailable: devices.preferredInputUnavailable,
                         loading: devices.isLoading,
                         title: 'Dispositivo de entrada',
-                        deviceIcon: Icons.mic_outlined,
+                        deviceIcon: AppIcons.mic,
                         isInput: true,
                         onSelected: (id) => _selectInput(context, ref, id),
                       ),
@@ -200,8 +200,8 @@ class UserPanel extends ConsumerWidget {
                     const SizedBox(width: 6),
                     _SplitMediaControl(
                       icon: controls.isDeafened
-                          ? Icons.headset_off_outlined
-                          : Icons.headset_outlined,
+                          ? AppIcons.headsetOff
+                          : AppIcons.headset,
                       isActive: controls.isDeafened,
                       activeColor: AppTokens.accentDanger,
                       tooltip: controls.isDeafened
@@ -217,14 +217,14 @@ class UserPanel extends ConsumerWidget {
                         unavailable: devices.preferredOutputUnavailable,
                         loading: devices.isLoading,
                         title: 'Dispositivo de saída',
-                        deviceIcon: Icons.headset_outlined,
+                        deviceIcon: AppIcons.headset,
                         isInput: false,
                         onSelected: (id) => _selectOutput(context, ref, id),
                       ),
                     ),
                     const SizedBox(width: 6),
                     AppIconButton(
-                      icon: Icons.settings_outlined,
+                      icon: AppIcons.settings,
                       tooltip: 'Configurações',
                       minSize: 28,
                       iconSize: 18,
@@ -339,7 +339,7 @@ class UserPanel extends ConsumerWidget {
     required bool unavailable,
     required bool loading,
     required String title,
-    required IconData deviceIcon,
+    required List<List<dynamic>> deviceIcon,
     required bool isInput,
     required Future<void> Function(String? id) onSelected,
   }) {
@@ -435,7 +435,7 @@ class _VoiceConnectionPanel extends StatelessWidget {
                 ),
               ),
               AppIconButton(
-                icon: Icons.call_end,
+                icon: AppIcons.callEnd,
                 tooltip: 'Sair do canal de voz',
                 color: AppTokens.accentDanger,
                 onPressed: onLeave,
@@ -453,8 +453,8 @@ class _VoiceConnectionPanel extends StatelessWidget {
               Expanded(
                 child: _VoiceActionButton(
                   icon: state.isCameraEnabled
-                      ? Icons.videocam
-                      : Icons.videocam_off_outlined,
+                      ? AppIcons.video
+                      : AppIcons.videoOff,
                   label: 'Câmera',
                   tooltip: state.isCameraEnabled
                       ? 'Desativar câmera'
@@ -466,7 +466,7 @@ class _VoiceConnectionPanel extends StatelessWidget {
               const SizedBox(width: 6),
               Expanded(
                 child: _VoiceActionButton(
-                  icon: Icons.present_to_all,
+                  icon: AppIcons.screenShare,
                   label: 'Tela',
                   tooltip: state.isScreenSharing
                       ? 'Parar compartilhamento'
@@ -501,11 +501,10 @@ class _ConnectionLatency extends StatelessWidget {
       message: latency == null
           ? 'Medindo latência da conexão…'
           : 'Latência da conexão: $latency ms',
-      child: Icon(
-        Icons.wifi_rounded,
+      child: AppIcon(
+        AppIcons.wifi,
         size: 18,
         color: color,
-        semanticLabel: 'Latência da conexão',
       ),
     );
   }
@@ -528,7 +527,7 @@ class _AudioQuickMenu extends ConsumerStatefulWidget {
   final bool unavailable;
   final bool loading;
   final String title;
-  final IconData deviceIcon;
+  final List<List<dynamic>> deviceIcon;
   final bool isInput;
   final Future<void> Function(String? id) onSelected;
 
@@ -580,8 +579,8 @@ class _AudioQuickMenuState extends ConsumerState<_AudioQuickMenu> {
         child: IconButton(
           tooltip: widget.title,
           padding: EdgeInsets.zero,
-          icon: Icon(
-            controller.isOpen ? Icons.arrow_drop_up : Icons.arrow_drop_down,
+          icon: AppIcon(
+            controller.isOpen ? AppIcons.chevronUp : AppIcons.chevronDown,
             size: 16,
             color: colors.textSecondary,
           ),
@@ -617,7 +616,7 @@ class _AudioQuickPanel extends ConsumerWidget {
   final bool unavailable;
   final bool loading;
   final String title;
-  final IconData deviceIcon;
+  final List<List<dynamic>> deviceIcon;
   final bool isInput;
   final int percent;
   final Future<void> Function(String? id) onSelected;
@@ -713,7 +712,7 @@ class _AudioQuickPanel extends ConsumerWidget {
             const Divider(height: 1, color: AppTokens.borderHairline),
             const SizedBox(height: 6),
             _QuickCommandRow(
-              icon: Icons.settings_outlined,
+              icon: AppIcons.settings,
               label: 'Configurações de voz',
               onTap: () {
                 menuController.close();
@@ -744,7 +743,7 @@ class _MenuSummaryRow extends StatelessWidget {
 
   final String title;
   final String subtitle;
-  final IconData icon;
+  final List<List<dynamic>> icon;
 
   @override
   Widget build(BuildContext context) {
@@ -753,7 +752,7 @@ class _MenuSummaryRow extends StatelessWidget {
       height: 48,
       child: Row(
         children: [
-          Icon(icon, size: 17, color: colors.textSecondary),
+          AppIcon(icon, size: 17, color: colors.textSecondary),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
@@ -798,7 +797,7 @@ class _DeviceMenuItem extends StatelessWidget {
 
   final bool checked;
   final bool enabled;
-  final IconData icon;
+  final List<List<dynamic>> icon;
   final String label;
   final VoidCallback onPressed;
 
@@ -808,8 +807,8 @@ class _DeviceMenuItem extends StatelessWidget {
     return MenuItemButton(
       onPressed: enabled ? onPressed : null,
       style: _menuItemStyle(colors),
-      leadingIcon: Icon(
-        checked ? Icons.check : icon,
+      leadingIcon: AppIcon(
+        checked ? AppIcons.check : icon,
         size: 16,
         color: checked ? colors.accent : colors.textSecondary,
       ),
@@ -901,7 +900,7 @@ class _QuickCommandRow extends StatelessWidget {
     required this.onTap,
   });
 
-  final IconData icon;
+  final List<List<dynamic>> icon;
   final String label;
   final VoidCallback onTap;
 
@@ -914,7 +913,7 @@ class _QuickCommandRow extends StatelessWidget {
         height: 34,
         child: Row(
           children: [
-            Icon(icon, size: 17, color: AppTokens.textSecondary),
+            AppIcon(icon, size: 17, color: AppTokens.textSecondary),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
@@ -1007,7 +1006,7 @@ class _SplitMediaControl extends StatelessWidget {
     this.activeColor,
   });
 
-  final IconData icon;
+  final List<List<dynamic>> icon;
   final String tooltip;
   final VoidCallback? onMainPressed;
   final Widget menu;
@@ -1043,7 +1042,7 @@ class _VoiceActionButton extends StatefulWidget {
     required this.onPressed,
   });
 
-  final IconData icon;
+  final List<List<dynamic>> icon;
   final String label;
   final String tooltip;
   final bool isActive;
@@ -1107,7 +1106,7 @@ class _VoiceActionButtonState extends State<_VoiceActionButton> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(widget.icon, size: 16, color: foreground),
+                    AppIcon(widget.icon, size: 16, color: foreground),
                     const SizedBox(width: 7),
                     Flexible(
                       child: Text(

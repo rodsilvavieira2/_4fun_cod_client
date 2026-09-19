@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 
 import '../ds_tokens.dart';
 import '../../theme/appearance_theme.dart';
+import '../app_icon.dart';
 
 /// Exibe um modal tipo janela macOS com backdrop blur e animação suave
 Future<T?> showMacModalWindow<T>({
@@ -116,7 +117,7 @@ class _MacModalWindowHost extends StatelessWidget {
                                 ),
                                 const Spacer(),
                                 IconButton(
-                                  icon: const Icon(Icons.close, size: 16),
+                                  icon: AppIcon(AppIcons.close, size: 16),
                                   tooltip: 'Fechar (ESC)',
                                   visualDensity: VisualDensity.compact,
                                   onPressed: () => Navigator.of(context).pop(),

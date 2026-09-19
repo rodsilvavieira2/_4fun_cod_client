@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/rtc/rtc_service.dart';
 import '../../../core/theme/appearance_theme.dart';
+import '../../../core/ui/app_icon.dart';
 import '../voice_providers.dart';
 import 'theater_stage.dart' show kTheaterRailGap;
 import 'theater_ui_provider.dart';
@@ -57,7 +58,7 @@ class TheaterStrip extends ConsumerWidget {
                   ),
                   if (p.isSpeaking) ...[
                     const SizedBox(width: 4),
-                    Icon(Icons.graphic_eq, size: 12, color: colors.accent),
+                    AppIcon(AppIcons.wave, size: 12, color: colors.accent),
                   ],
                 ],
               ),

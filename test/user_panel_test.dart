@@ -1,5 +1,6 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:fourfun_cod_client/core/ui/app_icon.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -133,9 +134,9 @@ void main() {
       expect(find.text('Online'), findsOneWidget);
       // Fora de uma chamada os controles continuam funcionais e refletem a
       // preferência global padrão (microfone ativo, não ensurdecido).
-      expect(find.byIcon(Icons.mic_none), findsOneWidget);
-      expect(find.byIcon(Icons.headset_outlined), findsOneWidget);
-      expect(find.byIcon(Icons.settings_outlined), findsOneWidget);
+      expect(find.byWidgetPredicate((w) => w is AppIcon && w.icon == AppIcons.mic), findsOneWidget);
+      expect(find.byWidgetPredicate((w) => w is AppIcon && w.icon == AppIcons.headset), findsOneWidget);
+      expect(find.byWidgetPredicate((w) => w is AppIcon && w.icon == AppIcons.settings), findsOneWidget);
     },
   );
 
@@ -158,7 +159,7 @@ void main() {
 
     // Bootstrap sem usuário: painel renderiza com placeholder (avatar +
     // nome usam '…') — o importante é não lançar e manter o ⚙️.
-    expect(find.byIcon(Icons.settings_outlined), findsOneWidget);
+    expect(find.byWidgetPredicate((w) => w is AppIcon && w.icon == AppIcons.settings), findsOneWidget);
     expect(find.text('…'), findsNWidgets(2));
   });
 
@@ -322,23 +323,23 @@ void main() {
     expect(find.text('Voz conectada'), findsOneWidget);
     expect(find.text('reunião'), findsOneWidget);
     expect(find.text('42 ms'), findsNothing);
-    expect(find.byIcon(Icons.wifi_rounded), findsOneWidget);
+    expect(find.byWidgetPredicate((w) => w is AppIcon && w.icon == AppIcons.wifi), findsOneWidget);
     expect(find.byTooltip('Latência da conexão: 42 ms'), findsOneWidget);
     expect(find.text('Câmera'), findsOneWidget);
     expect(find.text('Tela'), findsOneWidget);
-    expect(find.byIcon(Icons.videocam_off_outlined), findsOneWidget);
-    expect(find.byIcon(Icons.present_to_all), findsOneWidget);
-    expect(find.byIcon(Icons.mic_none), findsOneWidget);
-    expect(find.byIcon(Icons.headset_outlined), findsOneWidget);
+    expect(find.byWidgetPredicate((w) => w is AppIcon && w.icon == AppIcons.videoOff), findsOneWidget);
+    expect(find.byWidgetPredicate((w) => w is AppIcon && w.icon == AppIcons.screenShare), findsOneWidget);
+    expect(find.byWidgetPredicate((w) => w is AppIcon && w.icon == AppIcons.mic), findsOneWidget);
+    expect(find.byWidgetPredicate((w) => w is AppIcon && w.icon == AppIcons.headset), findsOneWidget);
 
     final cameraY = tester
-        .getCenter(find.byIcon(Icons.videocam_off_outlined))
+        .getCenter(find.byWidgetPredicate((w) => w is AppIcon && w.icon == AppIcons.videoOff))
         .dy;
-    final shareY = tester.getCenter(find.byIcon(Icons.present_to_all)).dy;
-    final micX = tester.getCenter(find.byIcon(Icons.mic_none)).dx;
-    final micY = tester.getCenter(find.byIcon(Icons.mic_none)).dy;
-    final headsetX = tester.getCenter(find.byIcon(Icons.headset_outlined)).dx;
-    final headsetY = tester.getCenter(find.byIcon(Icons.headset_outlined)).dy;
+    final shareY = tester.getCenter(find.byWidgetPredicate((w) => w is AppIcon && w.icon == AppIcons.screenShare)).dy;
+    final micX = tester.getCenter(find.byWidgetPredicate((w) => w is AppIcon && w.icon == AppIcons.mic)).dx;
+    final micY = tester.getCenter(find.byWidgetPredicate((w) => w is AppIcon && w.icon == AppIcons.mic)).dy;
+    final headsetX = tester.getCenter(find.byWidgetPredicate((w) => w is AppIcon && w.icon == AppIcons.headset)).dx;
+    final headsetY = tester.getCenter(find.byWidgetPredicate((w) => w is AppIcon && w.icon == AppIcons.headset)).dy;
     expect(cameraY, lessThan(micY));
     expect(shareY, lessThan(headsetY));
     expect(micX, lessThan(headsetX));
@@ -398,7 +399,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final cameraIcon = find.byIcon(Icons.videocam_off_outlined);
+    final cameraIcon = find.byWidgetPredicate((w) => w is AppIcon && w.icon == AppIcons.videoOff);
     expect(cameraIcon, findsOneWidget);
     // Caixa do botão (38px de altura, largura cheia).
     final buttonBox = tester.getRect(

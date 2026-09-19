@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/rtc/rtc_service.dart';
 import '../../features/voice/voice_volume_controller.dart';
 import '../theme/appearance_theme.dart';
+import 'app_icon.dart';
 import 'ds_tokens.dart';
 
 class ParticipantVolumeButton extends ConsumerWidget {
@@ -60,12 +61,12 @@ class ParticipantVolumeButton extends ConsumerWidget {
           tooltip: tooltip,
           padding: padding ?? const EdgeInsets.all(8),
           constraints: constraints,
-          icon: Icon(
+          icon: AppIcon(
             noAudio || muted || percent == 0
-                ? Icons.volume_off
+                ? AppIcons.volumeMute
                 : percent > 100
-                ? Icons.volume_up
-                : Icons.volume_down,
+                ? AppIcons.volumeHigh
+                : AppIcons.volumeLow,
             size: iconSize,
           ),
           color: iconColor ?? colors.textSecondary,

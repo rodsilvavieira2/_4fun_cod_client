@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/appearance_theme.dart';
+import '../../../core/ui/app_icon.dart';
 import '../../../core/ui/ds_tokens.dart';
 import '../../../core/ui/invite_dialog.dart';
 import '../../../core/ui/menus/app_menu.dart';
@@ -55,12 +56,12 @@ List<PopupMenuEntry<TheaterMoreAction>> theaterMoreMenuItems(
   AppMenuItem<TheaterMoreAction>.labeled(
     value: TheaterMoreAction.viewParticipants,
     label: 'Ver participantes',
-    icon: Icons.people_outline,
+    icon: AppIcons.users,
   ),
   AppMenuItem<TheaterMoreAction>.labeled(
     value: TheaterMoreAction.copyLink,
     label: 'Copiar link da sala',
-    icon: Icons.link,
+    icon: AppIcons.link,
   ),
 ];
 
@@ -139,22 +140,22 @@ Future<void> showStreamTileMenu({
             ? (isFocused ? 'Em foco' : 'Focar transmissão')
             : (pinned ? 'Desafixar transmissão' : 'Focar transmissão'),
         icon: isFocused
-            ? Icons.push_pin
-            : (pinned ? Icons.push_pin : Icons.push_pin_outlined),
+            ? AppIcons.pin
+            : (pinned ? AppIcons.pin : AppIcons.pinOff),
         enabled: isFocusLayout ? !isFocused : true,
       ),
       AppMenuItem<StreamTileAction>.labeled(
         value: StreamTileAction.fullscreen,
         label: 'Tela cheia',
-        icon: Icons.fullscreen,
+        icon: AppIcons.fullscreen,
       ),
       if (!local)
         AppMenuItem<StreamTileAction>.labeled(
           value: StreamTileAction.watch,
           label: watching ? 'Ocultar vídeo' : 'Assistir vídeo',
           icon: watching
-              ? Icons.visibility_off_outlined
-              : Icons.visibility_outlined,
+              ? AppIcons.viewOff
+              : AppIcons.view,
         ),
     ],
   );

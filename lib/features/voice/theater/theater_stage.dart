@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/rtc/rtc_service.dart';
 import '../../../core/theme/appearance_theme.dart';
+import '../../../core/ui/app_icon.dart';
 import '../voice_providers.dart';
 import '../voice_video_tile.dart';
 import 'theater_menus.dart';
@@ -531,7 +532,7 @@ class TheaterEmptyStage extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.theater_comedy, size: 30, color: colors.textSecondary),
+            AppIcon(AppIcons.theater, size: 30, color: colors.textSecondary),
             const SizedBox(height: 10),
             Text(
               'Nenhuma transmissão ativa',

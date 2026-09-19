@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 import '../config/app_config.dart';
 import '../theme/appearance_theme.dart';
 import 'app_file_image.dart';
+import 'app_icon.dart';
 import 'ds_tokens.dart';
 import 'menus/app_menu.dart';
 
@@ -53,12 +54,12 @@ Future<void> showChatImageMenu({
       AppMenuItem.labeled(
         value: 'copy',
         label: 'Copiar imagem',
-        icon: Icons.copy_outlined,
+        icon: AppIcons.copy,
       ),
       AppMenuItem.labeled(
         value: 'save',
         label: 'Salvar imagem',
-        icon: Icons.download_outlined,
+        icon: AppIcons.download,
       ),
     ],
   );

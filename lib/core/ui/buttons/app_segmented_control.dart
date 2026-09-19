@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../theme/appearance_theme.dart';
+import '../app_icon.dart';
 import '../ds_tokens.dart';
 
 class SegmentItem<T> {
@@ -8,7 +9,7 @@ class SegmentItem<T> {
 
   final T value;
   final String label;
-  final IconData? icon;
+  final List<List<dynamic>>? icon;
 }
 
 /// Controle segmentado moderno tipo macOS (com fundo deslizante suave)
@@ -130,7 +131,7 @@ class _SegmentButtonState<T> extends State<_SegmentButton<T>> {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (widget.item.icon != null) ...[
-                Icon(widget.item.icon, size: 14, color: fgColor),
+                AppIcon(widget.item.icon!, size: 14, color: fgColor),
                 const SizedBox(width: 6),
               ],
               Text(

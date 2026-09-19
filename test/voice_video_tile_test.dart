@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:fourfun_cod_client/core/ui/app_icon.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -110,11 +111,11 @@ void main() {
 
     expect(find.text('LIVE'), findsOneWidget);
     expect(find.text('1080p60'), findsOneWidget);
-    expect(find.byIcon(Icons.fullscreen), findsOneWidget);
+    expect(find.byWidgetPredicate((w) => w is AppIcon && w.icon == AppIcons.fullscreen), findsOneWidget);
     // Nome dinâmico do transmissor continua no badge inferior.
     expect(find.text('SoulEater'), findsOneWidget);
 
-    await tester.tap(find.byIcon(Icons.fullscreen));
+    await tester.tap(find.byWidgetPredicate((w) => w is AppIcon && w.icon == AppIcons.fullscreen));
     expect(expanded, isTrue);
   });
 
@@ -157,7 +158,7 @@ void main() {
     );
 
     expect(find.text('LIVE'), findsNothing);
-    expect(find.byIcon(Icons.fullscreen), findsNothing);
+    expect(find.byWidgetPredicate((w) => w is AppIcon && w.icon == AppIcons.fullscreen), findsNothing);
   });
 
   testWidgets(
@@ -461,12 +462,12 @@ void main() {
     expect(
       find.descendant(
         of: find.byType(TransmitTileToolbar),
-        matching: find.byIcon(Icons.volume_off),
+        matching: find.byWidgetPredicate((w) => w is AppIcon && w.icon == AppIcons.volumeMute),
       ),
       findsOneWidget,
     );
     // Sem expandir na toolbar: o único fullscreen é o do topo.
-    expect(find.byIcon(Icons.fullscreen), findsOneWidget);
+    expect(find.byWidgetPredicate((w) => w is AppIcon && w.icon == AppIcons.fullscreen), findsOneWidget);
   });
 
   testWidgets('toolbar remota não assistida oferece assistir', (tester) async {
@@ -498,9 +499,9 @@ void main() {
 
     expect(find.byType(TransmitTileToolbar), findsOneWidget);
     expect(find.byTooltip('Parar compartilhamento'), findsOneWidget);
-    expect(find.byIcon(Icons.volume_off), findsNothing);
-    expect(find.byIcon(Icons.volume_down), findsNothing);
-    expect(find.byIcon(Icons.volume_up), findsNothing);
+    expect(find.byWidgetPredicate((w) => w is AppIcon && w.icon == AppIcons.volumeMute), findsNothing);
+    expect(find.byWidgetPredicate((w) => w is AppIcon && w.icon == AppIcons.volumeLow), findsNothing);
+    expect(find.byWidgetPredicate((w) => w is AppIcon && w.icon == AppIcons.volumeHigh), findsNothing);
 
     await tester.tap(find.byTooltip('Parar compartilhamento'));
     expect(stopped, 1);

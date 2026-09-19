@@ -312,7 +312,7 @@ class _ServerSettingsContentState extends ConsumerState<ServerSettingsContent> {
             OutlinedButton.icon(
               onPressed: () =>
                   ref.invalidate(serverDetailProvider(widget.serverId)),
-              icon: const Icon(Icons.refresh, size: 16),
+              icon: AppIcon(AppIcons.refresh, size: 16),
               label: const Text('Tentar novamente'),
             ),
           ],
@@ -320,11 +320,11 @@ class _ServerSettingsContentState extends ConsumerState<ServerSettingsContent> {
       ),
       data: (detail) {
         if (!detail.canManageServer) {
-          return const _ServerSettingsStatus(
+          return _ServerSettingsStatus(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.lock_outline, size: 30, color: AppTokens.textMuted),
+                AppIcon(AppIcons.lock, size: 30, color: AppTokens.textMuted),
                 SizedBox(height: 12),
                 Text(
                   'Apenas administradores podem acessar as configurações do servidor.',
@@ -380,7 +380,7 @@ class _ServerSettingsContentState extends ConsumerState<ServerSettingsContent> {
                     onPressed: _working || _saving || _savingIcon
                         ? null
                         : widget.onOpenMembers,
-                    icon: const Icon(Icons.manage_accounts_outlined, size: 17),
+                    icon: AppIcon(AppIcons.userSettings, size: 17),
                     label: const Text('Membros e cargos'),
                   );
 
@@ -467,7 +467,7 @@ class _ServerSettingsContentState extends ConsumerState<ServerSettingsContent> {
                 label: currentRole.isOwner
                     ? 'Excluir servidor'
                     : 'Sair do servidor',
-                icon: currentRole.isOwner ? Icons.delete_outline : Icons.logout,
+                icon: currentRole.isOwner ? AppIcons.delete : AppIcons.logout,
                 variant: AppButtonVariant.danger,
                 onPressed: _working || _saving || _savingIcon
                     ? null
@@ -542,8 +542,8 @@ class _ServerIconEditor extends StatelessWidget {
                   width: 58,
                   height: 58,
                   fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) => const Icon(
-                    Icons.dns_outlined,
+                  errorBuilder: (_, _, _) => AppIcon(
+                    AppIcons.server,
                     color: AppTokens.textMuted,
                   ),
                 )
@@ -561,15 +561,15 @@ class _ServerIconEditor extends StatelessWidget {
                   path: iconUrl,
                   width: 58,
                   height: 58,
-                  fallback: const Icon(
-                    Icons.dns_outlined,
+                  fallback: AppIcon(
+                    AppIcons.server,
                     color: AppTokens.textMuted,
                   ),
                 ),
         ),
         AppButton(
           label: loading ? 'Enviando' : 'Alterar ícone',
-          icon: Icons.image_outlined,
+          icon: AppIcons.image,
           size: AppButtonSize.sm,
           variant: AppButtonVariant.secondary,
           loading: loading,

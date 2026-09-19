@@ -101,12 +101,12 @@ class _CreateChannelDialogState extends ConsumerState<_CreateChannelDialog> {
                 SegmentItem(
                   value: ChannelType.text,
                   label: 'Texto',
-                  icon: Icons.tag,
+                  icon: AppIcons.channelText,
                 ),
                 SegmentItem(
                   value: ChannelType.voice,
                   label: 'Voz & Vídeo',
-                  icon: Icons.volume_up_outlined,
+                  icon: AppIcons.volumeHigh,
                 ),
               ],
             ),

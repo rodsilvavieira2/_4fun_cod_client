@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme/appearance_theme.dart';
+import 'app_icon.dart';
 import 'ds_tokens.dart';
 
 /// Ícone de ação compacto estilo macOS com tooltip e feedback suave
@@ -18,7 +19,7 @@ class AppIconButton extends StatefulWidget {
     this.visualDensity = VisualDensity.compact,
   });
 
-  final IconData icon;
+  final List<List<dynamic>> icon;
   final String tooltip;
   final VoidCallback? onPressed;
   final double iconSize;
@@ -66,7 +67,7 @@ class _AppIconButtonState extends State<AppIconButton> {
               borderRadius: BorderRadius.circular(AppRadius.sm),
             ),
             alignment: Alignment.center,
-            child: Icon(
+            child: AppIcon(
               widget.icon,
               size: widget.iconSize,
               color: effectiveColor,

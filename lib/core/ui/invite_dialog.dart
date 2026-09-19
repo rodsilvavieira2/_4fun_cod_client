@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../api/api_exception.dart';
 import '../../features/servers/servers_providers.dart';
 import '../../shared/models/servers.dart';
+import 'app_icon.dart';
 import 'overlays/app_modal_window.dart';
 
 /// Abre o modal de convites do servidor (mesmo padrão visual de
@@ -80,7 +81,7 @@ class _InviteDialogState extends ConsumerState<InviteDialog> {
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, _) => Center(
           child: IconButton(
-            icon: const Icon(Icons.refresh),
+            icon: AppIcon(AppIcons.refresh),
             tooltip: 'Tentar novamente',
             onPressed: () =>
                 ref.invalidate(serverDetailProvider(widget.serverId)),
@@ -100,7 +101,7 @@ class _InviteDialogState extends ConsumerState<InviteDialog> {
                             width: 18,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : const Icon(Icons.link),
+                        : AppIcon(AppIcons.link),
                     label: const Text('Criar convite'),
                   ),
                   if (_error != null) ...[
@@ -153,7 +154,7 @@ class _InviteCard extends StatelessWidget {
             const SizedBox(height: 12),
             FilledButton.tonalIcon(
               onPressed: onCopy,
-              icon: const Icon(Icons.copy),
+              icon: AppIcon(AppIcons.copy),
               label: const Text('Copiar link'),
             ),
           ],

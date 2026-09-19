@@ -85,8 +85,8 @@ class _DmConversationListState extends ConsumerState<DmConversationList> {
                     fontSize: 13,
                     color: colors.textMuted,
                   ),
-                  prefixIcon: Icon(
-                    Icons.search,
+                  prefixIcon: AppIcon(
+                    AppIcons.search,
                     size: 16,
                     color: colors.textSecondary,
                   ),

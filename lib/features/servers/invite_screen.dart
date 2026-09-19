@@ -91,14 +91,14 @@ class _InviteScreenState extends ConsumerState<InviteScreen> {
                       radius: 40,
                       backgroundColor: Theme.of(context).colorScheme.surface,
                       child: data.server.iconUrl == null
-                          ? const Icon(Icons.dns_outlined, size: 40)
+                          ? AppIcon(AppIcons.server, size: 40)
                           : ClipOval(
                               child: AppFileImage(
                                 path: data.server.iconUrl,
                                 width: 80,
                                 height: 80,
-                                fallback: const Icon(
-                                  Icons.dns_outlined,
+                                fallback: AppIcon(
+                                  AppIcons.server,
                                   size: 40,
                                 ),
                               ),
@@ -134,7 +134,7 @@ class _InviteScreenState extends ConsumerState<InviteScreen> {
                               width: 18,
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
-                          : const Icon(Icons.check),
+                          : AppIcon(AppIcons.check),
                       label: const Text('Aceitar convite'),
                     ),
                   ],

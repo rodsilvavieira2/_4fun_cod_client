@@ -96,8 +96,8 @@ class ChannelList extends ConsumerWidget {
                 ),
                 AppMenuButton<String>(
                   tooltip: 'Menu do servidor',
-                  icon: Icon(
-                    Icons.keyboard_arrow_down,
+                  icon: AppIcon(
+                    AppIcons.chevronDown,
                     size: 18,
                     color: colors.textSecondary,
                   ),
@@ -124,25 +124,25 @@ class ChannelList extends ConsumerWidget {
                     if (canManageServer) ...[
                       AppMenuItem<String>.labeled(
                         value: 'invite',
-                        icon: Icons.person_add_alt_1_outlined,
+                        icon: AppIcons.userAdd,
                         label: 'Convidar pessoas',
                       ),
                       AppMenuItem<String>.labeled(
                         value: 'create',
-                        icon: Icons.add_circle_outline,
+                        icon: AppIcons.addCircle,
                         label: 'Criar canal',
                       ),
                     ],
                     AppMenuItem<String>.labeled(
                       value: 'members',
-                      icon: Icons.group_outlined,
+                      icon: AppIcons.userGroup,
                       label: 'Membros e cargos',
                     ),
                     if (canManageServer) ...[
                       const AppMenuDivider(),
                       AppMenuItem<String>.labeled(
                         value: 'settings',
-                        icon: Icons.settings_outlined,
+                        icon: AppIcons.settings,
                         label: 'Configurações do servidor',
                       ),
                     ],
@@ -150,7 +150,7 @@ class ChannelList extends ConsumerWidget {
                       const AppMenuDivider(),
                       AppMenuItem<String>.labeled(
                         value: 'leave',
-                        icon: Icons.logout,
+                        icon: AppIcons.logout,
                         label: 'Sair do servidor',
                       ),
                     ],
@@ -172,7 +172,7 @@ class ChannelList extends ConsumerWidget {
             ),
             error: (error, _) => Center(
               child: IconButton(
-                icon: const Icon(Icons.refresh, size: 18),
+                icon: AppIcon(AppIcons.refresh, size: 18),
                 tooltip: 'Tentar novamente',
                 onPressed: () =>
                     ref.invalidate(channelsControllerProvider(serverId)),
@@ -439,8 +439,10 @@ class _VoiceOccupantRow extends StatelessWidget {
               const SizedBox(width: 6),
               _VoiceOccupantSpeakingMeter(active: isSpeaking, accent: accent),
               const SizedBox(width: 6),
-              Icon(
-                participant.isMicrophoneEnabled ? Icons.mic : Icons.mic_off,
+              AppIcon(
+                participant.isMicrophoneEnabled
+                    ? AppIcons.mic
+                    : AppIcons.micOff,
                 size: 14,
                 color: participant.isMicrophoneEnabled
                     ? AppTokens.textMuted
@@ -707,8 +709,8 @@ class _ChannelRowState extends State<_ChannelRow> {
     final colors = context.appColors;
     final selected = widget.selected;
     final icon = widget.channel.type == ChannelType.text
-        ? Icons.tag
-        : Icons.volume_up_outlined;
+        ? AppIcons.channelText
+        : AppIcons.volumeHigh;
     final baseColor = selected
         ? colors.textPrimary
         : (widget.connected
@@ -738,7 +740,7 @@ class _ChannelRowState extends State<_ChannelRow> {
           ),
           child: Row(
             children: [
-              Icon(icon, size: 15, color: baseColor),
+              AppIcon(icon, size: 15, color: baseColor),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -756,7 +758,7 @@ class _ChannelRowState extends State<_ChannelRow> {
                 duration: const Duration(milliseconds: 120),
                 opacity: widget.canManageServer && _hovered ? 1 : 0,
                 child: AppIconButton(
-                  icon: Icons.delete_outline,
+                  icon: AppIcons.delete,
                   tooltip: 'Excluir canal',
                   minSize: 22,
                   iconSize: 14,

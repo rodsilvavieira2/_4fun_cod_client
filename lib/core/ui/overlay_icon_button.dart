@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme/appearance_theme.dart';
+import 'app_icon.dart';
 
 /// Botão circular translúcido sobre vídeo (pill preta + borda sutil).
 ///
@@ -15,7 +16,7 @@ class OverlayIconButton extends StatelessWidget {
     this.size = 32,
   });
 
-  final IconData icon;
+  final List<List<dynamic>> icon;
   final String tooltip;
   final VoidCallback? onPressed;
 
@@ -36,7 +37,7 @@ class OverlayIconButton extends StatelessWidget {
         foregroundColor: colors.textPrimary,
         side: BorderSide(color: colors.borderSubtle),
       ),
-      icon: Icon(icon, size: size * 0.5),
+      icon: AppIcon(icon, size: size * 0.5),
     );
   }
 }

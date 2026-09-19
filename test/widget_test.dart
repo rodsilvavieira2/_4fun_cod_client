@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:fourfun_cod_client/core/ui/app_icon.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -94,7 +95,7 @@ void main() {
 
     // Redirect (§7.2): Authenticated → home; sem servidores, empty state.
     expect(find.text('Crie seu primeiro servidor'), findsOneWidget);
-    expect(find.byIcon(Icons.account_circle), findsOneWidget);
+    expect(find.byWidgetPredicate((w) => w is AppIcon && w.icon == AppIcons.userCircle), findsOneWidget);
   });
 
   testWidgets('Rail renderiza os servidores do usuário', (
@@ -116,7 +117,7 @@ void main() {
 
     expect(find.text('G'), findsOneWidget); // inicial do servidor
     expect(find.text('D'), findsOneWidget);
-    expect(find.byIcon(Icons.add), findsOneWidget); // botão de criar
+    expect(find.byWidgetPredicate((w) => w is AppIcon && w.icon == AppIcons.add), findsOneWidget); // botão de criar
   });
 
   testWidgets('Criar servidor valida nome vazio', (WidgetTester tester) async {

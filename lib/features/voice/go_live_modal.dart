@@ -169,7 +169,7 @@ class _GoLiveDialogState extends State<_GoLiveDialog> {
                             children: [
                               if (channelName != null)
                                 SettingsNotice(
-                                  icon: Icons.tag_outlined,
+                                  icon: AppIcons.channelText,
                                   message:
                                       'Transmitindo no canal #$channelName',
                                 ),
@@ -248,7 +248,7 @@ class _GoLiveTitleBar extends StatelessWidget {
           ),
           const Spacer(),
           AppIconButton(
-            icon: Icons.close,
+            icon: AppIcons.close,
             tooltip: 'Fechar (ESC)',
             onPressed: onClose,
           ),
@@ -288,7 +288,7 @@ class _GoLiveActions extends StatelessWidget {
           const SizedBox(width: 8),
           AppButton(
             label: 'Go Live',
-            icon: Icons.screen_share_outlined,
+            icon: AppIcons.screenShare,
             onPressed: canGoLive ? onGoLive : null,
           ),
         ],
@@ -329,8 +329,8 @@ class _AudioToggleRow extends StatelessWidget {
                     borderRadius: BorderRadius.circular(AppRadius.sm),
                     border: Border.all(color: colors.borderHairline, width: 1),
                   ),
-                  child: Icon(
-                    Icons.volume_up_outlined,
+                  child: AppIcon(
+                    AppIcons.volumeHigh,
                     size: 15,
                     color: colors.textSecondary,
                   ),
@@ -490,7 +490,7 @@ class _QualityRow extends StatelessWidget {
               SizedBox(
                 width: 16,
                 child: selected
-                    ? Icon(Icons.check, size: 16, color: colors.textPrimary)
+                    ? AppIcon(AppIcons.check, size: 16, color: colors.textPrimary)
                     : null,
               ),
             ],

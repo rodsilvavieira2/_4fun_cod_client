@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/rtc/rtc_providers.dart';
 import '../../../core/theme/appearance_theme.dart';
+import '../../../core/ui/app_icon.dart';
 import '../../../core/ui/app_icon_button.dart';
 import '../../../core/ui/ds_tokens.dart';
 import '../../../core/ui/settings_modal.dart';
@@ -137,7 +138,7 @@ class _TheaterScreenState extends ConsumerState<TheaterScreen> {
                     backgroundColor: Colors.black54,
                     foregroundColor: Colors.white,
                   ),
-                  icon: const Icon(Icons.fullscreen_exit),
+                  icon: AppIcon(AppIcons.fullscreenExit),
                   onPressed: () => Navigator.of(context).pop(),
                 ),
               ),
@@ -381,7 +382,7 @@ class _TheaterChatPanel extends StatelessWidget {
               top: 8,
               right: 8,
               child: AppIconButton(
-                icon: Icons.close,
+                icon: AppIcons.close,
                 tooltip: 'Fechar chat',
                 minSize: 28,
                 onPressed: onClose,
@@ -432,7 +433,7 @@ class _TheaterHeader extends ConsumerWidget {
                 ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
               ),
               const SizedBox(width: 10),
-              Icon(Icons.volume_up_outlined, size: 14, color: colors.textMuted),
+              AppIcon(AppIcons.volumeHigh, size: 14, color: colors.textMuted),
               const SizedBox(width: 6),
               Text(
                 'Sala de voz e vídeo',
@@ -460,8 +461,8 @@ class _TheaterHeader extends ConsumerWidget {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(
-                        Icons.theater_comedy,
+                      AppIcon(
+                        AppIcons.theater,
                         size: 14,
                         color: colors.textSecondary,
                       ),
@@ -489,7 +490,7 @@ class _TheaterHeader extends ConsumerWidget {
               TheaterPresenceStack(arg: arg),
               const SizedBox(width: 4),
               AppIconButton(
-                icon: Icons.chat_bubble_outline,
+                icon: AppIcons.chat,
                 tooltip: chatOpen ? 'Fechar chat' : 'Abrir chat',
                 isActive: chatOpen,
                 onPressed: onToggleChat,

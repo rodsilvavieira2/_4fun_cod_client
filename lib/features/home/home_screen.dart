@@ -120,12 +120,12 @@ class _HomeNavigation extends StatelessWidget {
           const SizedBox(height: 6),
           const _HomeNavGroupLabel('Principal'),
           const _HomeNavItem(
-            icon: Icons.people_alt_outlined,
+            icon: AppIcons.users,
             label: 'Início',
             selected: true,
           ),
           _HomeNavItem(
-            icon: Icons.add_circle_outline,
+            icon: AppIcons.addCircle,
             label: 'Criar ou entrar',
             onTap: () => showServerEntryDialog(context),
           ),
@@ -171,7 +171,7 @@ class _HomeNavItem extends StatefulWidget {
     this.onTap,
   });
 
-  final IconData icon;
+  final List<List<dynamic>> icon;
   final String label;
   final bool selected;
   final VoidCallback? onTap;
@@ -223,7 +223,7 @@ class _HomeNavItemState extends State<_HomeNavItem> {
                 ),
               ),
               const SizedBox(width: 7),
-              Icon(
+              AppIcon(
                 widget.icon,
                 // Ícones da sidebar 20% maiores (14.5 → 17.4).
                 size: 17.4,
@@ -279,8 +279,8 @@ class _HomeContent extends ConsumerWidget {
             ),
             child: Row(
               children: [
-                Icon(
-                  Icons.people_alt_outlined,
+                AppIcon(
+                  AppIcons.users,
                   size: 18,
                   color: colors.textSecondary,
                 ),
@@ -296,13 +296,13 @@ class _HomeContent extends ConsumerWidget {
                 ),
                 const Spacer(),
                 AppIconButton(
-                  icon: Icons.add,
+                  icon: AppIcons.add,
                   tooltip: 'Criar ou entrar em um servidor',
                   onPressed: () => showServerEntryDialog(context),
                 ),
                 const SizedBox(width: 4),
                 AppIconButton(
-                  icon: Icons.account_circle,
+                  icon: AppIcons.userCircle,
                   tooltip: 'Perfil e configurações',
                   onPressed: () => showSettingsModal(context),
                 ),
@@ -413,7 +413,7 @@ class _EmptyHome extends StatelessWidget {
                     const SizedBox(width: 16),
                     AppButton(
                       label: 'Criar ou entrar',
-                      icon: Icons.add,
+                      icon: AppIcons.add,
                       size: AppButtonSize.sm,
                       onPressed: () => showServerEntryDialog(context),
                     ),
@@ -444,7 +444,7 @@ class _ServerOverview extends StatelessWidget {
             title: 'Comunidades',
             trailing: AppButton(
               label: 'Criar ou entrar',
-              icon: Icons.add,
+              icon: AppIcons.add,
               size: AppButtonSize.sm,
               variant: AppButtonVariant.ghost,
               onPressed: () => showServerEntryDialog(context),
@@ -524,8 +524,8 @@ class _ServerRowState extends State<_ServerRow> {
               AnimatedOpacity(
                 duration: const Duration(milliseconds: 120),
                 opacity: _hovered ? 1 : 0.55,
-                child: Icon(
-                  Icons.chevron_right,
+                child: AppIcon(
+                  AppIcons.chevronRight,
                   size: 18,
                   color: colors.textSecondary,
                 ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../shared/models/servers.dart';
+import 'app_icon.dart';
 import 'ds_tokens.dart';
 
 /// Identificação visual única dos papéis de servidor, usada nas listas e na
@@ -19,9 +20,9 @@ class ServerRoleBadge extends StatelessWidget {
       ServerRole.member => AppTokens.textMuted,
     };
     final icon = switch (role) {
-      ServerRole.owner => Icons.workspace_premium_outlined,
-      ServerRole.admin => Icons.shield_outlined,
-      ServerRole.member => Icons.person_outline,
+      ServerRole.owner => AppIcons.crown,
+      ServerRole.admin => AppIcons.shield,
+      ServerRole.member => AppIcons.user,
     };
     return Tooltip(
       message: '${role.label}: ${role.description}',
@@ -38,7 +39,7 @@ class ServerRoleBadge extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 13, color: color),
+            AppIcon(icon, size: 13, color: color),
             if (showLabel) ...[
               const SizedBox(width: 4),
               Text(

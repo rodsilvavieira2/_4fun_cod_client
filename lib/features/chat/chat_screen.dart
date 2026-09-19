@@ -311,15 +311,15 @@ class _MessageListState extends State<_MessageList> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const DecoratedBox(
-                  decoration: BoxDecoration(
+                DecoratedBox(
+                  decoration: const BoxDecoration(
                     color: AppTokens.surface2,
                     shape: BoxShape.circle,
                   ),
                   child: Padding(
-                    padding: EdgeInsets.all(18),
-                    child: Icon(
-                      Icons.tag,
+                    padding: const EdgeInsets.all(18),
+                    child: AppIcon(
+                      AppIcons.channelText,
                       size: 30,
                       color: AppTokens.textPrimary,
                     ),
@@ -1106,12 +1106,12 @@ class _GifEmbedState extends State<_GifEmbed> {
                         ),
                       );
                     },
-                    errorBuilder: (_, _, _) => const SizedBox(
+                    errorBuilder: (_, _, _) => SizedBox(
                       width: 280,
                       height: 168,
                       child: Center(
-                        child: Icon(
-                          Icons.broken_image_outlined,
+                        child: AppIcon(
+                          AppIcons.imageMissing,
                           color: AppTokens.textMuted,
                         ),
                       ),
@@ -1156,22 +1156,22 @@ class _GifEmbedState extends State<_GifEmbed> {
                         decoration: BoxDecoration(
                           color: Colors.black.withValues(alpha: 0.28),
                         ),
-                        child: const Align(
+                        child: Align(
                           alignment: Alignment.bottomRight,
                           child: Padding(
-                            padding: EdgeInsets.all(8),
+                            padding: const EdgeInsets.all(8),
                             child: SizedBox(
                               width: 28,
                               height: 28,
                               child: DecoratedBox(
-                                decoration: BoxDecoration(
+                                decoration: const BoxDecoration(
                                   color: Color(0xB8000000),
                                   borderRadius: BorderRadius.all(
                                     Radius.circular(AppRadius.sm),
                                   ),
                                 ),
-                                child: Icon(
-                                  Icons.open_in_full,
+                                child: AppIcon(
+                                  AppIcons.expand,
                                   size: 14,
                                   color: AppTokens.textPrimary,
                                 ),
@@ -1346,7 +1346,7 @@ class _MessageActionBar extends StatelessWidget {
               ),
             Builder(
               builder: (anchorContext) => AppIconButton(
-                icon: Icons.add_reaction_outlined,
+                icon: AppIcons.emoji,
                 tooltip: 'Escolher reação',
                 minSize: 28,
                 iconSize: 15,
@@ -1354,7 +1354,7 @@ class _MessageActionBar extends StatelessWidget {
               ),
             ),
             AppIconButton(
-              icon: Icons.reply,
+              icon: AppIcons.reply,
               tooltip: 'Responder',
               minSize: 28,
               iconSize: 16,
@@ -1363,7 +1363,7 @@ class _MessageActionBar extends StatelessWidget {
             if (isOwner)
               Builder(
                 builder: (anchorContext) => AppIconButton(
-                  icon: Icons.more_horiz,
+                  icon: AppIcons.more,
                   tooltip: 'Mais ações',
                   minSize: 28,
                   iconSize: 16,
@@ -1409,7 +1409,7 @@ class _MessageMoreMenu extends StatelessWidget {
           children: [
             if (canEdit)
               _CompactMenuEntry(
-                icon: Icons.edit_outlined,
+                icon: AppIcons.edit,
                 label: 'Editar mensagem',
                 onTap: () => onSelected('edit'),
               ),
@@ -1419,7 +1419,7 @@ class _MessageMoreMenu extends StatelessWidget {
                 color: AppTokens.borderHairline,
               ),
             _CompactMenuEntry(
-              icon: Icons.delete_outline,
+              icon: AppIcons.delete,
               label: 'Excluir mensagem',
               destructive: true,
               onTap: () => onSelected('delete'),
@@ -1439,7 +1439,7 @@ class _CompactMenuEntry extends StatelessWidget {
     this.destructive = false,
   });
 
-  final IconData icon;
+  final List<List<dynamic>> icon;
   final String label;
   final VoidCallback onTap;
   final bool destructive;
@@ -1463,7 +1463,7 @@ class _CompactMenuEntry extends StatelessWidget {
             padding: AppMenu.itemPadding,
             child: Row(
               children: [
-                Icon(icon, size: 16, color: color),
+                AppIcon(icon, size: 16, color: color),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
@@ -1944,7 +1944,7 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
       canSendEmpty: _gifUrl != null || _attachments.isNotEmpty,
       trailingActions: [
         AppIconButton(
-          icon: Icons.image_outlined,
+          icon: AppIcons.image,
           tooltip: 'Anexar imagens',
           minSize: 30,
           iconSize: 18,
@@ -1953,7 +1953,7 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
         const SizedBox(width: 2),
         Builder(
           builder: (anchorContext) => AppIconButton(
-            icon: Icons.add_reaction_outlined,
+            icon: AppIcons.emoji,
             tooltip: 'Inserir emoji',
             minSize: 30,
             iconSize: 17,
@@ -1963,7 +1963,7 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
         const SizedBox(width: 2),
         Builder(
           builder: (anchorContext) => AppIconButton(
-            icon: Icons.gif_box_outlined,
+            icon: AppIcons.gif,
             tooltip: 'Inserir GIF',
             minSize: 30,
             iconSize: 18,
@@ -2049,7 +2049,7 @@ class _ComposerReplyPanel extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
       child: Row(
         children: [
-          const Icon(Icons.reply, size: 16, color: AppTokens.textMuted),
+          AppIcon(AppIcons.reply, size: 16, color: AppTokens.textMuted),
           const SizedBox(width: 8),
           Expanded(
             child: RichText(
@@ -2076,7 +2076,7 @@ class _ComposerReplyPanel extends StatelessWidget {
             ),
           ),
           AppIconButton(
-            icon: Icons.close,
+            icon: AppIcons.close,
             tooltip: 'Cancelar resposta',
             minSize: 28,
             iconSize: 15,
@@ -2115,13 +2115,13 @@ class _ComposerGifPanel extends StatelessWidget {
               height: 54,
               fit: BoxFit.cover,
               gaplessPlayback: true,
-              errorBuilder: (_, _, _) => const SizedBox(
+              errorBuilder: (_, _, _) => SizedBox(
                 width: 86,
                 height: 54,
                 child: ColoredBox(
                   color: AppTokens.surface2,
-                  child: Icon(
-                    Icons.broken_image_outlined,
+                  child: AppIcon(
+                    AppIcons.imageMissing,
                     color: AppTokens.textMuted,
                   ),
                 ),
@@ -2142,7 +2142,7 @@ class _ComposerGifPanel extends StatelessWidget {
             ),
           ),
           AppIconButton(
-            icon: Icons.close,
+            icon: AppIcons.close,
             tooltip: 'Remover GIF',
             minSize: 28,
             iconSize: 15,
@@ -2198,15 +2198,15 @@ class _ComposerAttachmentsPanel extends StatelessWidget {
                     right: 0,
                     child: GestureDetector(
                       onTap: () => onRemove(slot),
-                      child: const DecoratedBox(
-                        decoration: BoxDecoration(
+                      child: DecoratedBox(
+                        decoration: const BoxDecoration(
                           color: Color(0xAA000000),
                           shape: BoxShape.circle,
                         ),
                         child: Padding(
-                          padding: EdgeInsets.all(2),
-                          child: Icon(
-                            Icons.close,
+                          padding: const EdgeInsets.all(2),
+                          child: AppIcon(
+                            AppIcons.close,
                             color: Colors.white,
                             size: 14,
                           ),
@@ -2262,17 +2262,17 @@ class _MentionSuggestionsPanel extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(12, 10, 12, 7),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 7),
               child: Row(
                 children: [
-                  Icon(
-                    Icons.alternate_email,
+                  AppIcon(
+                    AppIcons.mention,
                     size: 14,
                     color: AppTokens.textMuted,
                   ),
-                  SizedBox(width: 8),
-                  Text(
+                  const SizedBox(width: 8),
+                  const Text(
                     'MEMBROS',
                     style: TextStyle(
                       fontFamily: 'Geist',
@@ -2646,7 +2646,7 @@ class _EmojiPickerPopupState extends State<_EmojiPickerPopup> {
                 ),
                 const Spacer(),
                 AppIconButton(
-                  icon: Icons.close,
+                  icon: AppIcons.close,
                   tooltip: 'Fechar',
                   minSize: 26,
                   iconSize: 14,
@@ -2669,7 +2669,7 @@ class _EmojiPickerPopupState extends State<_EmojiPickerPopup> {
                 ),
                 decoration: InputDecoration(
                   hintText: 'Buscar emoji',
-                  prefixIcon: const Icon(Icons.search, size: 15),
+                  prefixIcon: AppIcon(AppIcons.search, size: 15),
                   prefixIconConstraints: const BoxConstraints(
                     minWidth: 30,
                     minHeight: 30,
@@ -2876,7 +2876,7 @@ class _GifPickerPopupState extends State<_GifPickerPopup> {
                 ),
                 const Spacer(),
                 AppIconButton(
-                  icon: Icons.close,
+                  icon: AppIcons.close,
                   tooltip: 'Fechar',
                   minSize: 26,
                   iconSize: 14,
@@ -2899,7 +2899,7 @@ class _GifPickerPopupState extends State<_GifPickerPopup> {
                 ),
                 decoration: InputDecoration(
                   hintText: widget.repository.searchHint,
-                  prefixIcon: const Icon(Icons.search, size: 15),
+                  prefixIcon: AppIcon(AppIcons.search, size: 15),
                   prefixIconConstraints: const BoxConstraints(
                     minWidth: 30,
                     minHeight: 30,
@@ -3030,9 +3030,9 @@ class _GifTileState extends State<_GifTile> {
                   widget.gif.previewUrl,
                   fit: BoxFit.cover,
                   gaplessPlayback: true,
-                  errorBuilder: (_, _, _) => const Center(
-                    child: Icon(
-                      Icons.broken_image_outlined,
+                  errorBuilder: (_, _, _) => Center(
+                    child: AppIcon(
+                      AppIcons.imageMissing,
                       size: 18,
                       color: AppTokens.textMuted,
                     ),

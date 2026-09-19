@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:fourfun_cod_client/core/ui/app_icon.dart';
 import 'package:fourfun_cod_client/core/ui/menus/app_menu.dart';
 
 void _noop(String? value) {}
@@ -10,19 +11,19 @@ List<PopupMenuEntry<String>> _buildItems(BuildContext context) => [
   AppMenuCheckedItem<String>.labeled(
     value: 'sys',
     checked: false,
-    icon: Icons.mic_outlined,
+    icon: AppIcons.mic,
     label: 'Padrão do sistema',
   ),
   AppMenuCheckedItem<String>.labeled(
     value: 'fifine',
     checked: true,
-    icon: Icons.mic_outlined,
+    icon: AppIcons.mic,
     label: 'Fifine Microphone',
   ),
   const AppMenuDivider(),
   AppMenuItem<String>.labeled(
     value: 'settings',
-    icon: Icons.settings_outlined,
+    icon: AppIcons.settings,
     label: 'Configurações de voz',
   ),
 ];
@@ -35,7 +36,7 @@ void main() {
       MaterialApp(
         home: Scaffold(
           body: AppMenuButton<String>(
-            icon: const Icon(Icons.more_horiz),
+            icon: const AppIcon(AppIcons.more),
             onSelected: _noop,
             itemBuilder: _buildItems,
           ),
@@ -43,7 +44,7 @@ void main() {
       ),
     );
 
-    await tester.tap(find.byIcon(Icons.more_horiz));
+    await tester.tap(find.byType(AppMenuButton<String>));
     await tester.pumpAndSettle();
 
     for (final label in [

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../theme/appearance_theme.dart';
+import '../app_icon.dart';
 import '../app_icon_button.dart';
 import '../ds_tokens.dart';
 
@@ -237,7 +238,7 @@ class _AppChatInputState extends State<AppChatInput> {
                     Padding(
                       padding: const EdgeInsets.only(bottom: 4),
                       child: AppIconButton(
-                        icon: Icons.arrow_upward,
+                        icon: AppIcons.send,
                         tooltip: widget.sendTooltip,
                         minSize: 30,
                         iconSize: 16,

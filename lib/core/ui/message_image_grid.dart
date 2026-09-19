@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../shared/models/message.dart';
 import 'app_file_image.dart';
+import 'app_icon.dart';
 import 'chat_image_actions.dart';
 import 'ds_tokens.dart';
 import 'media_lightbox.dart';
@@ -209,8 +210,8 @@ class _ExpandHint extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppRadius.sm),
         border: Border.all(color: AppTokens.borderSubtle, width: 1),
       ),
-      child: const Icon(
-        Icons.open_in_full,
+      child: AppIcon(
+        AppIcons.expand,
         size: 14,
         color: AppTokens.textPrimary,
       ),
@@ -244,8 +245,8 @@ class _FailedCell extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(
-            Icons.broken_image_outlined,
+          AppIcon(
+            AppIcons.imageMissing,
             color: AppTokens.textMuted,
             size: 22,
           ),

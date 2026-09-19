@@ -7,6 +7,7 @@ import '../api/api_exception.dart';
 import '../../features/servers/invite_link_parser.dart';
 import '../../features/servers/servers_providers.dart';
 import 'buttons/app_segmented_control.dart';
+import 'app_icon.dart';
 import 'ds_tokens.dart';
 import 'inputs/app_text_field.dart';
 import 'overlays/app_modal_window.dart';
@@ -132,12 +133,12 @@ class _ServerEntryDialogState extends ConsumerState<ServerEntryDialog> {
                 SegmentItem(
                   value: ServerEntryMode.create,
                   label: 'Criar',
-                  icon: Icons.add,
+                  icon: AppIcons.add,
                 ),
                 SegmentItem(
                   value: ServerEntryMode.join,
                   label: 'Entrar',
-                  icon: Icons.group_add_outlined,
+                  icon: AppIcons.addTeam,
                 ),
               ],
               selectedValue: _mode,
@@ -152,8 +153,8 @@ class _ServerEntryDialogState extends ConsumerState<ServerEntryDialog> {
                   color: AppTokens.surface2,
                   shape: BoxShape.circle,
                 ),
-                child: Icon(
-                  isCreate ? Icons.groups_2_outlined : Icons.group_add_outlined,
+                child: AppIcon(
+                  isCreate ? AppIcons.userGroup : AppIcons.addTeam,
                   size: 28,
                   color: AppTokens.textPrimary,
                 ),

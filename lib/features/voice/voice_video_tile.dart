@@ -8,6 +8,7 @@ import '../../core/rtc/rtc_providers.dart';
 import '../../core/rtc/rtc_service.dart';
 import '../../core/rtc/rtc_video_view.dart';
 import '../../core/theme/appearance_theme.dart';
+import '../../core/ui/app_icon.dart';
 import '../../core/ui/ds_tokens.dart';
 import '../../core/ui/overlay_icon_button.dart';
 import '../../core/ui/participant_volume_popover.dart';
@@ -607,7 +608,7 @@ class _TransmitTopOverlay extends StatelessWidget {
               const Spacer(),
               if (onExpand != null)
                 OverlayIconButton(
-                  icon: isFullscreen ? Icons.fullscreen_exit : Icons.fullscreen,
+                  icon: isFullscreen ? AppIcons.fullscreenExit : AppIcons.fullscreen,
                   tooltip: isFullscreen
                       ? 'Sair do fullscreen'
                       : 'Expandir transmissão',
@@ -707,7 +708,7 @@ class _MiniatureOverlay extends StatelessWidget {
             // Badge de share: ao lado do nome na miniatura.
             if (source == VoiceVideoSource.screen) ...[
               const SizedBox(width: 5),
-              const Icon(Icons.present_to_all, size: 12, color: Colors.white),
+              AppIcon(AppIcons.screenShare, size: 12, color: Colors.white),
             ],
           ],
         ),
@@ -1213,8 +1214,8 @@ class _NoVideoBadge extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            Icons.videocam_off_outlined,
+          AppIcon(
+            AppIcons.videoOff,
             size: compact ? 12 : 13,
             color: colors.textSecondary,
           ),

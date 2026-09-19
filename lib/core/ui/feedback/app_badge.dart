@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../theme/appearance_theme.dart';
+import '../app_icon.dart';
 import '../ds_tokens.dart';
 
 enum AppBadgeVariant { neutral, accent, success, warning, danger }
@@ -16,7 +17,7 @@ class AppBadge extends StatelessWidget {
 
   final String label;
   final AppBadgeVariant variant;
-  final IconData? icon;
+  final List<List<dynamic>>? icon;
 
   @override
   Widget build(BuildContext context) {
@@ -60,7 +61,7 @@ class AppBadge extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (icon != null) ...[
-            Icon(icon, size: 10, color: fgColor),
+            AppIcon(icon!, size: 10, color: fgColor),
             const SizedBox(width: 4),
           ],
           Text(
