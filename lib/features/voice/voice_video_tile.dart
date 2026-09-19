@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -116,10 +117,10 @@ class VoiceVideoTile extends ConsumerStatefulWidget {
   /// Ação de toque: grid/miniatura → destaque, destaque → grid. A screen
   /// decide quem pode (tile sem câmera não vira spotlight — toque ignorado).
   /// Toque NUNCA assiste/desassiste: assistir/parar vive só na toolbar
-  /// ([onToggleWatch]) e no prompt central ([_WatchPrompt]).
+  /// ([onToggleWatch]).
   final VoidCallback? onTap;
 
-  /// Assistir/parar a transmissão (remoto, exclusivo da toolbar + prompt).
+  /// Assistir/parar a transmissão (remoto, exclusivo da toolbar).
   /// Nulo = sem botão de assistir na toolbar.
   final VoidCallback? onToggleWatch;
 
@@ -136,7 +137,7 @@ class VoiceVideoTile extends ConsumerStatefulWidget {
   final VoidCallback? onExpand;
 
   /// Opt-in de vídeo (regra da sala): `true` renderiza o vídeo normalmente;
-  /// `false` (remoto em live não assistido) mostra avatar + LIVE + "Assistir"
+  /// `false` (remoto em live não assistido) mostra só o avatar
   /// SEM montar o [RtcVideoView] (sem banda). O local sempre chega `true`.
   final bool isWatching;
 
@@ -242,7 +243,7 @@ class _VoiceVideoTileState extends ConsumerState<VoiceVideoTile> {
             VoiceVideoSource.avatar => null,
           };
     final hasVideo = trackRef != null;
-    // Remoto em live que não estou assistindo: avatar + LIVE + "Assistir".
+    // Remoto em live que não estou assistindo: só avatar (sem prompt).
     final liveUnwatched =
         !showVideo && widget.source != VoiceVideoSource.avatar;
     final isMiniature = widget.role == VoiceVideoTileRole.miniature;
@@ -254,6 +255,14 @@ class _VoiceVideoTileState extends ConsumerState<VoiceVideoTile> {
         ? colors.borderSubtle
         : colors.borderHairline;
     final frameWidth = participant.isSpeaking ? 2.0 : 1.0;
+    // Pulso de LIVE disponível: só remoto não assistido (avatar). Nasce
+    // no centro do avatar e se propaga até o canto do tile; some ao
+    // assistir (vira vídeo) e no fullscreen imersivo (fica só o vídeo).
+    final showLivePulse =
+        liveUnwatched &&
+        widget.source == VoiceVideoSource.screen &&
+        !isMiniature &&
+        widget.overlayVisible;
 
     final tile = GestureDetector(
       onTap: widget.onTap,
@@ -284,15 +293,12 @@ class _VoiceVideoTileState extends ConsumerState<VoiceVideoTile> {
                   palette: palette,
                   liveUnwatched: liveUnwatched,
                 ),
-              // Opt-in: LIVE + "Assistir" sobre o avatar (grid/spotlight; na
-              // miniatura o toque no tile já assiste — sem botão por espaço).
-              // Assistir mora na toolbar: o prompt usa o mesmo callback (o
-              // toque no tile só foca — nunca assiste).
-              if (liveUnwatched && !isMiniature)
-                _WatchPrompt(
-                  source: widget.source,
-                  onWatch: widget.onToggleWatch ?? widget.onTap,
-                ),
+              // Pulso de LIVE disponível: ondas circulares do centro do
+              // avatar até o canto do tile, ABAIXO de todos os badges
+              // (nome, top LIVE/expandir, toolbar) para nunca pintar sobre
+              // eles. O ClipRRect recorta o excedente na borda do tile.
+              if (showLivePulse) const _LivePulse(),
+              // Remoto não assistido: só avatar (sem prompt LIVE/Assistir).
               if (isMiniature) const _MiniatureBottomScrim(),
               if (isMiniature)
                 _MiniatureOverlay(
@@ -868,54 +874,6 @@ class _PlaceholderAvatar extends StatelessWidget {
   }
 }
 
-/// Prompt de opt-in sobre o avatar de um remoto em live não assistido:
-/// pill LIVE + botão "Assistir" (mesma ação do toque no tile). O fundo é o
-/// avatar do placeholder — nunca um frame real (frame exigiria subscribe e
-/// quebraria o opt-in).
-class _WatchPrompt extends StatelessWidget {
-  const _WatchPrompt({required this.source, required this.onWatch});
-
-  final VoiceVideoSource source;
-  final VoidCallback? onWatch;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-            decoration: BoxDecoration(
-              color: AppTokens.accentDanger,
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: Text(
-              'LIVE',
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: Colors.white,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
-          FilledButton.icon(
-            onPressed: onWatch,
-            icon: Icon(
-              source == VoiceVideoSource.screen
-                  ? Icons.present_to_all
-                  : Icons.videocam,
-              size: 18,
-            ),
-            label: const Text('Assistir'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 /// Placeholder de tile SEM vídeo: avatar central com profundidade e badge de
 /// estado, preservando a identificação pelo overlay de nome.
 class _AvatarPlaceholder extends StatelessWidget {
@@ -933,7 +891,7 @@ class _AvatarPlaceholder extends StatelessWidget {
   final _ParticipantVisualPalette palette;
 
   /// Remoto em live não assistido: esconde o badge "Sem vídeo" (há vídeo —
-  /// só não estou assinando) e o prompt LIVE + "Assistir" assume o estado.
+  /// só não estou assinando).
   final bool liveUnwatched;
 
   @override
@@ -1139,6 +1097,99 @@ class _SpeakingPulsePainter extends CustomPainter {
         oldDelegate.palette != palette ||
         oldDelegate.compact != compact;
   }
+}
+
+/// Pulso vermelho de LIVE disponível: ondas circulares que nascem no
+/// centro do avatar e se propagam até o canto do tile.
+///
+/// Regras flutter-animation-engineering aplicadas:
+/// - `AnimationController` só aqui porque precisa de `repeat` contínuo;
+/// - `CustomPainter(animation: repaint)` sem `setState`/`AnimatedBuilder`
+///   por frame; subárvore mínima isolada por `RepaintBoundary`;
+/// - só paint (círculos com stroke), nenhum layout por frame, sem
+///   blur/sombra/saveLayer animado. O `ClipRRect` do tile recorta o
+///   excedente; os badges pintam por cima (pulso monta antes deles).
+class _LivePulse extends StatefulWidget {
+  const _LivePulse();
+
+  @override
+  State<_LivePulse> createState() => _LivePulseState();
+}
+
+class _LivePulseState extends State<_LivePulse>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2000),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: RepaintBoundary(
+        key: const ValueKey('voice-live-pulse'),
+        child: CustomPaint(
+          painter: _LivePulsePainter(animation: _controller),
+          child: const SizedBox.expand(),
+        ),
+      ),
+    );
+  }
+}
+
+class _LivePulsePainter extends CustomPainter {
+  _LivePulsePainter({required this.animation}) : super(repaint: animation);
+
+  final Animation<double> animation;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.isEmpty) return;
+    const base = AppTokens.accentDanger;
+    final t = animation.value;
+    final center = size.center(Offset.zero);
+    // Avatar central do placeholder tem raio 42 (grid/spotlight sempre
+    //compact=false aqui); as ondas nascem na borda dele e morrem no canto
+    // do tile — o ClipRRect recorta o que passar da borda.
+    const startRadius = 42.0;
+    final halfW = size.width / 2;
+    final halfH = size.height / 2;
+    final maxRadius = math.sqrt(halfW * halfW + halfH * halfH);
+    final travel = math.max(1.0, maxRadius - startRadius);
+    // Três ondas em sequência contínua.
+    for (var i = 0; i < 3; i++) {
+      final wave = (t + i / 3) % 1;
+      final eased = Curves.easeOutCubic.transform(wave);
+      final radius = startRadius + travel * eased;
+      final opacity = (1 - eased) * 0.42;
+      if (opacity <= 0.01) continue;
+      // Onda líder mais espessa e opaca; cauda mais fina e translúcida.
+      final leaderBoost = i == 0 ? 0.5 : 0.0;
+      canvas.drawCircle(
+        center,
+        radius,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = (2.8 + leaderBoost - eased * 1.6).clamp(1.0, 3.2)
+          ..color = base.withValues(alpha: opacity.clamp(0.0, 0.42)),
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _LivePulsePainter oldDelegate) => false;
 }
 
 class _NoVideoBadge extends StatelessWidget {

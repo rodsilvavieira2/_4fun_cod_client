@@ -330,7 +330,7 @@ void main() {
     expect(firstGradient.colors.first, isNot(secondGradient.colors.first));
   });
 
-  testWidgets('remoto não assistido exibe LIVE + Assistir (sem "Sem vídeo")', (
+  testWidgets('remoto não assistido não exibe prompt LIVE/Assistir', (
     tester,
   ) async {
     await pumpTile(
@@ -342,13 +342,13 @@ void main() {
       onTap: () {},
     );
 
-    expect(find.text('LIVE'), findsOneWidget);
-    expect(find.text('Assistir'), findsOneWidget);
+    expect(find.text('LIVE'), findsNothing);
+    expect(find.text('Assistir'), findsNothing);
     expect(find.text('Sem vídeo'), findsNothing);
     expect(find.text('Remoto'), findsOneWidget);
   });
 
-  testWidgets('botão Assistir dispara o onTap do tile', (tester) async {
+  testWidgets('toque no tile não assistido dispara o onTap', (tester) async {
     var tapped = 0;
     await pumpTile(
       tester,
@@ -359,7 +359,7 @@ void main() {
       onTap: () => tapped++,
     );
 
-    await tester.tap(find.text('Assistir'));
+    await tester.tap(find.text('Remoto'));
     expect(tapped, 1);
   });
 
@@ -410,7 +410,7 @@ void main() {
   });
 
   testWidgets(
-    'prompt Assistir da transmissão dispara onToggleWatch (toque só foca)',
+    'toolbar da transmissão dispara onToggleWatch (toque só foca)',
     (tester) async {
       var watched = 0;
       var tapped = 0;
@@ -424,7 +424,11 @@ void main() {
         onToggleWatch: () => watched++,
       );
 
-      await tester.tap(find.text('Assistir'));
+      expect(find.text('Assistir'), findsNothing);
+      // Badge LIVE do topo da transmissão continua (só o prompt central saiu).
+      expect(find.text('LIVE'), findsOneWidget);
+
+      await tester.tap(find.byTooltip('Assistir transmissão'));
       expect(watched, 1);
       expect(tapped, 0);
 

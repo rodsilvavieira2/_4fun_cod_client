@@ -62,6 +62,10 @@ class TransmitTileToolbar extends StatelessWidget {
           colors: colors,
           icon: isWatching ? Icons.visibility_off : Icons.visibility,
           tooltip: isWatching ? 'Parar de assistir' : 'Assistir transmissão',
+          // Live disponível (ainda não assistindo) = verde para convidar
+          // o opt-in; assistindo volta ao tonal padrão.
+          active: !isWatching,
+          activeColor: AppTokens.accentGreen,
           onPressed: onToggleWatch,
         ),
       if (isLocal && onStopShare != null)
@@ -110,6 +114,8 @@ class TransmitTileToolbar extends StatelessWidget {
   }
 
   /// Botão circular 40px — o mesmo controle do dock global extinto.
+  /// Estado ativo (verde de disponível / vermelho de parar) usa ícone
+  /// branco para contraste sobre a cor cheia.
   Widget _toolbarToggleButton({
     required AppThemePalette colors,
     required IconData icon,
@@ -124,7 +130,7 @@ class TransmitTileToolbar extends StatelessWidget {
       style: IconButton.styleFrom(
         minimumSize: const Size.square(40),
         backgroundColor: active ? activeColor : null,
-        foregroundColor: colors.textPrimary,
+        foregroundColor: active ? Colors.white : colors.textPrimary,
       ),
       icon: Icon(icon),
     );
