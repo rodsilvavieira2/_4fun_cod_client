@@ -46,6 +46,13 @@ class TheaterScreen extends ConsumerStatefulWidget {
 class _TheaterScreenState extends ConsumerState<TheaterScreen> {
   Timer? _hideTimer;
 
+  /// Vira `true` na primeira abertura do chat e nunca volta: a partir daí
+  /// o drawer permanece montado em `Offstage` quando colapsado, então o
+  /// `chatControllerProvider` (autoDispose) nunca perde o último listener
+  /// e não refaz `joinChannelAndWait + fetchMessages` a cada toggle.
+  /// Lazy: enquanto o usuário nunca abrir, nada é montado/buscado.
+  bool _chatEverOpened = false;
+
   ({String serverId, String channelId}) get arg =>
       (serverId: widget.serverId, channelId: widget.channelId);
 
@@ -172,6 +179,10 @@ class _TheaterScreenState extends ConsumerState<TheaterScreen> {
   Widget build(BuildContext context) {
     final voice = ref.watch(voiceControllerProvider(arg));
     final ui = ref.watch(theaterUiControllerProvider(arg));
+    // Marca a primeira abertura sem `setState`: o frame atual já monta o
+    // chat via `ui.chatOpen`; a flag só importa nos próximos builds
+    // (colapsado → mantém montado em Offstage em vez de desmontar).
+    if (ui.chatOpen) _chatEverOpened = true;
     final immersive = voice.isFullscreen && !ui.controlsVisible;
     final overlayVisible = !immersive || !ui.hideOverlays;
     final colors = context.appColors;
@@ -198,9 +209,17 @@ class _TheaterScreenState extends ConsumerState<TheaterScreen> {
               child: LayoutBuilder(
                 builder: (context, constraints) {
                   final maxW = constraints.maxWidth;
-                  final chatAsColumn =
-                      ui.chatOpen && maxW >= kTheaterChatColumnBreakpoint;
-                  final chatWidth = chatAsColumn
+                  final wide = maxW >= kTheaterChatColumnBreakpoint;
+                  final chatColumnVisible = ui.chatOpen && wide;
+                  final chatOverlayVisible = ui.chatOpen && !wide;
+                  // Após a 1ª abertura, mantém montado (Offstage) nos dois
+                  // slots para que ao menos um listener do
+                  // `chatControllerProvider` sobreviva ao toggle e ao resize
+                  // coluna↔overlay — sem refetch/rejoin.
+                  final chatMounted = _chatEverOpened;
+                  final chatColumnMounted = chatMounted && wide;
+                  final chatOverlayMounted = chatMounted && !wide;
+                  final chatWidth = wide
                       ? (maxW * kTheaterChatFraction).clamp(
                           kTheaterChatMinWidth,
                           kTheaterChatMaxWidth,
@@ -252,42 +271,63 @@ class _TheaterScreenState extends ConsumerState<TheaterScreen> {
                                 ],
                               ),
                             ),
-                            if (chatAsColumn) ...[
+                            if (chatColumnMounted) ...[
                               const SizedBox(width: kTheaterGap),
                               AnimatedContainer(
                                 duration: const Duration(milliseconds: 180),
                                 curve: Curves.easeOutCubic,
-                                width: chatWidth,
-                                child: _TheaterChatPanel(
-                                  serverId: widget.serverId,
-                                  channelId: widget.channelId,
-                                  onClose: () => ref
-                                      .read(
-                                        theaterUiControllerProvider(
-                                          arg,
-                                        ).notifier,
-                                      )
-                                      .toggleChat(),
+                                width: chatColumnVisible ? chatWidth : 0,
+                                // Recorta o painel de largura fixa durante a
+                                // animação 0↔chatWidth (sem decoration o
+                                // `clipBehavior` do Container assertaria).
+                                child: ClipRect(
+                                  child: Offstage(
+                                    offstage: !chatColumnVisible,
+                                    child: TickerMode(
+                                      enabled: chatColumnVisible,
+                                      child: SizedBox(
+                                        width: chatWidth,
+                                        child: _TheaterChatPanel(
+                                          serverId: widget.serverId,
+                                          channelId: widget.channelId,
+                                          onClose: () => ref
+                                              .read(
+                                                theaterUiControllerProvider(
+                                                  arg,
+                                                ).notifier,
+                                              )
+                                              .toggleChat(),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
                                 ),
                               ),
                             ],
                           ],
                         ),
                         // Janela estreita: chat vira overlay/drawer à direita.
-                        if (ui.chatOpen && !chatAsColumn)
+                        // Mantido montado em Offstage após a 1ª abertura.
+                        if (chatOverlayMounted)
                           Positioned(
                             top: 0,
                             bottom: 0,
                             right: 0,
                             width: math.min(340, math.max(0, maxW - 24)),
-                            child: _TheaterChatPanel(
-                              serverId: widget.serverId,
-                              channelId: widget.channelId,
-                              onClose: () => ref
-                                  .read(
-                                    theaterUiControllerProvider(arg).notifier,
-                                  )
-                                  .toggleChat(),
+                            child: Offstage(
+                              offstage: !chatOverlayVisible,
+                              child: TickerMode(
+                                enabled: chatOverlayVisible,
+                                child: _TheaterChatPanel(
+                                  serverId: widget.serverId,
+                                  channelId: widget.channelId,
+                                  onClose: () => ref
+                                      .read(
+                                        theaterUiControllerProvider(arg).notifier,
+                                      )
+                                      .toggleChat(),
+                                ),
+                              ),
                             ),
                           ),
                       ],
