@@ -93,6 +93,7 @@ class TheaterUiController
   }
 
   /// Pinnar/desafixar alterna presença mantendo ordem de pin (ordem visual).
+  /// Uso genérico; o stage em modo `focus` usa [focusStream] (foco único).
   void togglePin(String streamKey) {
     final pins = List<String>.of(state.pinnedStreamIds);
     if (pins.contains(streamKey)) {
@@ -101,6 +102,16 @@ class TheaterUiController
       pins.add(streamKey);
     }
     state = state.copyWith(pinnedStreamIds: List.unmodifiable(pins));
+  }
+
+  /// Foco único do modo `focus`: a stream vira O destaque; clicar no rail
+  /// troca o foco sem nunca deixá-lo vazio. Sem emissão quando já é o foco.
+  void focusStream(String streamKey) {
+    if (state.pinnedStreamIds.length == 1 &&
+        state.pinnedStreamIds.first == streamKey) {
+      return;
+    }
+    state = state.copyWith(pinnedStreamIds: List.unmodifiable([streamKey]));
   }
 
   void clearPins() {

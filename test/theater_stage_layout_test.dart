@@ -101,7 +101,7 @@ void main() {
       return container;
     }
 
-    testWidgets('tile único pinnado preenche 16:9 com gaps simétricos', (
+    testWidgets('modo foco sempre tem um tile em foco (auto-seleção)', (
       tester,
     ) async {
       // Janela larga e baixa (caso do screenshot do usuário).
@@ -114,13 +114,14 @@ void main() {
           _participant('u2', 'Luna', camera: true),
         ],
       );
+      // Entra em foco SEM pins: a primeira stream (tela) vira o destaque.
       container
           .read(theaterUiControllerProvider(_arg).notifier)
-          .togglePin('u1:screen');
+          .setLayout(TheaterLayoutMode.focus);
       await tester.pump();
 
       expect(tester.takeException(), isNull);
-      // 1 pinnado + 1 restante: foco com rail lateral proporcional.
+      // 1 em foco + 1 no rail lateral proporcional.
       expect(find.byType(VoiceVideoTile), findsNWidgets(2));
 
       // Rail proporcional (~24% clamp 200–320) + gap entre colunas.
@@ -146,6 +147,69 @@ void main() {
       // Hierarquia: foco domina o rail.
       final railTile = tester.getSize(find.byType(VoiceVideoTile).at(1));
       expect(tile.width, greaterThan(railTile.width * 2));
+    });
+
+    testWidgets('clicar no rail troca o foco sem recriar os tiles', (
+      tester,
+    ) async {
+      const stageSize = Size(1620, 850);
+      final container = await pumpStage(
+        tester,
+        size: stageSize,
+        participants: [
+          _participant('u1', 'Soul', screen: true),
+          _participant('u2', 'Luna', camera: true),
+        ],
+      );
+      container
+          .read(theaterUiControllerProvider(_arg).notifier)
+          .setLayout(TheaterLayoutMode.focus);
+      await tester.pump();
+      expect(find.byType(VoiceVideoTile), findsNWidgets(2));
+
+      // Clica na stream do rail: vira o novo foco (foco único).
+      await tester.tap(find.byType(VoiceVideoTile).at(1));
+      await tester.pump();
+
+      expect(tester.takeException(), isNull);
+      expect(
+        container.read(theaterUiControllerProvider(_arg)).pinnedStreamIds,
+        ['u2:camera'],
+      );
+      // Mesmos renderers, só reposicionados (sem restart de tracks).
+      expect(find.byType(VoiceVideoTile), findsNWidgets(2));
+
+      // Clicar no tile em foco é no-op: nunca esvazia o destaque.
+      await tester.tap(find.byType(VoiceVideoTile).first);
+      await tester.pump();
+      expect(
+        container.read(theaterUiControllerProvider(_arg)).pinnedStreamIds,
+        ['u2:camera'],
+      );
+      expect(find.byType(VoiceVideoTile), findsNWidgets(2));
+    });
+
+    testWidgets('fora do foco o clique não altera pins', (tester) async {
+      const stageSize = Size(1620, 850);
+      final container = await pumpStage(
+        tester,
+        size: stageSize,
+        participants: [
+          _participant('u1', 'Soul', screen: true),
+          _participant('u2', 'Luna', camera: true),
+        ],
+      );
+
+      // Layout default (auto): tiles sem clique.
+      await tester.tap(find.byType(VoiceVideoTile).first);
+      await tester.pump();
+
+      expect(tester.takeException(), isNull);
+      expect(
+        container.read(theaterUiControllerProvider(_arg)).pinnedStreamIds,
+        isEmpty,
+      );
+      expect(find.byType(VoiceVideoTile), findsNWidgets(2));
     });
 
     testWidgets('sem pins usa grid com os dois tiles', (tester) async {

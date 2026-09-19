@@ -67,6 +67,21 @@ void main() {
       expect(read().effectiveLayout, TheaterLayoutMode.focus);
     });
 
+    test('focusStream define foco único e clicar no foco é no-op', () {
+      notifier()
+        ..setLayout(TheaterLayoutMode.focus)
+        ..focusStream('u1:screen');
+      expect(read().pinnedStreamIds, ['u1:screen']);
+
+      // Clicar no rail troca o foco (nunca acumula, nunca esvazia).
+      notifier().focusStream('u2:camera');
+      expect(read().pinnedStreamIds, ['u2:camera']);
+
+      // Repetir o foco atual não emite nem esvazia.
+      notifier().focusStream('u2:camera');
+      expect(read().pinnedStreamIds, ['u2:camera']);
+    });
+
     test('toggles de chat/participantes/overlays', () {
       notifier()
         ..toggleChat()

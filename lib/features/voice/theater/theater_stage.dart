@@ -64,11 +64,11 @@ VoiceSpotlightSource _spotlightOf(VoiceVideoSource source) =>
     : VoiceSpotlightSource.camera;
 
 /// Media Stage do theater: `auto`/`grid` usam grid 16:9 que preenche o
-/// espaço (sem os tetos do default); `focus` (pins) exibe pinnadas em
-/// destaque + resto em rail lateral (larga) ou faixa inferior (estreita).
-/// Toque no tile alterna o pin (nunca o spotlight do default); o expandir
-/// do overlay abre o menu `⋮` da stream. Troca de foco só move widgets
-/// (chaves estáveis) — nunca reinscreve tracks.
+/// espaço (sem os tetos do default, sem clique); `focus` exibe SEMPRE uma
+/// stream em destaque + resto em rail lateral (larga) ou faixa inferior
+/// (estreita). Clicar no rail troca o foco (nunca esvazia, nunca toca o
+/// spotlight do default); o expandir do overlay abre o menu `⋮` da stream.
+/// Troca de foco só move widgets (chaves estáveis) — nunca reinscreve tracks.
 class TheaterStage extends ConsumerWidget {
   const TheaterStage({super.key, required this.arg, this.onToggleFullscreen});
 
@@ -106,14 +106,6 @@ class TheaterStage extends ConsumerWidget {
       for (final k in ui.pinnedStreamIds)
         if (byKey.containsKey(k)) byKey[k]!,
     ];
-    final rest = [
-      for (final i in items)
-        if (!ui.pinnedStreamIds.contains(i.key)) i,
-    ];
-    final focusActive =
-        ui.effectiveLayout == TheaterLayoutMode.focus && pinned.isNotEmpty;
-
-    void onTapItem(TheaterMediaItem item) => uiNotifier.togglePin(item.key);
 
     bool watchingItem(TheaterMediaItem item) => _watching(voiceNotifier, item);
 
@@ -129,18 +121,34 @@ class TheaterStage extends ConsumerWidget {
       );
     }
 
-    if (!focusActive) {
+    // auto/grid: grade pura, sem clique (a troca de foco só existe no foco).
+    final isFocusLayout = ui.layout == TheaterLayoutMode.focus;
+    if (!isFocusLayout) {
       return _TheaterGrid(
         arg: arg,
         items: items,
         overlayVisible: overlayVisible,
-        onTap: onTapItem,
+        onTap: null,
         isWatching: watchingItem,
         onOpenMenu: openTileMenu,
         voiceNotifier: voiceNotifier,
       );
     }
-    // Focus: pinnadas em destaque + restantes em rail lateral (larga)
+    // Focus: SEMPRE um destaque (primeiro pin válido ou primeira stream) +
+    // restantes no rail. Clicar no rail vira o novo foco; clicar no foco
+    // é no-op (nunca esvazia).
+    final focused = pinned.isNotEmpty ? pinned.first : items.first;
+    final rest = [
+      for (final i in items)
+        if (i.key != focused.key) i,
+    ];
+
+    void onFocusItem(TheaterMediaItem item) {
+      if (item.key == focused.key) return;
+      uiNotifier.focusStream(item.key);
+    }
+
+    // Focus: destaque + restantes em rail lateral (larga)
     // ou faixa inferior (estreita).
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -148,11 +156,11 @@ class TheaterStage extends ConsumerWidget {
         final main = Expanded(
           child: _TheaterGrid(
             arg: arg,
-            items: pinned,
+            items: [focused],
             overlayVisible: overlayVisible,
             role: VoiceVideoTileRole.spotlight,
             highlighted: true,
-            onTap: onTapItem,
+            onTap: null,
             isWatching: watchingItem,
             onOpenMenu: openTileMenu,
             voiceNotifier: voiceNotifier,
@@ -175,7 +183,7 @@ class TheaterStage extends ConsumerWidget {
                   arg: arg,
                   items: rest,
                   overlayVisible: overlayVisible,
-                  onTap: onTapItem,
+                  onTap: onFocusItem,
                   isWatching: watchingItem,
                   onOpenMenu: openTileMenu,
                   voiceNotifier: voiceNotifier,
@@ -195,7 +203,7 @@ class TheaterStage extends ConsumerWidget {
                 arg: arg,
                 items: rest,
                 overlayVisible: overlayVisible,
-                onTap: onTapItem,
+                onTap: onFocusItem,
                 isWatching: watchingItem,
                 onOpenMenu: openTileMenu,
                 voiceNotifier: voiceNotifier,
@@ -218,10 +226,10 @@ class _TheaterGrid extends StatelessWidget {
     required this.arg,
     required this.items,
     required this.overlayVisible,
-    required this.onTap,
     required this.isWatching,
     required this.onOpenMenu,
     required this.voiceNotifier,
+    this.onTap,
     this.role = VoiceVideoTileRole.grid,
     this.highlighted = false,
   });
@@ -229,7 +237,10 @@ class _TheaterGrid extends StatelessWidget {
   final ({String serverId, String channelId}) arg;
   final List<TheaterMediaItem> items;
   final bool overlayVisible;
-  final void Function(TheaterMediaItem item) onTap;
+
+  /// Nulo = tile sem clique (grade auto/grid e tile já em foco).
+  /// Fora do modo `focus` o clique nunca troca foco.
+  final void Function(TheaterMediaItem item)? onTap;
   final bool Function(TheaterMediaItem item) isWatching;
   final void Function(TheaterMediaItem item) onOpenMenu;
   final VoiceController voiceNotifier;
@@ -305,6 +316,7 @@ class _TheaterGrid extends StatelessWidget {
   }
 
   Widget _buildTile(TheaterMediaItem item) {
+    final onTap = this.onTap;
     return TheaterStreamTile(
       arg: arg,
       participant: item.participant,
@@ -312,9 +324,11 @@ class _TheaterGrid extends StatelessWidget {
       role: role,
       isFocused: highlighted,
       isWatching: isWatching(item),
-      onTap: () => onTap(item),
+      onTap: onTap == null ? null : () => onTap(item),
       onToggleWatch: _toggleWatch(item),
-      onStopShare: _stopShare(item),
+      // Theater nunca exibe o botão de encerrar no preview: parar o share
+      // vive só na control bar global (sem duplicar o hang-up por tile).
+      onStopShare: null,
       onExpand: () => onOpenMenu(item),
       overlayVisible: overlayVisible,
     );
@@ -327,12 +341,6 @@ class _TheaterGrid extends StatelessWidget {
       item.participant.id,
       _spotlightOf(item.source),
     );
-  }
-
-  VoidCallback? _stopShare(TheaterMediaItem item) {
-    if (item.source != VoiceVideoSource.screen) return null;
-    if (!voiceNotifier.isLocalParticipant(item.participant.id)) return null;
-    return voiceNotifier.stopScreenShare;
   }
 }
 
@@ -434,9 +442,8 @@ class _TheaterSideColumn extends StatelessWidget {
                     VoiceSpotlightSource.screen,
                   )
                 : null,
-            onStopShare: item.source == VoiceVideoSource.screen && local
-                ? voiceNotifier.stopScreenShare
-                : null,
+            // Sem botão de encerrar no preview (só na control bar global).
+            onStopShare: null,
             onExpand: () => onOpenMenu(item),
             overlayVisible: overlayVisible,
           ),
@@ -493,9 +500,8 @@ class _TheaterBottomStrip extends StatelessWidget {
                     VoiceSpotlightSource.screen,
                   )
                 : null,
-            onStopShare: item.source == VoiceVideoSource.screen && local
-                ? voiceNotifier.stopScreenShare
-                : null,
+            // Sem botão de encerrar no preview (só na control bar global).
+            onStopShare: null,
             onExpand: () => onOpenMenu(item),
             overlayVisible: overlayVisible,
           ),

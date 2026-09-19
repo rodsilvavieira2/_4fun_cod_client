@@ -106,7 +106,15 @@ Future<void> showStreamTileMenu({
   final uiNotifier = ref.read(theaterUiControllerProvider(arg).notifier);
   final voiceNotifier = ref.read(voiceControllerProvider(arg).notifier);
   final ui = ref.read(theaterUiControllerProvider(arg));
+  final isFocusLayout = ui.layout == TheaterLayoutMode.focus;
   final pinned = ui.pinnedStreamIds.contains(streamKey);
+  // No foco o destaque é único: o item focado mostra "Em foco"
+  // (desabilitado); os demais viram o novo foco ao selecionar.
+  final isFocused =
+      isFocusLayout &&
+      (pinned &&
+          ui.pinnedStreamIds.isNotEmpty &&
+          ui.pinnedStreamIds.first == streamKey);
   final colors = context.appColors;
   final spotlightSource = source == VoiceVideoSource.screen
       ? VoiceSpotlightSource.screen
@@ -127,8 +135,13 @@ Future<void> showStreamTileMenu({
     items: [
       AppMenuItem<StreamTileAction>.labeled(
         value: StreamTileAction.focus,
-        label: pinned ? 'Desafixar transmissão' : 'Focar transmissão',
-        icon: pinned ? Icons.push_pin : Icons.push_pin_outlined,
+        label: isFocusLayout
+            ? (isFocused ? 'Em foco' : 'Focar transmissão')
+            : (pinned ? 'Desafixar transmissão' : 'Focar transmissão'),
+        icon: isFocused
+            ? Icons.push_pin
+            : (pinned ? Icons.push_pin : Icons.push_pin_outlined),
+        enabled: isFocusLayout ? !isFocused : true,
       ),
       AppMenuItem<StreamTileAction>.labeled(
         value: StreamTileAction.fullscreen,
@@ -147,7 +160,11 @@ Future<void> showStreamTileMenu({
   );
   switch (selected) {
     case StreamTileAction.focus:
-      uiNotifier.togglePin(streamKey);
+      if (isFocusLayout) {
+        uiNotifier.focusStream(streamKey);
+      } else {
+        uiNotifier.togglePin(streamKey);
+      }
     case StreamTileAction.fullscreen:
       onToggleFullscreen();
     case StreamTileAction.watch:
