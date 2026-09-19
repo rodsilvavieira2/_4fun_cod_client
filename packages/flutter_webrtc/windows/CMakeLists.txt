@@ -96,7 +96,7 @@ set_target_properties(fourfun_deepfilter_bridge PROPERTIES
   IMPORTED_LOCATION "${DEEPFILTER_BRIDGE_LIB}")
 # On MSVC the bridge .lib already contains onnxruntime STATICALLY (pyke
 # Windows dist ships a 341MB static onnxruntime.lib - verified, no DLL).
-# What remains for the final plugin link (per ort-sys build/static_link):
+# What remains for the final bridge link (per ort-sys build/static_link):
 # DX12 system libs (dxguid DXCORE DXGI D3D12, from the Windows SDK) plus a
 # DirectML import lib - the dist ships DirectML.dll but no DirectML.lib,
 # so the stage script rebuilds one from its exports. DirectML.dll ships
@@ -106,6 +106,55 @@ add_library(fourfun_directml STATIC IMPORTED GLOBAL)
 set_target_properties(fourfun_directml PROPERTIES
   IMPORTED_LOCATION "${FOURFUN_ORT_STAGE_DIR}/DirectML.lib")
 endif()
+
+# --- fourfun DeepFilterNet bridge DLL --------------------------------------
+# The cargo staticlib above is /MD (release CRT, _ITERATOR_DEBUG_LEVEL=0);
+# so is the prebuilt static onnxruntime archived inside it (verified via
+# dumpbin /DIRECTIVES: MSVCRT/msvcprt throughout, zero MSVCRTD refs). A
+# Debug plugin build (`flutter run`, /MDd) can therefore never link it
+# directly (LNK2038 mismatches -> fatal LNK1319; rebuilding the bridge with
+# a cargo debug profile would not help - the prebuilt ORT members stay /MD).
+# Instead the staticlib is wrapped in this tiny DLL: the CRT boundary sits
+# at the DLL edge, so every plugin config links only the import lib and the
+# LNK2038 class of errors is gone by construction. The FFI is pure C
+# (caller-owned buffers, catch_unwind, no exceptions; the bridge allocates
+# and frees its own state), so no CRT objects cross the boundary. The DLL
+# itself builds with the default per-config CRT like every other binary in
+# the build (Profile/Release stay pure /MD).
+# NOTE: the Debug DLL link emits a benign LNK4098 (MSVCRTD vs MSVCRT
+# defaultlib) - the link succeeds; the two CRTs only meet at the pure-C
+# DLL boundary. Do NOT "fix" it with /NODEFAULTLIB.
+# Exports are listed in fourfun_deepfilter_bridge.def.
+add_library(fourfun_deepfilter_bridge_dll SHARED
+  "fourfun_deepfilter_bridge_dll.cc"
+  "fourfun_deepfilter_bridge.def")
+set_target_properties(fourfun_deepfilter_bridge_dll PROPERTIES
+  OUTPUT_NAME "fourfun_deepfilter_bridge"
+  # Pin the DLL next to the staged DirectML.dll: the plugin bundles it via
+  # flutter_webrtc_bundled_libraries, which only accepts plain paths
+  # (consumed by install(FILES)), so per-config subdirs are unusable here.
+  RUNTIME_OUTPUT_DIRECTORY "${FOURFUN_ORT_STAGE_DIR}"
+  RUNTIME_OUTPUT_DIRECTORY_DEBUG "${FOURFUN_ORT_STAGE_DIR}"
+  RUNTIME_OUTPUT_DIRECTORY_PROFILE "${FOURFUN_ORT_STAGE_DIR}"
+  RUNTIME_OUTPUT_DIRECTORY_RELEASE "${FOURFUN_ORT_STAGE_DIR}"
+  RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL "${FOURFUN_ORT_STAGE_DIR}"
+  RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "${FOURFUN_ORT_STAGE_DIR}")
+target_link_libraries(fourfun_deepfilter_bridge_dll PRIVATE
+  fourfun_deepfilter_bridge
+  fourfun_directml
+  dxguid
+  DXCORE
+  DXGI
+  D3D12
+  # Rust std objects archived in the staticlib import WinSock/NT/userenv
+  # APIs (TcpListener/UdpSocket/env/home_dir); a staticlib carries no
+  # system-lib dependencies, so the DLL link must provide them (the old
+  # plugin link got them from the plugin's own list).
+  ws2_32
+  ntdll
+  userenv)
+add_dependencies(fourfun_deepfilter_bridge_dll fourfun_deepfilter_bridge_build)
+
 
 
 include_directories(
@@ -127,7 +176,10 @@ target_include_directories(${PLUGIN_NAME} INTERFACE
 target_link_libraries(${PLUGIN_NAME} PRIVATE 
   flutter
   flutter_wrapper_plugin
-  fourfun_deepfilter_bridge
+  # NOTE: the bridge links via its DLL/import lib, never the cargo
+  # staticlib directly (Debug /MDd cannot link the /MD staticlib -
+  # LNK2038/LNK1319; see the bridge DLL block above).
+  fourfun_deepfilter_bridge_dll
   dxguid
   DXCORE
   DXGI
@@ -152,5 +204,6 @@ add_dependencies(${PLUGIN_NAME} fourfun_deepfilter_bridge_build)
 set(flutter_webrtc_bundled_libraries
   "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/libwebrtc/lib/libwebrtc.dll"
   "${FOURFUN_ORT_STAGE_DIR}/DirectML.dll"
+  "${FOURFUN_ORT_STAGE_DIR}/fourfun_deepfilter_bridge.dll"
   PARENT_SCOPE
 )
