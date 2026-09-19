@@ -13,6 +13,7 @@ export 'invite_dialog.dart';
 export 'jump_to_present_pill.dart';
 export 'menus/app_menu.dart';
 export 'message_image_grid.dart';
+export 'media_lightbox.dart';
 export 'overlay_icon_button.dart';
 export 'overlays/app_modal_window.dart';
 export 'presence_dot.dart';

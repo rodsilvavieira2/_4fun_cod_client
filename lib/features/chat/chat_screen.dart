@@ -401,6 +401,7 @@ class _MessageListState extends State<_MessageList> {
                     previous: previous,
                   ),
                   myUserId: widget.myUserId,
+                  channelName: widget.channelName,
                   mentionTargets: mentionTargets,
                   quickReactionEmojis: quickReactionEmojis,
                   onReply: widget.onReply,
@@ -488,11 +489,13 @@ class _MessageTile extends StatefulWidget {
     required this.onDelete,
     required this.onRetryAttachment,
     this.myUserId,
+    this.channelName,
   });
 
   final ChatMessage message;
   final bool showHeader;
   final String? myUserId;
+  final String? channelName;
   final List<MentionTarget> mentionTargets;
   final List<String> quickReactionEmojis;
   final ValueChanged<ChatMessage> onReply;
@@ -563,6 +566,45 @@ class _MessageTileState extends State<_MessageTile> {
   void _cancelEdit() {
     if (!_editing) return;
     setState(() => _editing = false);
+  }
+
+  /// Itens do viewer: GIF primeiro (se houver) + anexos READY.
+  List<MediaItem> _viewerItems(ChatMessage message) {
+    final items = <MediaItem>[];
+    if (message.kind == ChatMessageKind.gif && message.gifUrl != null) {
+      items.add(
+        MediaItem(
+          url: message.gifUrl!,
+          kind: MediaKind.gif,
+          label: 'gif-${message.id}',
+        ),
+      );
+    }
+    for (final attachment in message.attachments) {
+      final url = attachment.url;
+      if (url == null || attachment.status == 'FAILED') continue;
+      items.add(
+        MediaItem(url: url, label: 'imagem-${attachment.id}'),
+      );
+    }
+    return items;
+  }
+
+  void _openMedia(String url) {
+    final message = widget.message;
+    final items = _viewerItems(message);
+    if (items.isEmpty) return;
+    var index = items.indexWhere((item) => item.url == url);
+    if (index < 0) index = 0;
+    showMediaLightbox(
+      context: context,
+      items: items,
+      initialIndex: index,
+      authorName: message.author.name,
+      authorAvatarUrl: message.author.avatarUrl,
+      sentAt: message.createdAt,
+      channelName: widget.channelName,
+    );
   }
 
   Future<void> _saveEdit(String content) async {
@@ -745,7 +787,11 @@ class _MessageTileState extends State<_MessageTile> {
                               ),
                             if (widget.message.kind == ChatMessageKind.gif &&
                                 widget.message.gifUrl != null)
-                              _GifEmbed(url: widget.message.gifUrl!),
+                              _GifEmbed(
+                                url: widget.message.gifUrl!,
+                                onOpen: () =>
+                                    _openMedia(widget.message.gifUrl!),
+                              ),
                             if (widget.message.attachments.isNotEmpty)
                               Padding(
                                 padding: EdgeInsets.only(
@@ -760,8 +806,7 @@ class _MessageTileState extends State<_MessageTile> {
                                 child: MessageImageGrid(
                                   attachments: widget.message.attachments,
                                   onRetry: widget.onRetryAttachment,
-                                  onOpen: (url) =>
-                                      showImageLightbox(context, url),
+                                  onOpen: _openMedia,
                                 ),
                               ),
                             if (summaries.isNotEmpty) ...[
@@ -1009,10 +1054,18 @@ class _ReplyPreview extends StatelessWidget {
   }
 }
 
-class _GifEmbed extends StatelessWidget {
-  const _GifEmbed({required this.url});
+class _GifEmbed extends StatefulWidget {
+  const _GifEmbed({required this.url, this.onOpen});
 
   final String url;
+  final VoidCallback? onOpen;
+
+  @override
+  State<_GifEmbed> createState() => _GifEmbedState();
+}
+
+class _GifEmbedState extends State<_GifEmbed> {
+  bool _hovered = false;
 
   @override
   Widget build(BuildContext context) {
@@ -1025,32 +1078,111 @@ class _GifEmbed extends StatelessWidget {
             color: AppTokens.surface2,
             border: Border.all(color: AppTokens.borderSubtle, width: 1),
           ),
-          child: Image.network(
-            url,
-            fit: BoxFit.cover,
-            gaplessPlayback: true,
-            loadingBuilder: (context, child, progress) {
-              if (progress == null) return child;
-              return const SizedBox(
-                width: 280,
-                height: 168,
-                child: Center(
-                  child: SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
+          child: MouseRegion(
+            cursor: widget.onOpen == null
+                ? SystemMouseCursors.basic
+                : SystemMouseCursors.click,
+            onEnter: (_) => setState(() => _hovered = true),
+            onExit: (_) => setState(() => _hovered = false),
+            child: GestureDetector(
+              onTap: widget.onOpen,
+              child: Stack(
+                children: [
+                  Image.network(
+                    widget.url,
+                    fit: BoxFit.cover,
+                    gaplessPlayback: true,
+                    loadingBuilder: (context, child, progress) {
+                      if (progress == null) return child;
+                      return const SizedBox(
+                        width: 280,
+                        height: 168,
+                        child: Center(
+                          child: SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        ),
+                      );
+                    },
+                    errorBuilder: (_, _, _) => const SizedBox(
+                      width: 280,
+                      height: 168,
+                      child: Center(
+                        child: Icon(
+                          Icons.broken_image_outlined,
+                          color: AppTokens.textMuted,
+                        ),
+                      ),
+                    ),
                   ),
-                ),
-              );
-            },
-            errorBuilder: (_, _, _) => const SizedBox(
-              width: 280,
-              height: 168,
-              child: Center(
-                child: Icon(
-                  Icons.broken_image_outlined,
-                  color: AppTokens.textMuted,
-                ),
+                  // Badge GIF sempre visível (top-left) + hint expandir no
+                  // hover (bottom-right), espelho do Discord.
+                  Positioned(
+                    top: 8,
+                    left: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 7,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.72),
+                        borderRadius: BorderRadius.circular(AppRadius.sm),
+                        border: Border.all(
+                          color: AppTokens.borderSubtle,
+                          width: 1,
+                        ),
+                      ),
+                      child: const Text(
+                        'GIF',
+                        style: TextStyle(
+                          fontFamily: 'Geist',
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.6,
+                          color: AppTokens.textPrimary,
+                        ),
+                      ),
+                    ),
+                  ),
+                  AnimatedOpacity(
+                    duration: const Duration(milliseconds: 120),
+                    opacity:
+                        _hovered && widget.onOpen != null ? 1 : 0,
+                    child: IgnorePointer(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.28),
+                        ),
+                        child: const Align(
+                          alignment: Alignment.bottomRight,
+                          child: Padding(
+                            padding: EdgeInsets.all(8),
+                            child: SizedBox(
+                              width: 28,
+                              height: 28,
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  color: Color(0xB8000000),
+                                  borderRadius: BorderRadius.all(
+                                    Radius.circular(AppRadius.sm),
+                                  ),
+                                ),
+                                child: Icon(
+                                  Icons.open_in_full,
+                                  size: 14,
+                                  color: AppTokens.textPrimary,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),

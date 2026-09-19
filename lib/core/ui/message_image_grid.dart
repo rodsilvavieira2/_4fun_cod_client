@@ -5,6 +5,7 @@ import '../../shared/models/message.dart';
 import 'app_file_image.dart';
 import 'chat_image_actions.dart';
 import 'ds_tokens.dart';
+import 'media_lightbox.dart';
 
 /// Tamanho máximo de cada anexo (mesmo teto do avatar/ícone do servidor).
 const kMaxChatAttachments = 10;
@@ -85,73 +86,20 @@ class _SingleImage extends StatelessWidget {
 }
 
 /// Lightbox simples: imagem em tamanho maior sobre fundo escuro.
+///
+/// Mantido por compatibilidade — delega para o viewer full-screen
+/// ([showMediaLightbox]) com um único item.
+@Deprecated('Use showMediaLightbox com MediaItem em vez disso')
 Future<void> showImageLightbox(BuildContext context, String url) {
-  return showDialog<void>(
+  return showMediaLightbox(
     context: context,
-    builder: (context) => Dialog(
-      backgroundColor: Colors.transparent,
-      insetPadding: const EdgeInsets.all(24),
-      child: Stack(
-        children: [
-          Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 900, maxHeight: 700),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(AppRadius.md),
-                child: _LightboxImage(url: url),
-              ),
-            ),
-          ),
-          Positioned(
-            top: 0,
-            right: 0,
-            child: IconButton(
-              icon: const Icon(Icons.close, color: Colors.white),
-              tooltip: 'Fechar',
-              onPressed: () => Navigator.of(context).pop(),
-            ),
-          ),
-        ],
-      ),
-    ),
+    items: [MediaItem(url: url)],
+    authorName: '',
+    sentAt: DateTime.now(),
   );
 }
 
-/// Imagem grande do lightbox com menu de botão direito
-/// (Copiar imagem / Salvar imagem).
-class _LightboxImage extends ConsumerWidget {
-  const _LightboxImage({required this.url});
-
-  final String url;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return GestureDetector(
-      onSecondaryTapUp: (details) => showChatImageMenu(
-        context: context,
-        ref: ref,
-        globalPosition: details.globalPosition,
-        url: url,
-      ),
-      child: AppFileImage(
-        path: url,
-        fit: BoxFit.contain,
-        fallback: const SizedBox(
-          width: 320,
-          height: 240,
-          child: Center(
-            child: Icon(
-              Icons.broken_image_outlined,
-              color: AppTokens.textMuted,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _Cell extends ConsumerWidget {
+class _Cell extends ConsumerStatefulWidget {
   const _Cell({required this.attachment, this.onRetry, this.onOpen});
 
   final MessageAttachment attachment;
@@ -159,7 +107,18 @@ class _Cell extends ConsumerWidget {
   final ValueChanged<String>? onOpen;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_Cell> createState() => _CellState();
+}
+
+class _CellState extends ConsumerState<_Cell> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final attachment = widget.attachment;
+    final onRetry = widget.onRetry;
+    final onOpen = widget.onOpen;
+    final ref = this.ref;
     final failed = attachment.status == 'FAILED';
     final ready = attachment.url != null && !failed;
     return ClipRRect(
@@ -177,8 +136,10 @@ class _Cell extends ConsumerWidget {
                 cursor: onOpen == null
                     ? SystemMouseCursors.basic
                     : SystemMouseCursors.click,
+                onEnter: (_) => setState(() => _hovered = true),
+                onExit: (_) => setState(() => _hovered = false),
                 child: GestureDetector(
-                  onTap: onOpen == null ? null : () => onOpen!(attachment.url!),
+                  onTap: onOpen == null ? null : () => onOpen(attachment.url!),
                   onSecondaryTapUp: (details) => showChatImageMenu(
                     context: context,
                     ref: ref,
@@ -186,10 +147,35 @@ class _Cell extends ConsumerWidget {
                     url: attachment.url!,
                     suggestedName: 'imagem-${attachment.id}',
                   ),
-                  child: AppFileImage(
-                    path: attachment.url,
-                    fit: BoxFit.cover,
-                    fallback: const _Spinner(),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      AppFileImage(
+                        path: attachment.url,
+                        fit: BoxFit.cover,
+                        fallback: const _Spinner(),
+                      ),
+                      // Overlay de hover estilo Discord: escurece + ícone
+                      // expandir no canto para sinalizar que abre o viewer.
+                      AnimatedOpacity(
+                        duration: const Duration(milliseconds: 120),
+                        opacity: _hovered && onOpen != null ? 1 : 0,
+                        child: IgnorePointer(
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.28),
+                            ),
+                            child: const Align(
+                              alignment: Alignment.bottomRight,
+                              child: Padding(
+                                padding: EdgeInsets.all(8),
+                                child: _ExpandHint(),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               )
@@ -197,12 +183,36 @@ class _Cell extends ConsumerWidget {
               _FailedCell(
                 onRetry: onRetry == null
                     ? null
-                    : () => onRetry!(attachment.uploadId),
+                    : () => onRetry(attachment.uploadId),
               )
             else
               const _Spinner(),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Pill escura com ícone expandir (hover do thumbnail inline).
+class _ExpandHint extends StatelessWidget {
+  const _ExpandHint();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 28,
+      height: 28,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.72),
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+        border: Border.all(color: AppTokens.borderSubtle, width: 1),
+      ),
+      child: const Icon(
+        Icons.open_in_full,
+        size: 14,
+        color: AppTokens.textPrimary,
       ),
     );
   }
