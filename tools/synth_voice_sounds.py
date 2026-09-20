@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Sintetiza os 4 sons de voz/stream do app (originais, estilo Discord).
 
-Design ativo (v9 "reference", validado em audicao):
-- voice_join.wav:  2 golpes de sino sobrepostos F4 -> C5, ~590ms
-- voice_leave.wav: espelho C5 -> F4, com release suave (sem corte seco)
+Design ativo (v11 "down-up", derivado da referencia error-08):
+- voice_join.wav:  2 golpes metalicos 220 -> 300 Hz, ~500ms
+- voice_leave.wav: espelho 300 -> 220 Hz, com release suave (sem corte seco)
 - stream_start.wav: 2 notas 523 Hz + 784 Hz, 0.30s
 - stream_stop.wav:  2 notas 784 Hz + 523 Hz, 0.30s
 
@@ -242,6 +242,63 @@ def _rich_tone(freq: float, duration_s: float, shimmer: bool = False) -> list[fl
     return out
 
 
+def _metal_bell(freq: float, duration_s: float, decay: float = 0.15) -> list[float]:
+    """Sino metalico da v11: fundamental + parciais agudas de decaimento rapido.
+
+    Recria o carater da referencia error-08 (300 -> 220 Hz com brilho
+    metalico ~6-8x): corpo grave com faisca aguda que some rapido.
+    """
+    n = int(SAMPLE_RATE * duration_s)
+    out: list[float] = []
+    phase = 0.0
+    for i in range(n):
+        t = i / n
+        seconds = i / SAMPLE_RATE
+        phase += 2.0 * math.pi * freq / SAMPLE_RATE
+        attack = 1.0 - math.exp(-seconds / 0.004)
+        env = attack * math.exp(-seconds / decay)
+        release_start = 0.70
+        if t >= release_start:
+            u = (t - release_start) / (1.0 - release_start)
+            env *= 0.5 * (1.0 + math.cos(math.pi * u))
+        tone = (
+            math.sin(phase)
+            + 0.20 * math.sin(2.0 * phase)
+            + 0.15 * math.sin(7.7 * phase) * math.exp(-seconds / 0.030)
+            + 0.10 * math.sin(5.8 * phase) * math.exp(-seconds / 0.050)
+        )
+        out.append(tone * env)
+    return out
+
+
+def _warm_tone(freq: float, duration_s: float, decay: float = 0.30) -> list[float]:
+    """Nota calorosa da v10: fundamental + oitava suave, decaimento longo.
+
+    Recria o carater da referencia (quinta A4+E5 com bloom de ~700ms):
+    ataque macio de 8ms, corpo cheio e release em cosseno — sem corte seco.
+    """
+    n = int(SAMPLE_RATE * duration_s)
+    out: list[float] = []
+    phase = 0.0
+    for i in range(n):
+        t = i / n
+        seconds = i / SAMPLE_RATE
+        phase += 2.0 * math.pi * freq / SAMPLE_RATE
+        attack = 1.0 - math.exp(-seconds / 0.008)
+        env = attack * math.exp(-seconds / decay)
+        release_start = 0.75
+        if t >= release_start:
+            u = (t - release_start) / (1.0 - release_start)
+            env *= 0.5 * (1.0 + math.cos(math.pi * u))
+        tone = (
+            math.sin(phase)
+            + 0.30 * math.sin(2.0 * phase)
+            + 0.10 * math.sin(3.0 * phase)
+        )
+        out.append(tone * env)
+    return out
+
+
 #: Parcial inarmonica medida na referencia (~1250/350 Hz): carater de sino.
 REF_BELL_PARTIAL = 3.57
 
@@ -460,6 +517,28 @@ def _design_v9() -> dict[str, list[float]]:
     return {"join": join, "leave": leave}
 
 
+def _design_v10() -> dict[str, list[float]]:
+    """V10 "fifth": a quinta A4+E5 da referencia arpejada com direcao.
+
+    Entrar sobe A4 -> E5, sair desce E5 -> A4; golpes sobrepostos a 140ms
+    com o bloom longo da referencia. Total ~590ms.
+    """
+    join = _mix(_warm_tone(440.0, 0.35), _warm_tone(659.25, 0.45), 0.14)
+    leave = _mix(_warm_tone(659.25, 0.35), _warm_tone(440.0, 0.45), 0.14)
+    return {"join": join, "leave": leave}
+
+
+def _design_v11() -> dict[str, list[float]]:
+    """V11 "down-up": gramatica da referencia error-08 (2 golpes metalicos).
+
+    A referencia desce 300 -> 220 Hz: a saida segue o arquivo e a entrada
+    espelha subindo 220 -> 300 Hz. Golpes a 150ms, total ~500ms.
+    """
+    join = _mix(_metal_bell(220.0, 0.30), _metal_bell(300.0, 0.35), 0.15)
+    leave = _mix(_metal_bell(300.0, 0.30), _metal_bell(220.0, 0.35), 0.15)
+    return {"join": join, "leave": leave}
+
+
 DESIGNS = {
     "v1": _design_v1,
     "v2": _design_v2,
@@ -470,6 +549,8 @@ DESIGNS = {
     "v7": _design_v7,
     "v8": _design_v8,
     "v9": _design_v9,
+    "v10": _design_v10,
+    "v11": _design_v11,
 }
 
 #: Pico por variante (dBFS). v4+ tem mais presenca.
@@ -483,10 +564,12 @@ DESIGN_PEAK_DBFS = {
     "v7": -6.0,
     "v8": -6.0,
     "v9": -6.0,
+    "v10": -6.0,
+    "v11": -6.0,
 }
 
 #: Variante ativa nos assets do app. Trocar apos audicao em --preview.
-ACTIVE_DESIGN = "v9"
+ACTIVE_DESIGN = "v11"
 
 
 def synth_all(
