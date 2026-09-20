@@ -124,4 +124,84 @@ void main() {
       expect(player.plays.length, 2);
     });
   });
+
+  group('VoiceSoundService sinais (ADR-0001)', () {
+    test('sinal toca com volume remoto e registra supressão', () async {
+      final player = _FakePlayer();
+      final service = VoiceSoundService(player: player);
+      await service.playSignal(
+        VoiceSound.join,
+        enabled: true,
+        deafened: false,
+      );
+      expect(player.plays.length, 1);
+      expect(player.plays.single.volume, lessThan(1.0));
+      expect(service.shouldSuppressRemoteDiff(VoiceSound.join), isTrue);
+      expect(service.shouldSuppressRemoteDiff(VoiceSound.leave), isFalse);
+    });
+
+    test('sinal respeita desabilitado e deafen, mas suprime mesmo assim', () async {
+      final player = _FakePlayer();
+      final service = VoiceSoundService(player: player);
+      await service.playSignal(
+        VoiceSound.leave,
+        enabled: false,
+        deafened: false,
+      );
+      await service.playSignal(
+        VoiceSound.streamStart,
+        enabled: true,
+        deafened: true,
+      );
+      expect(player.plays, isEmpty);
+      // O evento aconteceu: o fallback por diff continua suprimido.
+      expect(service.shouldSuppressRemoteDiff(VoiceSound.leave), isTrue);
+      expect(service.shouldSuppressRemoteDiff(VoiceSound.streamStart), isTrue);
+    });
+
+    test('cooldown de 2s coalesce sinais repetidos', () async {
+      var now = DateTime(2026, 1, 1);
+      final player = _FakePlayer();
+      final service = VoiceSoundService(
+        player: player,
+        clock: () => now,
+      );
+      await service.playSignal(
+        VoiceSound.join,
+        enabled: true,
+        deafened: false,
+      );
+      await service.playSignal(
+        VoiceSound.join,
+        enabled: true,
+        deafened: false,
+      );
+      expect(player.plays.length, 1);
+
+      now = now.add(const Duration(seconds: 2, milliseconds: 1));
+      await service.playSignal(
+        VoiceSound.join,
+        enabled: true,
+        deafened: false,
+      );
+      expect(player.plays.length, 2);
+    });
+
+    test('supressão expira após 2s (fallback volta a valer)', () async {
+      var now = DateTime(2026, 1, 1);
+      final player = _FakePlayer();
+      final service = VoiceSoundService(
+        player: player,
+        clock: () => now,
+      );
+      await service.playSignal(
+        VoiceSound.leave,
+        enabled: true,
+        deafened: false,
+      );
+      expect(service.shouldSuppressRemoteDiff(VoiceSound.leave), isTrue);
+      now = now.add(const Duration(seconds: 2, milliseconds: 1));
+      expect(service.shouldSuppressRemoteDiff(VoiceSound.leave), isFalse);
+    });
+  });
 }

@@ -92,10 +92,20 @@ class VoiceSoundService {
   final DateTime Function() _clock;
 
   static const remoteDebounce = Duration(milliseconds: 500);
+
+  /// Cooldown de sinais recebidos (ADR-0001): rajada entra/sai vira 1 som e
+  /// amortece spam sem precisar de moderação por papel nesta v1.
+  static const signalCooldown = Duration(seconds: 2);
+
+  /// Janela em que um sinal suprime o fallback por diff do mesmo tipo
+  /// (evita som duplo entre clients novos e antigos).
+  static const signalSuppressWindow = Duration(seconds: 2);
   static const double _localVolume = 1.0;
   static const double _remoteVolume = 0.7;
 
   final Map<VoiceSound, DateTime> _lastRemotePlay = {};
+  final Map<VoiceSound, DateTime> _lastSignalPlay = {};
+  final Map<VoiceSound, DateTime> _lastSignalSeen = {};
 
   Future<void> play(
     VoiceSound sound, {
@@ -116,6 +126,35 @@ class VoiceSoundService {
     );
   }
 
+  /// Trata um sinal recebido da sala (ADR-0001): registra a hora SEMPRE
+  /// (para [shouldSuppressRemoteDiff]) e toca com volume remoto se o
+  /// cooldown permitir, habilitado e não ensurdecido.
+  Future<void> playSignal(
+    VoiceSound sound, {
+    required bool enabled,
+    required bool deafened,
+  }) async {
+    _lastSignalSeen[sound] = _clock();
+    if (!enabled || deafened) return;
+    final now = _clock();
+    final last = _lastSignalPlay[sound];
+    if (last != null && now.difference(last) < signalCooldown) return;
+    _lastSignalPlay[sound] = now;
+    await _player.play(sound.assetPath, volume: _remoteVolume);
+  }
+
+  /// Se um sinal do mesmo tipo chegou há menos de [signalSuppressWindow]:
+  /// o fallback por diff deve pular (o sinal já cobriu o evento).
+  bool shouldSuppressRemoteDiff(VoiceSound sound) {
+    final seen = _lastSignalSeen[sound];
+    if (seen == null) return false;
+    return _clock().difference(seen) < signalSuppressWindow;
+  }
+
   /// Apenas testes: limpa o debounce entre casos.
-  void resetDebounceForTest() => _lastRemotePlay.clear();
+  void resetDebounceForTest() {
+    _lastRemotePlay.clear();
+    _lastSignalPlay.clear();
+    _lastSignalSeen.clear();
+  }
 }

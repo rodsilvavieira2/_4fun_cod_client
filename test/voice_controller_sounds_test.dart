@@ -18,6 +18,11 @@ class _RecordingSoundService extends VoiceSoundService {
 
   final List<({VoiceSound sound, bool remote})> calls = [];
 
+  /// Sinais recebidos (registra a chamada mesmo sob cooldown — cada teste
+  /// envia o sinal uma única vez; o cooldown em si é coberto no teste
+  /// unitário do serviço).
+  final List<VoiceSound> signalCalls = [];
+
   @override
   Future<void> play(
     VoiceSound sound, {
@@ -27,6 +32,16 @@ class _RecordingSoundService extends VoiceSoundService {
   }) async {
     if (!enabled || deafened) return;
     calls.add((sound: sound, remote: remote));
+  }
+
+  @override
+  Future<void> playSignal(
+    VoiceSound sound, {
+    required bool enabled,
+    required bool deafened,
+  }) async {
+    await super.playSignal(sound, enabled: enabled, deafened: deafened);
+    signalCalls.add(sound);
   }
 }
 
@@ -83,6 +98,13 @@ class _FakeRtc implements RtcService {
   @override
   RtcScreenShareQuality get effectiveScreenShareQuality =>
       RtcScreenShareQuality.auto;
+
+  final List<RtcVoiceSound> publishedSounds = [];
+
+  @override
+  Future<void> publishVoiceSound(RtcVoiceSound sound) async {
+    publishedSounds.add(sound);
+  }
 
   @override
   Future<RtcNoiseSuppressionStatus> setNoiseSuppressionMode(
@@ -278,6 +300,90 @@ void main() {
         sounds.calls.any((c) => c.sound == VoiceSound.leave && !c.remote),
         isTrue,
       );
+    });
+
+    test('ações locais publicam sinal para a sala', () async {
+      final notifier = buildVoice();
+      await notifier.join();
+      await settle();
+      expect(rtc.publishedSounds, contains(RtcVoiceSound.join));
+
+      await notifier.startScreenShare(null);
+      await settle();
+      expect(rtc.publishedSounds, contains(RtcVoiceSound.streamStart));
+
+      await notifier.stopScreenShare();
+      await settle();
+      expect(rtc.publishedSounds, contains(RtcVoiceSound.streamStop));
+
+      await notifier.leave();
+      await settle();
+      expect(rtc.publishedSounds, contains(RtcVoiceSound.leave));
+    });
+
+    test('sinal recebido de outro toca som remoto', () async {
+      buildVoice();
+      final notifier = container.read(voiceControllerProvider(_arg).notifier);
+      await notifier.join();
+      await settle();
+      sounds.calls.clear();
+
+      rtc.eventsController.add(
+        const VoiceSoundSignalEvent(
+          participantId: 'user_u2',
+          sound: RtcVoiceSound.streamStart,
+        ),
+      );
+      await settle();
+      expect(sounds.signalCalls, contains(VoiceSound.streamStart));
+    });
+
+    test('eco próprio é ignorado', () async {
+      buildVoice();
+      final notifier = container.read(voiceControllerProvider(_arg).notifier);
+      await notifier.join();
+      await settle();
+      final before = sounds.calls.length;
+
+      rtc.eventsController.add(
+        const VoiceSoundSignalEvent(
+          participantId: 'user_u1',
+          sound: RtcVoiceSound.join,
+        ),
+      );
+      await settle();
+      expect(sounds.calls.length, before);
+    });
+
+    test('sinal suprime o fallback por diff (sem som duplo)', () async {
+      buildVoice();
+      final notifier = container.read(voiceControllerProvider(_arg).notifier);
+      await notifier.join();
+      await settle();
+      rtc.participantsController.add([_p('user_u1', 'eu'), _p('user_u2', 'b')]);
+      await settle();
+      sounds.calls.clear();
+
+      // Cliente novo anuncia; o snapshot com o entrante chega em seguida.
+      rtc.eventsController.add(
+        const VoiceSoundSignalEvent(
+          participantId: 'user_u3',
+          sound: RtcVoiceSound.join,
+        ),
+      );
+      await settle();
+      expect(sounds.signalCalls, [VoiceSound.join]);
+      final diffPlays = sounds.calls.length;
+
+      rtc.participantsController.add([
+        _p('user_u1', 'eu'),
+        _p('user_u2', 'b'),
+        _p('user_u3', 'c'),
+      ]);
+      await settle();
+      // Nenhum som extra do diff: o sinal já cobriu.
+      expect(sounds.calls.length, diffPlays);
+      expect(notifier, isNotNull);
     });
   });
 }

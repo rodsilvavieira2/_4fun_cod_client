@@ -127,6 +127,26 @@ class ParticipantLeftEvent extends RtcEvent {
   final String participantId;
 }
 
+/// Som de UI de voz a anunciar para a sala (ADR-0001): entrar/sair da sala,
+/// início/fim de transmissão. O transporte carrega só o nome — cada client
+/// toca o WAV local correspondente.
+enum RtcVoiceSound { join, leave, streamStart, streamStop }
+
+/// Um participante anunciou um som de UI para a sala (sinal recebido via
+/// data message — ver [RtcService.publishVoiceSound]). Sinais do próprio
+/// participante local são eco e devem ser ignorados por quem consome.
+class VoiceSoundSignalEvent extends RtcEvent {
+  const VoiceSoundSignalEvent({
+    required this.participantId,
+    required this.sound,
+  });
+
+  /// Identity do remetente no LiveKit (`user_<userId>`).
+  final String participantId;
+
+  final RtcVoiceSound sound;
+}
+
 /// O microfone de um participante foi habilitado/desabilitado (mute/unmute
 /// ou publicação/despublicação da track de mic).
 class MicEnabledChangedEvent extends RtcEvent {
@@ -514,6 +534,15 @@ abstract class RtcService {
     String identity,
     bool enabled,
   ) async {}
+
+  /// Anuncia um som de UI para todos na sala (ADR-0001): publica um sinal
+  /// leve via data message — cada client toca o WAV local correspondente.
+  ///
+  /// Best-effort: sem sala ativa é no-op seguro; falha de publish nunca
+  /// propaga (o som local já tocou e a sessão não pode cair por isso).
+  /// Implementação padrão no-op (o LiveKit sobrescreve); fakes herdam sem
+  /// quebrar.
+  Future<void> publishVoiceSound(RtcVoiceSound sound) async {}
 
   /// Seleciona a câmera usada pelo preview e pela publicação local.
   ///

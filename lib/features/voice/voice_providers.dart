@@ -244,6 +244,14 @@ class VoiceState {
 ///   shell pausa só a câmera/tela local (ver `_pauseLocalVideoOnTextView`).
 /// - Queda da sala por conta própria: [DisconnectedEvent] volta para
 ///   `idle` (o serviço já limpou o estado interno).
+/// Mapeamento sinal da sala -> som local (ADR-0001): 1:1 por nome.
+VoiceSound _voiceSoundFromSignal(RtcVoiceSound sound) => switch (sound) {
+  RtcVoiceSound.join => VoiceSound.join,
+  RtcVoiceSound.leave => VoiceSound.leave,
+  RtcVoiceSound.streamStart => VoiceSound.streamStart,
+  RtcVoiceSound.streamStop => VoiceSound.streamStop,
+};
+
 class VoiceController
     extends
         AutoDisposeFamilyNotifier<
@@ -459,6 +467,10 @@ class VoiceController
           '(server=${arg.serverId}, channel=${arg.channelId}, generation=$_joinGeneration)',
           tag: 'voice',
         );
+    if (wasConnected) {
+      // Anuncia ANTES do disconnect (depois não há mais sala para publicar).
+      unawaited(_publishSound(RtcVoiceSound.leave));
+    }
     await ref.read(rtcServiceProvider).disconnect();
     await ref.read(voiceControlsProvider.notifier).resetPushToTalkPress();
     if (wasConnected) {
@@ -619,6 +631,7 @@ class VoiceController
         errorMessage: 'Compartilhamento iniciado sem áudio de sistema.',
       );
       unawaited(_playSound(VoiceSound.streamStart));
+      unawaited(_publishSound(RtcVoiceSound.streamStart));
       return;
     } catch (_) {
       // Falha de captura (TrackCreateException/DesktopCapturerSource):
@@ -658,6 +671,7 @@ class VoiceController
       errorMessage: warnings.isEmpty ? null : warnings.join(' '),
     );
     unawaited(_playSound(VoiceSound.streamStart));
+    unawaited(_publishSound(RtcVoiceSound.streamStart));
   }
 
   /// Best-effort (regra 4 da SPEC): detecta quando o nativo Windows caiu no
@@ -706,6 +720,7 @@ class VoiceController
       errorMessage: null,
     );
     unawaited(_playSound(VoiceSound.streamStop));
+    unawaited(_publishSound(RtcVoiceSound.streamStop));
   }
 
   /// Alterna o destaque (spotlight) de um participante: toque repetido no
@@ -753,7 +768,6 @@ class VoiceController
   /// Chave de uma publicação assistível no [VoiceState.watchedPublicationIds].
   static String watchKey(String participantId, VoiceSpotlightSource source) =>
       '$participantId:${source.name}';
-
   /// Se o id é o participante local (sempre renderiza o próprio vídeo,
   /// nunca entra no opt-in).
   bool isLocalParticipant(String participantId) =>
@@ -1026,6 +1040,8 @@ class VoiceController
     // Som de entrada local (primeiro snapshot de participants é baseline e
     // não toca sons remotos — ver `_applyParticipants`).
     unawaited(_playSound(VoiceSound.join));
+    // Anuncia para a sala (ADR-0001): cada client toca o join localmente.
+    unawaited(_publishSound(RtcVoiceSound.join));
     log.d(
       'voice connect concluído '
       '(server=${arg.serverId}, channel=${arg.channelId}, '
@@ -1049,6 +1065,36 @@ class VoiceController
       await ref
           .read(voiceSoundServiceProvider)
           .play(sound, remote: remote, enabled: enabled, deafened: deafened);
+    } catch (_) {
+      // Som de UI é best-effort.
+    }
+  }
+
+  /// Anuncia um som para todos na sala (ADR-0001): fire-and-forget,
+  /// best-effort — falha de publish nunca afeta a sessão. O envio é
+  /// incondicional (o evento na sala é público); a preferência master
+  /// controla só o que EU ouço.
+  Future<void> _publishSound(RtcVoiceSound sound) async {
+    try {
+      await ref.read(rtcServiceProvider).publishVoiceSound(sound);
+    } catch (_) {
+      // Anúncio é best-effort.
+    }
+  }
+
+  /// Trata um sinal recebido da sala: ignora eco próprio e delega ao
+  /// serviço (cooldown + Deafen + preferência ficam com ele).
+  Future<void> _playSignal(RtcVoiceSound sound) async {
+    try {
+      final enabled = ref.read(voiceSoundPreferencesProvider);
+      final deafened = ref.read(voiceControlsProvider).isDeafened;
+      await ref
+          .read(voiceSoundServiceProvider)
+          .playSignal(
+            _voiceSoundFromSignal(sound),
+            enabled: enabled,
+            deafened: deafened,
+          );
     } catch (_) {
       // Som de UI é best-effort.
     }
@@ -1150,9 +1196,14 @@ class VoiceController
       final leftRemote = previousIds
           .difference(nextIds)
           .where((id) => id != localId);
-      if (joinedRemote.isNotEmpty) {
+      // Fallback por diff (cobre clients antigos sem sinal): suprimido por
+      // 2s quando o sinal do mesmo tipo já chegou (ADR-0001, sem som duplo).
+      final sounds = ref.read(voiceSoundServiceProvider);
+      if (joinedRemote.isNotEmpty &&
+          !sounds.shouldSuppressRemoteDiff(VoiceSound.join)) {
         unawaited(_playSound(VoiceSound.join, remote: true));
-      } else if (leftRemote.isNotEmpty) {
+      } else if (leftRemote.isNotEmpty &&
+          !sounds.shouldSuppressRemoteDiff(VoiceSound.leave)) {
         unawaited(_playSound(VoiceSound.leave, remote: true));
       }
       final nextShares = {
@@ -1168,9 +1219,11 @@ class VoiceController
         if (!was && isNow) remoteStreamStart = true;
         if (was && !isNow) remoteStreamStop = true;
       }
-      if (remoteStreamStart) {
+      if (remoteStreamStart &&
+          !sounds.shouldSuppressRemoteDiff(VoiceSound.streamStart)) {
         unawaited(_playSound(VoiceSound.streamStart, remote: true));
-      } else if (remoteStreamStop) {
+      } else if (remoteStreamStop &&
+          !sounds.shouldSuppressRemoteDiff(VoiceSound.streamStop)) {
         unawaited(_playSound(VoiceSound.streamStop, remote: true));
       }
     }
@@ -1271,6 +1324,14 @@ class VoiceController
                   : VoiceSound.streamStop,
             ),
           );
+          // Mesma regra para o anúncio: só o caso externo chega aqui.
+          unawaited(
+            _publishSound(
+              isScreenSharing
+                  ? RtcVoiceSound.streamStart
+                  : RtcVoiceSound.streamStop,
+            ),
+          );
         }
       case ScreenShareEffectiveQualityChangedEvent(:final effective):
         // Passo adaptativo do serviço: reflete a efetiva sem tocar no
@@ -1326,6 +1387,17 @@ class VoiceController
           ParticipantLeftEvent() ||
           SpeakingChangedEvent():
         break; // Sem estado derivado: o snapshot de participants cobre.
+      case VoiceSoundSignalEvent(
+        :final participantId,
+        :final sound,
+      ):
+        // Sinal de outro participante (ADR-0001): eco próprio é ignorado
+        // (minha ação já tocou o som local). Cooldown + Deafen ficam com o
+        // serviço; o timestamp registrado suprime o fallback por diff.
+        final localId = ref.read(rtcServiceProvider).localParticipantId;
+        if (participantId != localId) {
+          unawaited(_playSignal(sound));
+        }
     }
   }
 

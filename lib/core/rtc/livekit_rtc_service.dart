@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart'
     show debugPrint, kIsWeb, visibleForTesting;
@@ -413,6 +414,56 @@ class LiveKitRtcService implements RtcService {
     // O resultado real chega via AudioPlaybackStatusChanged (que emite
     // AudioPlaybackResumedEvent/AudioPlaybackBlockedEvent no _wire).
     await room.startAudio();
+  }
+
+  /// Tópico das data messages de som de UI (ADR-0001). Versionado (`/v1`)
+  /// para permitir mudar o payload sem quebrar clients antigos (que ignoram
+  /// tópicos desconhecidos).
+  static const voiceSoundTopic = 'voice-sound/v1';
+
+  @override
+  Future<void> publishVoiceSound(RtcVoiceSound sound) async {
+    final room = _room;
+    if (room == null || _disposed) return;
+    final localParticipant = room.localParticipant;
+    if (localParticipant == null) return;
+    // Best-effort: o som local já tocou e a sessão não pode cair porque o
+    // anúncio falhou (rede instável, sala morrendo...).
+    try {
+      await localParticipant.publishData(
+        utf8.encode(jsonEncode({'sound': sound.name})),
+        reliable: true,
+        topic: voiceSoundTopic,
+      );
+    } catch (error, stackTrace) {
+      _rtcDebug('rtc publishVoiceSound falhou (${sound.name}): $error');
+      _rtcError('rtc publishVoiceSound falhou (${sound.name})', error, stackTrace);
+    }
+  }
+
+  /// Converte um sinal `voice-sound/v1` em [VoiceSoundSignalEvent].
+  /// Formato desconhecido/malformado = ignorado (nunca derruba a sala).
+  void _handleVoiceSoundSignal(DataReceivedEvent event) {
+    if (event.topic != voiceSoundTopic) return;
+    final sender = event.participant?.identity;
+    if (sender == null || sender.isEmpty) return;
+    RtcVoiceSound? sound;
+    try {
+      final decoded = jsonDecode(utf8.decode(event.data));
+      if (decoded is Map<String, dynamic>) {
+        final name = decoded['sound'];
+        if (name is String) {
+          sound = RtcVoiceSound.values.cast<RtcVoiceSound?>().firstWhere(
+            (value) => value?.name == name,
+            orElse: () => null,
+          );
+        }
+      }
+    } catch (_) {
+      return;
+    }
+    if (sound == null) return;
+    _emitEvent(VoiceSoundSignalEvent(participantId: sender, sound: sound));
   }
 
   @override
@@ -1821,6 +1872,10 @@ class LiveKitRtcService implements RtcService {
           _emitSnapshot();
         }
       }),
+      // Sinais de som de UI (ADR-0001): data messages no tópico
+      // `voice-sound/v1` viram VoiceSoundSignalEvent; o controller decide
+      // se toca (eco, cooldown e Deafen ficam com ele).
+      room.events.on<DataReceivedEvent>(_handleVoiceSoundSignal),
       // Reconexão automática do SDK em blips de rede: loga a transição
       // (a UI continua em connected; se a reconexão falhar de vez, o
       // RoomDisconnectedEvent abaixo volta o controller para idle).

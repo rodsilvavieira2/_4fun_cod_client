@@ -318,6 +318,14 @@ class FakeRtcService implements RtcService {
     }
   }
 
+  /// Sinais de som anunciados para a sala (ADR-0001).
+  final List<RtcVoiceSound> publishedSounds = [];
+
+  @override
+  Future<void> publishVoiceSound(RtcVoiceSound sound) async {
+    publishedSounds.add(sound);
+  }
+
   void pushParticipants(List<RtcParticipant> list) =>
       participantsController.add(list);
 
