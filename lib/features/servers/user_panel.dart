@@ -1137,8 +1137,8 @@ class _VoiceActionButtonState extends State<_VoiceActionButton> {
   Color _foregroundColor(bool enabled) {
     final colors = context.appColors;
     if (!enabled) return colors.textMuted.withValues(alpha: 0.48);
-    if (widget.isActive) return AppTokens.accentGreen;
-    return _hovered ? Colors.white : colors.textPrimary;
+    if (widget.isActive) return Colors.white;
+    return colors.onAccent;
   }
 
   Color _backgroundColor(bool enabled) {
@@ -1150,33 +1150,48 @@ class _VoiceActionButtonState extends State<_VoiceActionButton> {
       );
     }
     if (widget.isActive) {
+      if (_pressed) {
+        return Color.alphaBlend(
+          Colors.black.withValues(alpha: 0.14),
+          AppTokens.accentDanger,
+        );
+      }
+      if (_hovered) {
+        return Color.alphaBlend(
+          Colors.white.withValues(alpha: 0.08),
+          AppTokens.accentDanger,
+        );
+      }
+      return AppTokens.accentDanger;
+    }
+    if (_pressed) {
       return Color.alphaBlend(
-        AppTokens.accentGreen.withValues(alpha: _pressed ? 0.28 : 0.20),
-        colors.surface2,
+        Colors.black.withValues(alpha: 0.14),
+        colors.accent,
       );
     }
-    return Color.alphaBlend(
-      Colors.white.withValues(
-        alpha: _pressed ? 0.16 : (_hovered ? 0.12 : 0.085),
-      ),
-      colors.surface2,
-    );
+    if (_hovered) {
+      return Color.alphaBlend(
+        Colors.white.withValues(alpha: 0.10),
+        colors.accent,
+      );
+    }
+    return colors.accent;
   }
 
   Color _borderColor(bool enabled) {
-    final colors = context.appColors;
     if (!enabled) return Colors.white.withValues(alpha: 0.035);
-    if (widget.isActive) return AppTokens.accentGreen.withValues(alpha: 0.58);
-    if (_hovered) return Colors.white.withValues(alpha: 0.24);
-    return colors.borderSubtle;
+    if (widget.isActive) return Colors.transparent;
+    return Colors.transparent;
   }
 
   List<BoxShadow> _shadow(bool enabled) {
+    final colors = context.appColors;
     if (!enabled) return const [];
     if (widget.isActive) {
       return [
         BoxShadow(
-          color: AppTokens.accentGreen.withValues(alpha: 0.18),
+          color: AppTokens.accentDanger.withValues(alpha: 0.28),
           blurRadius: 16,
           spreadRadius: -7,
           offset: const Offset(0, 6),
@@ -1185,10 +1200,10 @@ class _VoiceActionButtonState extends State<_VoiceActionButton> {
     }
     return [
       BoxShadow(
-        color: Colors.black.withValues(alpha: 0.22),
-        blurRadius: 10,
-        spreadRadius: -8,
-        offset: const Offset(0, 5),
+        color: colors.accent.withValues(alpha: 0.28),
+        blurRadius: 16,
+        spreadRadius: -7,
+        offset: const Offset(0, 6),
       ),
     ];
   }
