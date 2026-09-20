@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/appearance_theme.dart';
 import '../../../core/ui/app_icon.dart';
 import '../../../core/ui/ds_tokens.dart';
-import '../../../core/ui/invite_dialog.dart';
 import '../../../core/ui/menus/app_menu.dart';
 import '../voice_providers.dart';
 import '../voice_video_tile.dart';
@@ -16,7 +15,6 @@ enum TheaterMoreAction {
   layoutGrid,
   layoutFocus,
   toggleOverlays,
-  copyLink,
 }
 
 /// Itens do menu `⋯` no padrão compacto [AppMenu] do app (32px, Geist 13).
@@ -45,12 +43,6 @@ List<PopupMenuEntry<TheaterMoreAction>> theaterMoreMenuItems(
     checked: ui.hideOverlays,
     label: 'Ocultar overlays',
   ),
-  const AppMenuDivider(),
-  AppMenuItem<TheaterMoreAction>.labeled(
-    value: TheaterMoreAction.copyLink,
-    label: 'Copiar link da sala',
-    icon: AppIcons.link,
-  ),
 ];
 
 /// Executa a ação do menu `⋯` (chamado pelo `onSelected` do [AppMenuButton]).
@@ -70,8 +62,6 @@ void handleTheaterMoreAction(
       uiNotifier.setLayout(TheaterLayoutMode.focus);
     case TheaterMoreAction.toggleOverlays:
       uiNotifier.toggleOverlays();
-    case TheaterMoreAction.copyLink:
-      showInviteDialog(context, serverId: arg.serverId);
   }
 }
 

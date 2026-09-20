@@ -15,6 +15,8 @@ import '../channels/channel_list.dart';
 import '../channels/channels_providers.dart';
 import '../chat/chat_providers.dart';
 import '../chat/chat_screen.dart';
+import '../voice/theater/theater_mode_toggle.dart';
+import '../voice/theater/theater_screen.dart';
 import '../voice/voice_screen.dart';
 import '../voice/voice_providers.dart';
 import 'members_panel.dart';
@@ -519,6 +521,8 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
                         onBack: () {
                           setState(() => _selectedChannelId = null);
                         },
+                        activeVoiceChannel: activeVoiceChannel,
+                        activeVoiceState: activeVoiceState,
                       )
                     : Row(
                         children: [
@@ -611,6 +615,8 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
             context,
             selectedChannel,
             canManageServer: canManageServer,
+            activeVoiceChannel: activeVoiceChannel,
+            activeVoiceState: activeVoiceState,
           ),
         ),
         if (_showMembers && canDockMembers) ...[
@@ -725,9 +731,16 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
     ServerChannel? selectedChannel, {
     required bool canManageServer,
     VoidCallback? onBack,
+    ServerChannel? activeVoiceChannel,
+    VoiceState? activeVoiceState,
   }) {
     final channel = selectedChannel;
     final colors = context.appColors;
+    // Toggle só quando o usuário está em voz/vídeo (conectado). Fora disso,
+    // o header segue sem o toggle — mesma regra do overlay da sidebar.
+    final isInVoice =
+        activeVoiceChannel != null &&
+        activeVoiceState?.status == VoiceSessionStatus.connected;
     return Container(
       color: colors.background,
       child: Column(
@@ -737,6 +750,21 @@ class _ServerShellScreenState extends ConsumerState<ServerShellScreen> {
               channelName: channel.name,
               channelType: channel.type,
               onBack: onBack,
+              theaterToggle: isInVoice
+                  ? TheaterModeToggle(
+                      value: false,
+                      onToggle: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => TheaterScreen(
+                              serverId: widget.serverId,
+                              channelId: activeVoiceChannel.id,
+                            ),
+                          ),
+                        );
+                      },
+                    )
+                  : null,
               onOpenMembers: () {
                 final canDock =
                     MediaQuery.sizeOf(context).width >=

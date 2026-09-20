@@ -13,6 +13,7 @@ import '../../../core/ui/settings_modal.dart';
 import '../go_live_modal.dart';
 import '../voice_fullscreen_window.dart';
 import '../voice_providers.dart';
+import 'theater_mode_toggle.dart';
 import 'theater_presence_stack.dart';
 import 'theater_chat_drawer.dart';
 import 'theater_control_bar.dart';
@@ -448,45 +449,7 @@ class _TheaterHeader extends ConsumerWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               // Toggle Modo Teatro (ON aqui; desligar = sair).
-              Tooltip(
-                message: 'Sair do Modo Teatro',
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(color: colors.accent),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      AppIcon(
-                        AppIcons.theater,
-                        size: 14,
-                        color: colors.textSecondary,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        'Modo Teatro',
-                        style: Theme.of(context).textTheme.labelMedium,
-                      ),
-                      const SizedBox(width: 2),
-                      SizedBox(
-                        height: 26,
-                        child: FittedBox(
-                          child: Switch.adaptive(
-                            value: true,
-                            activeThumbColor: colors.accent,
-                            onChanged: (_) => onExit(),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+              TheaterModeToggle(value: true, onToggle: onExit),
               const SizedBox(width: 10),
               TheaterPresenceStack(arg: arg),
               const SizedBox(width: 4),

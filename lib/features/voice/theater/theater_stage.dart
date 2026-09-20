@@ -647,6 +647,12 @@ class TheaterEmptyStage extends ConsumerWidget {
                         vertical: 12,
                       ),
                       shape: const StadiumBorder(),
+                    ).copyWith(
+                      mouseCursor: WidgetStateProperty.resolveWith(
+                        (states) => states.contains(WidgetState.disabled)
+                            ? SystemMouseCursors.basic
+                            : SystemMouseCursors.click,
+                      ),
                     ),
                   ),
                 ],

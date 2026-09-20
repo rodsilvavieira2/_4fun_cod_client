@@ -10,7 +10,6 @@ import '../../core/rtc/rtc_video_view.dart';
 import '../../core/telemetry/telemetry_service.dart';
 import '../../core/ui/ui.dart';
 import 'go_live_modal.dart';
-import 'theater/theater_screen.dart';
 import 'voice_fullscreen_window.dart';
 import 'voice_providers.dart';
 import 'voice_video_tile.dart';
@@ -274,60 +273,22 @@ class _ConnectedStageState extends ConsumerState<_ConnectedStage> {
           : SystemMouseCursors.none,
       onEnter: (_) => _reveal(),
       onHover: (_) => _reveal(),
-      child: Stack(
+      child: Column(
         children: [
-          Column(
-            children: [
-              if (state.isReconnecting) const _ReconnectingBanner(),
-              if (state.isAudioBlocked)
-                _AudioBlockedBanner(onTap: notifier.resumeAudio),
-              Expanded(
-                child: _ParticipantsPanel(
-                  state: state,
-                  notifier: notifier,
-                  arg: widget.arg,
-                  transmitQuality: _transmitQualityLabel(state),
-                  onToggleFullscreen: widget.onToggleFullscreen,
-                  overlayVisible: overlayVisible,
-                ),
-              ),
-            ],
-          ),
-          Positioned(
-            top: 8,
-            right: 12,
-            child: _TheaterEntryButton(arg: widget.arg),
+          if (state.isReconnecting) const _ReconnectingBanner(),
+          if (state.isAudioBlocked)
+            _AudioBlockedBanner(onTap: notifier.resumeAudio),
+          Expanded(
+            child: _ParticipantsPanel(
+              state: state,
+              notifier: notifier,
+              arg: widget.arg,
+              transmitQuality: _transmitQualityLabel(state),
+              onToggleFullscreen: widget.onToggleFullscreen,
+              overlayVisible: overlayVisible,
+            ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-/// Entrada flutuante do Modo Teatro (ADR 0003, decisão 8): fica no palco,
-/// abre o takeover sem reconectar (mesmo `voiceControllerProvider(arg)`).
-class _TheaterEntryButton extends StatelessWidget {
-  const _TheaterEntryButton({required this.arg});
-
-  final ({String serverId, String channelId}) arg;
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: 'Entrar no Modo Teatro',
-      child: FilledButton.tonalIcon(
-        onPressed: () {
-          Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => TheaterScreen(
-                serverId: arg.serverId,
-                channelId: arg.channelId,
-              ),
-            ),
-          );
-        },
-        icon: AppIcon(AppIcons.theater, size: 16),
-        label: const Text('Modo Teatro'),
       ),
     );
   }

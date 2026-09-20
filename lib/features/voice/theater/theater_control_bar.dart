@@ -139,11 +139,11 @@ class TheaterControlBar extends ConsumerWidget {
         width: 40,
         height: 40,
         decoration: BoxDecoration(
-          color: colors.textPrimary.withValues(alpha: 0.08),
+          color: colors.accent,
           shape: BoxShape.circle,
         ),
         alignment: Alignment.center,
-        child: AppIcon(AppIcons.more, color: colors.textPrimary),
+        child: AppIcon(AppIcons.more, color: colors.onAccent),
       ),
     );
   }
@@ -161,8 +161,10 @@ class TheaterControlBar extends ConsumerWidget {
       tooltip: tooltip,
       style: IconButton.styleFrom(
         minimumSize: const Size.square(40),
-        backgroundColor: active ? AppTokens.accentDanger : null,
-        foregroundColor: colors.textPrimary,
+        backgroundColor: active ? AppTokens.accentDanger : colors.accent,
+        foregroundColor: active ? Colors.white : colors.onAccent,
+        disabledBackgroundColor: colors.accent.withValues(alpha: 0.4),
+        disabledForegroundColor: colors.onAccent.withValues(alpha: 0.7),
       ),
       icon: AppIcon(icon),
     );

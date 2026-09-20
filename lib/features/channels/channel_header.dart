@@ -15,6 +15,7 @@ class ChannelHeader extends StatelessWidget {
     this.onOpenMembers,
     this.onOpenInvites,
     this.onOpenSettings,
+    this.theaterToggle,
   });
 
   final String channelName;
@@ -23,6 +24,10 @@ class ChannelHeader extends StatelessWidget {
   final VoidCallback? onOpenMembers;
   final VoidCallback? onOpenInvites;
   final VoidCallback? onOpenSettings;
+
+  /// Toggle "Modo Teatro" — não-nulo só quando o usuário está em voz/vídeo.
+  /// Renderizado à esquerda do botão de membros.
+  final Widget? theaterToggle;
 
   @override
   Widget build(BuildContext context) {
@@ -96,6 +101,10 @@ class ChannelHeader extends StatelessWidget {
                   ],
                 ),
               ),
+              if (theaterToggle != null) ...[
+                theaterToggle!,
+                const SizedBox(width: 8),
+              ],
               AppIconButton(
                 icon: AppIcons.userGroup,
                 tooltip: 'Membros',
