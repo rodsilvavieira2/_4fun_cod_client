@@ -89,6 +89,7 @@ class AppIcons {
   static const chevronLeft = HugeIcons.strokeRoundedChevronLeft;
   static const chevronRight = HugeIcons.strokeRoundedChevronRight;
   static const expand = HugeIcons.strokeRoundedMaximize01;
+  static const expandDiagonal = HugeIcons.strokeRoundedArrowExpandDiagonal01;
   static const shrink = HugeIcons.strokeRoundedShrink;
   static const fullscreen = HugeIcons.strokeRoundedFullscreen;
   static const fullscreenExit = HugeIcons.strokeRoundedMinimize;

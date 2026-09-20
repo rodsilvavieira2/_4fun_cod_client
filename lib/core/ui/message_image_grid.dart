@@ -211,8 +211,8 @@ class _ExpandHint extends StatelessWidget {
         border: Border.all(color: AppTokens.borderSubtle, width: 1),
       ),
       child: AppIcon(
-        AppIcons.expand,
-        size: 14,
+        AppIcons.expandDiagonal,
+        size: 16,
         color: AppTokens.textPrimary,
       ),
     );

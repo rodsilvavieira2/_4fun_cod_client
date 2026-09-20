@@ -812,8 +812,8 @@ class _MessageTileState extends State<_MessageTile> {
                             if (summaries.isNotEmpty) ...[
                               const SizedBox(height: 7),
                               Wrap(
-                                spacing: 6,
-                                runSpacing: 6,
+                                spacing: 4,
+                                runSpacing: 4,
                                 children: [
                                   for (final summary in summaries)
                                     _ReactionChip(
@@ -1066,114 +1066,179 @@ class _GifEmbed extends StatefulWidget {
 
 class _GifEmbedState extends State<_GifEmbed> {
   bool _hovered = false;
+  double? _aspect;
+  ImageStream? _stream;
+  ImageStreamListener? _listener;
+  String? _resolvedUrl;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // createLocalImageConfiguration usa MediaQuery — não pode rodar no
+    // initState (dependOnInherited antes do init completar).
+    if (_resolvedUrl != widget.url) {
+      _resolvedUrl = widget.url;
+      _resolveAspect();
+    }
+  }
+
+  @override
+  void didUpdateWidget(_GifEmbed oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.url != widget.url) {
+      _resolvedUrl = widget.url;
+      if (_aspect != null) setState(() => _aspect = null);
+      _resolveAspect();
+    }
+  }
+
+  @override
+  void dispose() {
+    _detach();
+    super.dispose();
+  }
+
+  void _detach() {
+    if (_stream != null && _listener != null) {
+      _stream!.removeListener(_listener!);
+    }
+    _stream = null;
+    _listener = null;
+  }
+
+  void _resolveAspect() {
+    _detach();
+    final provider = NetworkImage(widget.url);
+    final stream = provider.resolve(createLocalImageConfiguration(context));
+    final listener = ImageStreamListener(
+      (info, _) {
+        final w = info.image.width.toDouble();
+        final h = info.image.height.toDouble();
+        if (h <= 0) return;
+        if (!mounted) return;
+        setState(() => _aspect = (w / h).clamp(0.5, 2.5));
+      },
+      onError: (_, _) {},
+    );
+    _stream = stream;
+    _listener = listener;
+    stream.addListener(listener);
+  }
 
   @override
   Widget build(BuildContext context) {
+    // Mantém a proporção real do GIF (sem corte): a caixa abraça a imagem
+    // via AspectRatio, igual ao MessageImageGrid. Sem isso o overlay
+    // expansível esticava o Stack para o máximo (360x240) e sobrava a
+    // faixa escura de surface2 à direita/embaixo.
+    final ratio = (_aspect ?? 16 / 9).clamp(0.5, 2.5);
     return ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 360, maxHeight: 240),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: AppTokens.surface2,
-            border: Border.all(color: AppTokens.borderSubtle, width: 1),
-          ),
-          child: MouseRegion(
-            cursor: widget.onOpen == null
-                ? SystemMouseCursors.basic
-                : SystemMouseCursors.click,
-            onEnter: (_) => setState(() => _hovered = true),
-            onExit: (_) => setState(() => _hovered = false),
-            child: GestureDetector(
-              onTap: widget.onOpen,
-              child: Stack(
-                children: [
-                  Image.network(
-                    widget.url,
-                    fit: BoxFit.cover,
-                    gaplessPlayback: true,
-                    loadingBuilder: (context, child, progress) {
-                      if (progress == null) return child;
-                      return const SizedBox(
-                        width: 280,
-                        height: 168,
-                        child: Center(
-                          child: SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
+      constraints: const BoxConstraints(maxWidth: 360, maxHeight: 360),
+      child: AspectRatio(
+        aspectRatio: ratio,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: AppTokens.surface2,
+              border: Border.all(color: AppTokens.borderSubtle, width: 1),
+            ),
+            child: MouseRegion(
+              cursor: widget.onOpen == null
+                  ? SystemMouseCursors.basic
+                  : SystemMouseCursors.click,
+              onEnter: (_) => setState(() => _hovered = true),
+              onExit: (_) => setState(() => _hovered = false),
+              child: GestureDetector(
+                onTap: widget.onOpen,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Positioned.fill(
+                      child: Image.network(
+                        widget.url,
+                        fit: BoxFit.cover,
+                        gaplessPlayback: true,
+                        loadingBuilder: (context, child, progress) {
+                          if (progress == null) return child;
+                          return const Center(
+                            child: SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                              ),
+                            ),
+                          );
+                        },
+                        errorBuilder: (_, _, _) => const Center(
+                          child: AppIcon(
+                            AppIcons.imageMissing,
+                            color: AppTokens.textMuted,
                           ),
                         ),
-                      );
-                    },
-                    errorBuilder: (_, _, _) => SizedBox(
-                      width: 280,
-                      height: 168,
-                      child: Center(
-                        child: AppIcon(
-                          AppIcons.imageMissing,
-                          color: AppTokens.textMuted,
-                        ),
                       ),
                     ),
-                  ),
-                  // Badge GIF sempre visível (top-left) + hint expandir no
-                  // hover (bottom-right), espelho do Discord.
-                  Positioned(
-                    top: 8,
-                    left: 8,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 7,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.72),
-                        borderRadius: BorderRadius.circular(AppRadius.sm),
-                        border: Border.all(
-                          color: AppTokens.borderSubtle,
-                          width: 1,
+                    // Badge GIF sempre visível (top-left) + hint expandir no
+                    // hover (bottom-right), espelho do Discord.
+                    Positioned(
+                      top: 8,
+                      left: 8,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 7,
+                          vertical: 3,
                         ),
-                      ),
-                      child: const Text(
-                        'GIF',
-                        style: TextStyle(
-                          fontFamily: 'Geist',
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0.6,
-                          color: AppTokens.textPrimary,
-                        ),
-                      ),
-                    ),
-                  ),
-                  AnimatedOpacity(
-                    duration: const Duration(milliseconds: 120),
-                    opacity:
-                        _hovered && widget.onOpen != null ? 1 : 0,
-                    child: IgnorePointer(
-                      child: DecoratedBox(
                         decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.28),
+                          color: Colors.black.withValues(alpha: 0.72),
+                          borderRadius: BorderRadius.circular(AppRadius.sm),
+                          border: Border.all(
+                            color: AppTokens.borderSubtle,
+                            width: 1,
+                          ),
                         ),
-                        child: Align(
-                          alignment: Alignment.bottomRight,
-                          child: Padding(
-                            padding: const EdgeInsets.all(8),
-                            child: SizedBox(
-                              width: 28,
-                              height: 28,
-                              child: DecoratedBox(
-                                decoration: const BoxDecoration(
-                                  color: Color(0xB8000000),
-                                  borderRadius: BorderRadius.all(
-                                    Radius.circular(AppRadius.sm),
+                        child: const Text(
+                          'GIF',
+                          style: TextStyle(
+                            fontFamily: 'Geist',
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.6,
+                            color: AppTokens.textPrimary,
+                          ),
+                        ),
+                      ),
+                    ),
+                    Positioned.fill(
+                      child: AnimatedOpacity(
+                        duration: const Duration(milliseconds: 120),
+                        opacity:
+                            _hovered && widget.onOpen != null ? 1 : 0,
+                        child: IgnorePointer(
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.28),
+                            ),
+                            child: Align(
+                              alignment: Alignment.bottomRight,
+                              child: Padding(
+                                padding: const EdgeInsets.all(8),
+                                child: SizedBox(
+                                  width: 28,
+                                  height: 28,
+                                  child: DecoratedBox(
+                                    decoration: const BoxDecoration(
+                                      color: Color(0xB8000000),
+                                      borderRadius: BorderRadius.all(
+                                        Radius.circular(AppRadius.sm),
+                                      ),
+                                    ),
+                                    child: AppIcon(
+                                      AppIcons.expandDiagonal,
+                                      size: 16,
+                                      color: AppTokens.textPrimary,
+                                    ),
                                   ),
-                                ),
-                                child: AppIcon(
-                                  AppIcons.expand,
-                                  size: 14,
-                                  color: AppTokens.textPrimary,
                                 ),
                               ),
                             ),
@@ -1181,8 +1246,8 @@ class _GifEmbedState extends State<_GifEmbed> {
                         ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -1532,57 +1597,113 @@ class _ToolbarEmojiButtonState extends State<_ToolbarEmojiButton> {
   }
 }
 
-class _ReactionChip extends StatelessWidget {
+class _ReactionChip extends StatefulWidget {
   const _ReactionChip({required this.summary, required this.onPressed});
 
   final _ReactionSummary summary;
   final VoidCallback onPressed;
 
   @override
+  State<_ReactionChip> createState() => _ReactionChipState();
+}
+
+class _ReactionChipState extends State<_ReactionChip> {
+  bool _hovered = false;
+
+  @override
   Widget build(BuildContext context) {
+    final colors = context.appColors;
+    final summary = widget.summary;
     final active = summary.reactedByMe;
+    // Popup estilo Discord via Tooltip customizado (acima do chip):
+    // sem Overlay manual — o Tooltip dimensiona/posiciona sozinho e
+    // respeita o tema via appColors.
     return Tooltip(
-      message: summary.tooltip,
+      preferBelow: false,
+      verticalOffset: 8,
+      waitDuration: const Duration(milliseconds: 300),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: colors.surface3,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(color: colors.borderSubtle, width: 1),
+        boxShadow: AppShadows.popover,
+      ),
+      richMessage: TextSpan(
+        children: [
+          WidgetSpan(
+            alignment: PlaceholderAlignment.middle,
+            child: Text(
+              summary.emoji,
+              style: const TextStyle(fontSize: 20),
+            ),
+          ),
+          const TextSpan(text: '  '),
+          TextSpan(
+            text: 'Reagido por ',
+            style: TextStyle(
+              fontFamily: 'Geist',
+              fontSize: 11.5,
+              color: colors.textSecondary,
+            ),
+          ),
+          TextSpan(
+            text: summary.popupNames,
+            style: TextStyle(
+              fontFamily: 'Geist',
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+              color: colors.textPrimary,
+            ),
+          ),
+        ],
+      ),
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() => _hovered = false),
         child: GestureDetector(
-          onTap: onPressed,
+          onTap: widget.onPressed,
           behavior: HitTestBehavior.opaque,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 120),
-            height: 28,
-            padding: const EdgeInsets.symmetric(horizontal: 9),
-            decoration: BoxDecoration(
-              color: active ? const Color(0x1F0070F3) : const Color(0x14111111),
-              borderRadius: BorderRadius.circular(AppRadius.full),
-              border: Border.all(
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 120),
+              height: 26,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              decoration: BoxDecoration(
                 color: active
-                    ? const Color(0xAA0070F3)
-                    : AppTokens.borderHairline,
-                width: 1,
-              ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(summary.emoji, style: const TextStyle(fontSize: 15)),
-                const SizedBox(width: 5),
-                Text(
-                  '${summary.count}',
-                  style: TextStyle(
-                    fontFamily: 'Geist Mono',
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w700,
-                    color: active
-                        ? const Color(0xFF7AB7FF)
-                        : AppTokens.textSecondary,
-                  ),
+                    ? colors.accent.withValues(alpha: _hovered ? 0.22 : 0.16)
+                    : (_hovered ? colors.surface3 : colors.surface2),
+                borderRadius: BorderRadius.circular(AppRadius.sm),
+                border: Border.all(
+                  color: active
+                      ? colors.accent.withValues(alpha: _hovered ? 0.85 : 0.65)
+                      : (_hovered
+                            ? colors.borderSubtle
+                            : colors.borderHairline),
+                  width: 1,
                 ),
-              ],
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(summary.emoji, style: const TextStyle(fontSize: 14)),
+                  const SizedBox(width: 4),
+                  Text(
+                    '${summary.count}',
+                    style: TextStyle(
+                      fontFamily: 'Geist',
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: active
+                          ? colors.accent
+                          : colors.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
-      ),
     );
   }
 }
@@ -1593,12 +1714,24 @@ class _ReactionSummary {
     required this.count,
     required this.reactedByMe,
     required this.tooltip,
+    required this.reactors,
   });
 
   final String emoji;
   final int count;
   final bool reactedByMe;
   final String tooltip;
+
+  /// Nomes visíveis no popup de hover (até 3).
+  final List<String> reactors;
+
+  /// "O Completas" ou "A, B e mais 2" para o card de hover.
+  String get popupNames {
+    if (reactors.isEmpty) return emoji;
+    final visible = reactors.take(3).join(', ');
+    final extra = reactors.length > 3 ? ' e mais ${reactors.length - 3}' : '';
+    return '$visible$extra';
+  }
 
   static List<_ReactionSummary> from(
     List<MessageReaction> reactions,
@@ -1616,6 +1749,12 @@ class _ReactionSummary {
           reactedByMe:
               myUserId != null && entry.value.any((r) => r.userId == myUserId),
           tooltip: _reactionTooltip(entry.key, entry.value),
+          reactors: [
+            for (final reaction in entry.value)
+              reaction.user?.name ??
+                  reaction.user?.username ??
+                  reaction.userId,
+          ],
         ),
     ];
   }
