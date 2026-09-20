@@ -299,6 +299,25 @@ class FakeRtcService implements RtcService {
     double gain,
   ) async {}
 
+  // Gate de áudio da transmissão (opt-in Assistir): registra chamadas e
+  // espelha o allowlist do serviço real (default deny).
+  final List<({String identity, bool enabled})> screenShareAudioEnabledCalls =
+      [];
+  final Set<String> enabledScreenAudioIds = {};
+
+  @override
+  Future<void> setScreenShareAudioEnabled(
+    String identity,
+    bool enabled,
+  ) async {
+    screenShareAudioEnabledCalls.add((identity: identity, enabled: enabled));
+    if (enabled) {
+      enabledScreenAudioIds.add(identity);
+    } else {
+      enabledScreenAudioIds.remove(identity);
+    }
+  }
+
   void pushParticipants(List<RtcParticipant> list) =>
       participantsController.add(list);
 
@@ -1218,6 +1237,67 @@ void main() {
         2,
         reason: 'parar de assistir limpa o dedupe da fonte',
       );
+    });
+
+    test('toggleWatch screen gateia áudio, camera não toca em áudio', () async {
+      rtc.localId = 'user_u1';
+      final notifier = buildVoice();
+
+      notifier.toggleWatch('user_u2', VoiceSpotlightSource.screen);
+      await settle();
+      expect(rtc.screenShareAudioEnabledCalls, [
+        (identity: 'user_u2', enabled: true),
+      ]);
+      expect(rtc.enabledScreenAudioIds, {'user_u2'});
+
+      notifier.toggleWatch('user_u2', VoiceSpotlightSource.screen);
+      await settle();
+      expect(rtc.screenShareAudioEnabledCalls, [
+        (identity: 'user_u2', enabled: true),
+        (identity: 'user_u2', enabled: false),
+      ]);
+      expect(rtc.enabledScreenAudioIds, isEmpty);
+
+      // Câmera não tem áudio associado: opt-in de câmera nunca gateia.
+      notifier.toggleWatch('user_u2', VoiceSpotlightSource.camera);
+      await settle();
+      expect(rtc.screenShareAudioEnabledCalls.length, 2);
+      expect(state().watchedPublicationIds, {'user_u2:camera'});
+    });
+
+    test('toggleWatch local nunca gateia áudio', () async {
+      rtc.localId = 'user_u1';
+      final notifier = buildVoice();
+
+      notifier.toggleWatch('user_u1', VoiceSpotlightSource.screen);
+      notifier.toggleWatch('user_u1', VoiceSpotlightSource.camera);
+      await settle();
+
+      expect(rtc.screenShareAudioEnabledCalls, isEmpty);
+      expect(state().watchedPublicationIds, isEmpty);
+    });
+
+    test('snapshot purga share parado e desliga o áudio', () async {
+      rtc.localId = 'user_u1';
+      final notifier = buildVoice();
+
+      notifier.toggleWatch('user_u3', VoiceSpotlightSource.screen);
+      await settle();
+      expect(rtc.enabledScreenAudioIds, {'user_u3'});
+
+      // u3 parou o share (segue na sala, sem tela): purga desliga o áudio.
+      rtc.participantsController.add([
+        _participant('user_u1', 'Local'),
+        _participant('user_u3', 'U3'),
+      ]);
+      await settle();
+
+      expect(state().watchedPublicationIds, isEmpty);
+      expect(rtc.screenShareAudioEnabledCalls.last, (
+        identity: 'user_u3',
+        enabled: false,
+      ));
+      expect(rtc.enabledScreenAudioIds, isEmpty);
     });
 
     // ── Fase 7: qualidade de transmissão (publicação) ────────────────

@@ -497,6 +497,24 @@ abstract class RtcService {
     double gain,
   );
 
+  /// Liga/desliga o ÁUDIO DA TRANSMISSÃO (`screenShareAudio`) de um
+  /// participante remoto conforme o opt-in de "Assistir".
+  ///
+  /// Sem assistir (`enabled=false`, default para toda transmissão nova), a
+  /// track de `screenShareAudio` deve ficar parada (`stop()`) — o usuário
+  /// vê avatar+LIVE sem ouvir o som da transmissão. Com assistir
+  /// (`enabled=true`), a track toca (`start()` + ganho pendente).
+  ///
+  /// Escopo estrito: só faixas `screenShareAudio` remotas. A voz (microfone)
+  /// nunca é afetada — ela segue audível ao entrar no canal — e o
+  /// participante local é no-op. Sem sala ativa, a preferência fica pendente
+  /// e vale para tracks que chegarem depois. Implementação padrão no-op (o
+  /// LiveKit sobrescreve); fakes herdam sem quebrar.
+  Future<void> setScreenShareAudioEnabled(
+    String identity,
+    bool enabled,
+  ) async {}
+
   /// Seleciona a câmera usada pelo preview e pela publicação local.
   ///
   /// Com preview temporário, aplica a troca nele. Com a câmera publicada,

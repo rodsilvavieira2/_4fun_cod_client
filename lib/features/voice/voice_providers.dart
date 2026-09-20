@@ -761,12 +761,19 @@ class VoiceController
   /// tile: assistir/parar). Múltiplos simultâneos permitidos. Local é no-op
   /// (sempre visível). Desligar limpa o dedupe de qualidade da fonte para
   /// religar reaplicar (o tile desmontado = OFF por omissão).
+  ///
+  /// Transmissão (screen) também gateia o ÁUDIO (`screenShareAudio`): sem
+  /// assistir a track nasce/mantém parada; assistir libera (`start()` +
+  /// ganho pendente). Câmera não tem áudio associado — só o vídeo. A voz
+  /// (microfone) nunca passa por aqui.
   void toggleWatch(String participantId, VoiceSpotlightSource source) {
     if (isLocalParticipant(participantId)) return;
     final key = watchKey(participantId, source);
     final next = {...state.watchedPublicationIds};
+    final bool watching;
     if (next.contains(key)) {
       next.remove(key);
+      watching = false;
       if (source == VoiceSpotlightSource.screen) {
         _lastScreenQuality.remove(participantId);
       } else {
@@ -774,6 +781,14 @@ class VoiceController
       }
     } else {
       next.add(key);
+      watching = true;
+    }
+    if (source == VoiceSpotlightSource.screen) {
+      unawaited(
+        ref
+            .read(rtcServiceProvider)
+            .setScreenShareAudioEnabled(participantId, watching),
+      );
     }
     state = state.copyWith(watchedPublicationIds: next);
   }
@@ -1064,9 +1079,25 @@ class VoiceController
     };
     final watched = next.watchedPublicationIds;
     if (!liveKeys.containsAll(watched)) {
-      next = next.copyWith(
-        watchedPublicationIds: watched.intersection(liveKeys),
-      );
+      final kept = watched.intersection(liveKeys);
+      // Purga do opt-in (saiu da sala ou parou o share): o áudio da
+      // transmissão purgada volta a ficar parado. Só screen tem áudio —
+      // câmera purgada é só qualidade/dedupe.
+      final purged = watched.difference(kept);
+      for (final key in purged) {
+        if (key.endsWith(':${VoiceSpotlightSource.screen.name}')) {
+          final id = key.substring(
+            0,
+            key.length - VoiceSpotlightSource.screen.name.length - 1,
+          );
+          if (id.isNotEmpty) {
+            unawaited(
+              ref.read(rtcServiceProvider).setScreenShareAudioEnabled(id, false),
+            );
+          }
+        }
+      }
+      next = next.copyWith(watchedPublicationIds: kept);
     }
     state = next;
   }

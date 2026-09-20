@@ -232,6 +232,14 @@ class LiveKitRtcService implements RtcService {
   /// screenShareAudio — o slider do tile de tela não toca na voz).
   final Map<String, double> _screenShareAudioGains = {};
 
+  /// Transmissões com áudio LIBERADO pelo opt-in "Assistir" (identities).
+  /// Default deny: toda `screenShareAudio` remota nasce parada até
+  /// [setScreenShareAudioEnabled] liberar. Só afeta `screenShareAudio` — a
+  /// voz (microfone) nunca passa por aqui. Pendente sem sala (vale para
+  /// tracks futuras); limpo no teardown/cleanup (sessão nova = nada
+  /// assistido) e podado no disconnect do participante.
+  final Set<String> _watchedScreenAudioIds = {};
+
   /// Ganho pendente da fonte: voz usa [_participantGains], transmissão usa
   /// [_screenShareAudioGains].
   double _sourceGain(String identity, bool isScreenShareAudio) =>
@@ -1035,6 +1043,12 @@ class LiveKitRtcService implements RtcService {
           final track = publication.track;
           if (track is! RemoteAudioTrack) continue;
           if (enabled) {
+            // Undeafen respeita o opt-in de transmissão: screenShareAudio de
+            // quem não está sendo assistido continua parado.
+            if (publication.source == TrackSource.screenShareAudio &&
+                !_watchedScreenAudioIds.contains(participant.identity)) {
+              continue;
+            }
             await track.start();
           } else {
             await track.stop();
@@ -1046,6 +1060,104 @@ class LiveKitRtcService implements RtcService {
       _remoteAudioEnabled = previous;
       rethrow;
     }
+  }
+
+  /// Opt-in de áudio da transmissão (espelho do opt-in de vídeo do
+  /// `VoiceController.toggleWatch`): só publicações `screenShareAudio`
+  /// remotas. A voz (microfone) nunca passa por aqui; local/desconhecido é
+  /// no-op. Sem sala, a preferência fica pendente para publicações futuras.
+  ///
+  /// Atua na PUBLICAÇÃO (`enable()`/`disable()` → `UpdateTrackSettings` no
+  /// servidor), nunca na track (`stop()` nativo encerra a
+  /// `MediaStreamTrack` de vez e `start()` não revive; além disso o
+  /// `TrackSubscribedEvent` chega antes do `start()` do SDK, então `stop()`
+  /// ali é no-op garantido).
+  @override
+  Future<void> setScreenShareAudioEnabled(
+    String identity,
+    bool enabled,
+  ) async {
+    if (identity.isEmpty || _disposed) {
+      if (!_disposed) {
+        if (enabled) {
+          _watchedScreenAudioIds.add(identity);
+        } else {
+          _watchedScreenAudioIds.remove(identity);
+        }
+      }
+      return;
+    }
+    final room = _room;
+    // Local nunca entra no opt-in (sempre audível/visível para si).
+    if (room?.localParticipant?.identity == identity) return;
+    if (room == null) {
+      if (enabled) {
+        _watchedScreenAudioIds.add(identity);
+      } else {
+        _watchedScreenAudioIds.remove(identity);
+      }
+      return;
+    }
+    if (enabled) {
+      _watchedScreenAudioIds.add(identity);
+      final publication = _screenShareAudioPublicationOf(room, identity);
+      if (publication == null) {
+        _rtcDebug('rtc screen audio enable pendente (sem publicação): $identity');
+        return;
+      }
+      try {
+        // Deafen global soberano: a preferência da publicação é liberada,
+        // mas a track só volta a tocar no undeafen (que reaplica o volume).
+        await publication.enable();
+        if (!_remoteAudioEnabled) return;
+        final track = publication.track;
+        if (track == null) return;
+        final gain = effectiveVolumeGain(
+          _outputGain,
+          _sourceGain(identity, true),
+        );
+        await _applyTrackVolume(track, gain);
+      } catch (error, stackTrace) {
+        _rtcError(
+          'rtc screen audio enable falhou para $identity',
+          error,
+          stackTrace,
+        );
+      }
+      return;
+    }
+    _watchedScreenAudioIds.remove(identity);
+    final publication = _screenShareAudioPublicationOf(room, identity);
+    if (publication == null) {
+      _rtcDebug('rtc screen audio disable sem publicação: $identity');
+      return;
+    }
+    try {
+      await publication.disable();
+    } catch (error, stackTrace) {
+      _rtcError(
+        'rtc screen audio disable falhou para $identity',
+        error,
+        stackTrace,
+      );
+    }
+  }
+
+  /// Publicação remota de `screenShareAudio` de [identity], ou null sem
+  /// participante ou sem publicação. Funciona mesmo com `track == null`
+  /// (antes do subscribe terminar) — `disable()`/`enable()` operam por `sid`.
+  RemoteTrackPublication<RemoteAudioTrack>? _screenShareAudioPublicationOf(
+    Room room,
+    String identity,
+  ) {
+    final participant = room.remoteParticipants[identity];
+    if (participant == null) return null;
+    for (final publication in participant.audioTrackPublications) {
+      if (publication.source == TrackSource.screenShareAudio) {
+        return publication;
+      }
+    }
+    return null;
   }
 
   /// Normaliza ganho público para `0.0..2.0`.
@@ -1701,6 +1813,9 @@ class LiveKitRtcService implements RtcService {
       }),
       room.events.on<ParticipantDisconnectedEvent>((e) {
         final id = e.participant.identity;
+        // Opt-in não sobrevive à saída: evita liberar áudio stale se a
+        // mesma identity voltar a compartilhar na próxima sala.
+        _watchedScreenAudioIds.remove(id);
         if (_participantsById.remove(id) != null) {
           _emitEvent(ParticipantLeftEvent(participantId: id));
           _emitSnapshot();
@@ -1725,6 +1840,24 @@ class LiveKitRtcService implements RtcService {
       // re-deriva o estado de mic do participante afetado e emite
       // MicEnabledChangedEvent se mudou.
       room.events.on<TrackPublishedEvent>((e) {
+        // Opt-in de transmissão no nível da PUBLICAÇÃO (antes do subscribe
+        // existir): `screenShareAudio` não assistido já nasce desabilitado
+        // no servidor — sem corrida com o `start()` do SDK e sem destruir
+        // a track. Local nunca entra no opt-in. A voz (microfone) segue
+        // tocando normalmente ao entrar no canal.
+        final publication = e.publication;
+        if (publication.source == TrackSource.screenShareAudio &&
+            e.participant.identity != room.localParticipant?.identity &&
+            !_watchedScreenAudioIds.contains(e.participant.identity)) {
+          unawaited(publication.disable().catchError((Object err, StackTrace st) {
+            _rtcError(
+              'rtc screen audio disable no publish falhou '
+              'para ${e.participant.identity}',
+              err,
+              st,
+            );
+          }));
+        }
         _syncParticipant(e.participant);
         _emitSnapshot();
       }),
@@ -1734,9 +1867,31 @@ class LiveKitRtcService implements RtcService {
         if (!_remoteAudioEnabled && e.track is RemoteAudioTrack) {
           unawaited((e.track as RemoteAudioTrack).stop());
         } else if (e.track is RemoteAudioTrack) {
-          // Nova faixa remota (voz ou áudio de screen share): aplica o ganho
-          // efetivo pendente (saída × fonte) — cada fonte só toca nas suas.
-          final track = e.track as RemoteAudioTrack;
+          // Opt-in de transmissão: operado na PUBLICAÇÃO (`disable()`), que
+          // é idempotente em qualquer momento do ciclo de vida — nunca
+          // `stop()` na track (no nativo encerra a MediaStreamTrack de vez
+          // e o `start()` posterior não revive; além disso este evento chega
+          // antes do `start()` do SDK, quando `stop()` é no-op garantido).
+          final isScreenShareAudio =
+              e.publication.source == TrackSource.screenShareAudio;
+          if (isScreenShareAudio &&
+              !_watchedScreenAudioIds.contains(e.participant.identity)) {
+            unawaited(e.publication.disable().catchError((
+              Object err,
+              StackTrace st,
+            ) {
+              _rtcError(
+                'rtc screen audio disable no subscribe falhou '
+                'para ${e.participant.identity}',
+                err,
+                st,
+              );
+            }));
+          } else {
+            // Nova faixa remota (voz ou áudio de screen share assistido):
+            // aplica o ganho efetivo pendente (saída × fonte) — cada fonte
+            // só toca nas suas.
+            final track = e.track as RemoteAudioTrack;
           final gain = effectiveVolumeGain(
             _outputGain,
             _sourceGain(
@@ -1751,6 +1906,7 @@ class LiveKitRtcService implements RtcService {
               );
             }),
           );
+          }
         }
         _syncParticipant(e.participant);
         _emitSnapshot();
@@ -2199,6 +2355,10 @@ class LiveKitRtcService implements RtcService {
     // da sala antiga (review codex — fix por época, não flag global).
     _systemAudioPublishEpoch++;
     _pendingSystemAudioPublish = null;
+    // Sala nova = opt-in recomeça do zero (espelho do controller, que reseta
+    // `watchedPublicationIds` no leave/reconnect): sem isso, uma identity
+    // liberada na sala antiga teria o áudio auto-liberado na sala nova.
+    _watchedScreenAudioIds.clear();
     for (final cancel in _roomListeners) {
       cancel();
     }
