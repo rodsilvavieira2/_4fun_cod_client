@@ -15,9 +15,7 @@ enum TheaterMoreAction {
   layoutAuto,
   layoutGrid,
   layoutFocus,
-  toggleParticipants,
   toggleOverlays,
-  viewParticipants,
   copyLink,
 }
 
@@ -43,21 +41,11 @@ List<PopupMenuEntry<TheaterMoreAction>> theaterMoreMenuItems(
   ),
   const AppMenuDivider(),
   AppMenuCheckedItem<TheaterMoreAction>.labeled(
-    value: TheaterMoreAction.toggleParticipants,
-    checked: ui.showParticipants,
-    label: 'Mostrar participantes',
-  ),
-  AppMenuCheckedItem<TheaterMoreAction>.labeled(
     value: TheaterMoreAction.toggleOverlays,
     checked: ui.hideOverlays,
     label: 'Ocultar overlays',
   ),
   const AppMenuDivider(),
-  AppMenuItem<TheaterMoreAction>.labeled(
-    value: TheaterMoreAction.viewParticipants,
-    label: 'Ver participantes',
-    icon: AppIcons.users,
-  ),
   AppMenuItem<TheaterMoreAction>.labeled(
     value: TheaterMoreAction.copyLink,
     label: 'Copiar link da sala',
@@ -80,12 +68,8 @@ void handleTheaterMoreAction(
       uiNotifier.setLayout(TheaterLayoutMode.grid);
     case TheaterMoreAction.layoutFocus:
       uiNotifier.setLayout(TheaterLayoutMode.focus);
-    case TheaterMoreAction.toggleParticipants:
-      uiNotifier.toggleParticipants();
     case TheaterMoreAction.toggleOverlays:
       uiNotifier.toggleOverlays();
-    case TheaterMoreAction.viewParticipants:
-      uiNotifier.toggleParticipants();
     case TheaterMoreAction.copyLink:
       showInviteDialog(context, serverId: arg.serverId);
   }

@@ -16,14 +16,13 @@ enum TheaterLayoutMode { auto, grid, focus }
 /// - `pinnedStreamIds`: chaves `<participantId>:<camera|screen>` na ordem de
 ///   pin (ordem visual). Conjunto vazio = `auto`. Isolado do spotlight do
 ///   default (modos nunca interferem entre si).
-/// - `showParticipants`/`hideOverlays`/`chatOpen`: toggles do menu `⋯` e
+/// - `hideOverlays`/`chatOpen`: toggles do menu `⋯` e
 ///   da control bar (`💬`).
 class TheaterUiState {
   const TheaterUiState({
     this.viewMode = TheaterViewMode.defaultMode,
     this.layout = TheaterLayoutMode.auto,
     this.pinnedStreamIds = const [],
-    this.showParticipants = true,
     this.hideOverlays = false,
     this.chatOpen = false,
     this.controlsVisible = true,
@@ -32,7 +31,6 @@ class TheaterUiState {
   final TheaterViewMode viewMode;
   final TheaterLayoutMode layout;
   final List<String> pinnedStreamIds;
-  final bool showParticipants;
   final bool hideOverlays;
   final bool chatOpen;
   final bool controlsVisible;
@@ -50,7 +48,6 @@ class TheaterUiState {
     TheaterViewMode? viewMode,
     TheaterLayoutMode? layout,
     List<String>? pinnedStreamIds,
-    bool? showParticipants,
     bool? hideOverlays,
     bool? chatOpen,
     bool? controlsVisible,
@@ -59,7 +56,6 @@ class TheaterUiState {
       viewMode: viewMode ?? this.viewMode,
       layout: layout ?? this.layout,
       pinnedStreamIds: pinnedStreamIds ?? this.pinnedStreamIds,
-      showParticipants: showParticipants ?? this.showParticipants,
       hideOverlays: hideOverlays ?? this.hideOverlays,
       chatOpen: chatOpen ?? this.chatOpen,
       controlsVisible: controlsVisible ?? this.controlsVisible,
@@ -129,9 +125,6 @@ class TheaterUiController
   }
 
   void toggleChat() => state = state.copyWith(chatOpen: !state.chatOpen);
-
-  void toggleParticipants() =>
-      state = state.copyWith(showParticipants: !state.showParticipants);
 
   void toggleOverlays() =>
       state = state.copyWith(hideOverlays: !state.hideOverlays);

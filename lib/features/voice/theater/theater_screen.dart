@@ -17,7 +17,6 @@ import 'theater_presence_stack.dart';
 import 'theater_chat_drawer.dart';
 import 'theater_control_bar.dart';
 import 'theater_stage.dart';
-import 'theater_strip.dart';
 import 'theater_ui_provider.dart';
 
 /// Largura em que o chat vira coluna real (terceira coluna). Abaixo disso
@@ -251,7 +250,6 @@ class _TheaterScreenState extends ConsumerState<TheaterScreen> {
                                             onShareScreen: _toggleScreenShare,
                                           ),
                                   ),
-                                  TheaterStrip(arg: arg),
                                   // Controles flutuantes compactos, próximos
                                   // da composição (sem textos laterais). No
                                   // fullscreen imersivo somem (auto-hide).

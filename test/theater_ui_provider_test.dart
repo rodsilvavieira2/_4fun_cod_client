@@ -15,12 +15,11 @@ void main() {
     TheaterUiController notifier() =>
         container.read(theaterUiControllerProvider(arg).notifier);
 
-    test('entrada sempre em default/auto/vazio com participantes visíveis', () {
+    test('entrada sempre em default/auto/vazio', () {
       final state = read();
       expect(state.viewMode, TheaterViewMode.defaultMode);
       expect(state.layout, TheaterLayoutMode.auto);
       expect(state.pinnedStreamIds, isEmpty);
-      expect(state.showParticipants, isTrue);
       expect(state.hideOverlays, isFalse);
       expect(state.chatOpen, isFalse);
       expect(state.effectiveLayout, TheaterLayoutMode.auto);
@@ -82,14 +81,12 @@ void main() {
       expect(read().pinnedStreamIds, ['u2:camera']);
     });
 
-    test('toggles de chat/participantes/overlays', () {
+    test('toggles de chat/overlays', () {
       notifier()
         ..toggleChat()
-        ..toggleParticipants()
         ..toggleOverlays();
       final state = read();
       expect(state.chatOpen, isTrue);
-      expect(state.showParticipants, isFalse);
       expect(state.hideOverlays, isTrue);
     });
   });

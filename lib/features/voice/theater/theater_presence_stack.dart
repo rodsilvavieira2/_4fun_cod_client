@@ -10,11 +10,14 @@ import '../voice_providers.dart';
 /// Largura visível da pilha: até 4 avatares. Acima disso, scroll lateral.
 const int kTheaterPresenceMaxVisible = 4;
 
-/// Passo da sobreposição (avatar de 22px com overlap de 4px).
-const double _kPresenceStep = 18.0;
+/// Passo da sobreposição (avatar de ~26.4px com overlap de ~4.8px, +20%).
+const double _kPresenceStep = 21.6;
 
-/// Largura da pilha para [count] avatares (22px do primeiro + passo).
-double _presenceWidth(int count) => 24.0 + (count - 1) * _kPresenceStep;
+/// Largura da pilha para [count] avatares (28.8px do primeiro + passo).
+double _presenceWidth(int count) => 28.8 + (count - 1) * _kPresenceStep;
+
+/// Diâmetro do avatar da pilha (+20% sobre os 22px originais).
+const double _kPresenceAvatarRadius = 13.2;
 
 /// Identity do LiveKit (`user_<userId>`) → userId para buscar o membro e a
 /// foto de perfil. Retorna nulo quando a identity não segue o prefixo (nunca
@@ -55,12 +58,12 @@ class TheaterPresenceStack extends ConsumerWidget {
     final visibleCount = math.min(total, kTheaterPresenceMaxVisible);
     return SizedBox(
       width: _presenceWidth(visibleCount),
-      height: 24,
+      height: 28.8,
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         child: SizedBox(
           width: _presenceWidth(total),
-          height: 24,
+          height: 28.8,
           child: Stack(
             children: [
               for (var i = 0; i < voice.participants.length; i++)
@@ -78,6 +81,7 @@ class TheaterPresenceStack extends ConsumerWidget {
                         child: ParticipantAvatar(
                           displayName: participant.name,
                           avatarUrl: avatarUrl,
+                          radius: _kPresenceAvatarRadius,
                           speaking: participant.isSpeaking,
                           accent: voiceAvatarAccent(
                             '${userId ?? participant.id}|${participant.name}',
