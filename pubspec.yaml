@@ -57,6 +57,7 @@ dependencies:
   windows_single_instance: ^1.2.0
   unix_single_instance: ^0.0.4
   flutter_local_notifications: ^22.3.0
+  audioplayers: ^6.8.1
   desktop_updater: ^3.1.6
   path_provider: ^2.1.6
   package_info_plus: ^10.2.1
@@ -112,6 +113,10 @@ flutter:
   assets:
     - assets/certs/ca.crt
     - assets/branding/app_logo.png
+    - assets/sounds/voice_join.wav
+    - assets/sounds/voice_leave.wav
+    - assets/sounds/stream_start.wav
+    - assets/sounds/stream_stop.wav
     # Ilustração undraw do empty state do Modo Teatro (primário recolorido
     # com o accent do tema em runtime; ver theater_empty_illustration.dart).
     - assets/svgs/undraw_remote-worker.svg

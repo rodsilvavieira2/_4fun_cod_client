@@ -7,6 +7,9 @@ import '../../core/native/native_media_backend.dart';
 import '../../core/rtc/media_devices_provider.dart';
 import '../../core/rtc/rtc_providers.dart';
 import '../../core/rtc/rtc_service.dart';
+import '../../core/sound/voice_sound_preferences.dart';
+import '../../core/sound/voice_sound_provider.dart';
+import '../../core/sound/voice_sound_service.dart';
 import '../../shared/models/voice.dart';
 import '../servers/servers_providers.dart';
 import 'voice_audio_processing_provider.dart';
@@ -448,6 +451,7 @@ class VoiceController
     // Cancela um join em voo: sem isso, o connect tardio criaria uma sala
     // órfã depois de o usuário já ter saído.
     ++_joinGeneration;
+    final wasConnected = state.status == VoiceSessionStatus.connected;
     ref
         .read(appLoggerProvider)
         .d(
@@ -457,6 +461,10 @@ class VoiceController
         );
     await ref.read(rtcServiceProvider).disconnect();
     await ref.read(voiceControlsProvider.notifier).resetPushToTalkPress();
+    if (wasConnected) {
+      // Som de saída local: fire-and-forget, nunca bloqueia o leave.
+      unawaited(_playSound(VoiceSound.leave));
+    }
     if (_disposed) return;
     state = state.copyWith(
       screenShareQuality: RtcScreenShareQuality.auto,
@@ -610,6 +618,7 @@ class VoiceController
         screenShareEffectiveQuality: null,
         errorMessage: 'Compartilhamento iniciado sem áudio de sistema.',
       );
+      unawaited(_playSound(VoiceSound.streamStart));
       return;
     } catch (_) {
       // Falha de captura (TrackCreateException/DesktopCapturerSource):
@@ -648,6 +657,7 @@ class VoiceController
       screenShareEffectiveQuality: null,
       errorMessage: warnings.isEmpty ? null : warnings.join(' '),
     );
+    unawaited(_playSound(VoiceSound.streamStart));
   }
 
   /// Best-effort (regra 4 da SPEC): detecta quando o nativo Windows caiu no
@@ -695,6 +705,7 @@ class VoiceController
       screenShareEffectiveQuality: null,
       errorMessage: null,
     );
+    unawaited(_playSound(VoiceSound.streamStop));
   }
 
   /// Alterna o destaque (spotlight) de um participante: toque repetido no
@@ -1012,6 +1023,9 @@ class VoiceController
       isMicrophoneEnabled: controls.isMicrophoneEnabled,
       isDeafened: controls.isDeafened,
     );
+    // Som de entrada local (primeiro snapshot de participants é baseline e
+    // não toca sons remotos — ver `_applyParticipants`).
+    unawaited(_playSound(VoiceSound.join));
     log.d(
       'voice connect concluído '
       '(server=${arg.serverId}, channel=${arg.channelId}, '
@@ -1024,10 +1038,34 @@ class VoiceController
   /// tokenGenerator nativo — o controller o usa em retries manuais).
   Future<String> _tokenGenerator() => _freshJoinInfo().then((i) => i.token);
 
+  /// Toca um som de UI estilo Discord (fire-and-forget).
+  ///
+  /// Lê o master `voice.sounds_enabled` + `isDeafened` na hora: ensurdecido
+  /// = mudo total. Falha de prefs/player nunca derruba a sessão de voz.
+  Future<void> _playSound(VoiceSound sound, {bool remote = false}) async {
+    try {
+      final enabled = ref.read(voiceSoundPreferencesProvider);
+      final deafened = ref.read(voiceControlsProvider).isDeafened;
+      await ref
+          .read(voiceSoundServiceProvider)
+          .play(sound, remote: remote, enabled: enabled, deafened: deafened);
+    } catch (_) {
+      // Som de UI é best-effort.
+    }
+  }
+
   void _applyParticipants(List<RtcParticipant> list) {
     if (_disposed) return;
     final localId = ref.read(rtcServiceProvider).localParticipantId;
     final sorted = _sort(list, localId);
+    // Baseline para sons remotos: ids/shares ANTES deste snapshot.
+    final wasConnected = state.status == VoiceSessionStatus.connected;
+    final previous = state.participants;
+    final previousIds = {for (final p in previous) p.id};
+    final previousShares = {
+      for (final p in previous)
+        if (p.id != localId) p.id: p.isScreenSharing,
+    };
 
     // O grid é o estado padrão de uma chamada Discord-like. Começar um
     // compartilhamento não pode promover ninguém automaticamente e esconder
@@ -1100,6 +1138,42 @@ class VoiceController
       next = next.copyWith(watchedPublicationIds: kept);
     }
     state = next;
+    // Sons remotos estilo Discord: só com sessão conectada e baseline
+    // existente (o 1º snapshot pós-join é baseline — quem já estava na sala
+    // não toca som). Local excluído (já coberto por join/leave/start/stop).
+    // Quem ENTRA já compartilhando conta como join, não como stream_start.
+    if (wasConnected && previous.isNotEmpty) {
+      final nextIds = {for (final p in sorted) p.id};
+      final joinedRemote = nextIds
+          .difference(previousIds)
+          .where((id) => id != localId);
+      final leftRemote = previousIds
+          .difference(nextIds)
+          .where((id) => id != localId);
+      if (joinedRemote.isNotEmpty) {
+        unawaited(_playSound(VoiceSound.join, remote: true));
+      } else if (leftRemote.isNotEmpty) {
+        unawaited(_playSound(VoiceSound.leave, remote: true));
+      }
+      final nextShares = {
+        for (final p in sorted)
+          if (p.id != localId) p.id: p.isScreenSharing,
+      };
+      var remoteStreamStart = false;
+      var remoteStreamStop = false;
+      for (final id in nextShares.keys) {
+        if (!previousIds.contains(id)) continue;
+        final was = previousShares[id] ?? false;
+        final isNow = nextShares[id] ?? false;
+        if (!was && isNow) remoteStreamStart = true;
+        if (was && !isNow) remoteStreamStop = true;
+      }
+      if (remoteStreamStart) {
+        unawaited(_playSound(VoiceSound.streamStart, remote: true));
+      } else if (remoteStreamStop) {
+        unawaited(_playSound(VoiceSound.streamStop, remote: true));
+      }
+    }
   }
 
   void _applyEvent(RtcEvent event) {
@@ -1109,12 +1183,16 @@ class VoiceController
         // Sala caiu sozinha (servidor/rede): o serviço já limpou o estado;
         // volta para idle para permitir nova entrada. Câmera/share locais
         // pararam junto e o destaque não faz mais sentido.
+        final wasConnected = state.status == VoiceSessionStatus.connected;
         _lastQuality.clear();
         _lastScreenQuality.clear();
         _lastSharers.clear();
         unawaited(
           ref.read(voiceControlsProvider.notifier).resetPushToTalkPress(),
         );
+        if (wasConnected) {
+          unawaited(_playSound(VoiceSound.leave));
+        }
         state = state.copyWith(
           status: VoiceSessionStatus.idle,
           participants: const [],
@@ -1182,6 +1260,16 @@ class VoiceController
             screenShareEffectiveQuality: isScreenSharing
                 ? state.screenShareEffectiveQuality
                 : null,
+          );
+          // Só toca aqui quando a mudança veio de FORA do botão (ex.: fim
+          // pelo SO): o caminho do botão já tocou em start/stopScreenShare
+          // e o evento seguinte é no-op (sem duplo som).
+          unawaited(
+            _playSound(
+              isScreenSharing
+                  ? VoiceSound.streamStart
+                  : VoiceSound.streamStop,
+            ),
           );
         }
       case ScreenShareEffectiveQualityChangedEvent(:final effective):

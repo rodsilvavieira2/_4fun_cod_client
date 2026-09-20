@@ -51,13 +51,13 @@ void main() {
     await tester.pumpAndSettle();
 
     var switches = tester.widgetList<Switch>(find.byType(Switch)).toList();
-    expect(switches.map((item) => item.value), [true, true, false]);
+    expect(switches.map((item) => item.value), [true, true, false, true]);
 
     await tester.tap(find.byType(Switch).first);
     await tester.pumpAndSettle();
 
     switches = tester.widgetList<Switch>(find.byType(Switch)).toList();
-    expect(switches.map((item) => item.value), [false, true, false]);
+    expect(switches.map((item) => item.value), [false, true, false, true]);
 
     final stored = await SharedPreferences.getInstance();
     expect(stored.getBool(notificationChannelMessagesKey), isFalse);

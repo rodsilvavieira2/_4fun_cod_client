@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../notifications/notification_preferences.dart';
+import '../../sound/voice_sound_preferences.dart';
 import '../app_icon.dart';
 import '../settings_section_layout.dart';
 
@@ -14,6 +15,10 @@ class NotificationsSection extends ConsumerWidget {
     final value = preferences.valueOrNull ?? NotificationPreferences.defaults;
     final controller = ref.read(notificationPreferencesProvider.notifier);
     final enabled = !preferences.isLoading;
+    final voiceSoundsEnabled = ref.watch(voiceSoundPreferencesProvider);
+    final voiceSoundsController = ref.read(
+      voiceSoundPreferencesProvider.notifier,
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -50,6 +55,15 @@ class NotificationsSection extends ConsumerWidget {
                   trailing: SettingsSwitch(
                     value: value.sounds,
                     onChanged: enabled ? controller.setSounds : null,
+                  ),
+                ),
+                SettingsRow(
+                  icon: AppIcons.voice,
+                  title: 'Sons de voz e transmissão',
+                  trailing: SettingsSwitch(
+                    value: voiceSoundsEnabled,
+                    onChanged: (next) =>
+                        voiceSoundsController.setEnabled(next),
                   ),
                 ),
               ],

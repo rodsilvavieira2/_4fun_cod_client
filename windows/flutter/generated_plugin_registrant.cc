@@ -6,6 +6,7 @@
 
 #include "generated_plugin_registrant.h"
 
+#include <audioplayers_windows/audioplayers_windows_plugin.h>
 #include <connectivity_plus/connectivity_plus_windows_plugin.h>
 #include <desktop_updater/desktop_updater_plugin_c_api.h>
 #include <file_selector_windows/file_selector_windows.h>
@@ -19,6 +20,8 @@
 #include <windows_single_instance/windows_single_instance_plugin.h>
 
 void RegisterPlugins(flutter::PluginRegistry* registry) {
+  AudioplayersWindowsPluginRegisterWithRegistrar(
+      registry->GetRegistrarForPlugin("AudioplayersWindowsPlugin"));
   ConnectivityPlusWindowsPluginRegisterWithRegistrar(
       registry->GetRegistrarForPlugin("ConnectivityPlusWindowsPlugin"));
   DesktopUpdaterPluginCApiRegisterWithRegistrar(
