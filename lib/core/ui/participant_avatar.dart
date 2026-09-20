@@ -74,7 +74,7 @@ class ParticipantAvatar extends StatelessWidget {
           color: speaking
               ? effectiveAccent.withValues(alpha: 0.9)
               : colors.surface1,
-          width: speaking ? 1.5 : 2,
+          width: speaking ? 3.5 : 2,
         ),
         boxShadow: [
           if (speaking)

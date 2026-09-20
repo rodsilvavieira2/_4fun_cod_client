@@ -508,16 +508,16 @@ class _VoiceOccupantAvatar extends StatelessWidget {
             color: image == null ? null : AppTokens.surface3,
             border: Border.all(
               color: speaking
-                  ? accent.withValues(alpha: 0.72)
+                  ? accent.withValues(alpha: 0.95)
                   : Colors.white.withValues(alpha: 0.05),
-              width: speaking ? 1.3 : 1,
+              width: speaking ? 3.5 : 1,
             ),
             boxShadow: [
               if (speaking)
                 BoxShadow(
-                  color: accent.withValues(alpha: 0.20),
-                  blurRadius: 9,
-                  spreadRadius: -4,
+                  color: accent.withValues(alpha: 0.28),
+                  blurRadius: 10,
+                  spreadRadius: -3,
                 ),
             ],
           ),
