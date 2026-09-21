@@ -7,6 +7,7 @@ import 'app_icon.dart';
 import 'chat_image_actions.dart';
 import 'ds_tokens.dart';
 import 'media_lightbox.dart';
+import 'spoiler_overlay.dart';
 
 /// Tamanho máximo de cada anexo (mesmo teto do avatar/ícone do servidor).
 const kMaxChatAttachments = 10;
@@ -19,7 +20,9 @@ const kMaxChatAttachments = 10;
 /// - Anexo ainda PENDING/PROCESSING (url nula): spinner sobre o placeholder.
 /// - FAILED: card de erro inline com botão Tentar de novo ([onRetry] recebe
 ///   o `uploadId` — o server re-enfileira o staging, sem bytes no client).
-/// - Toque numa imagem READY abre o lightbox ([onOpen], `url`).
+/// - Spoiler (`isSpoiler`): blur + badge até o 1º clique revelar (sessão
+///   apenas); o 2º clique abre o lightbox ([onOpen], `url`).
+/// - Toque numa imagem READY não-spoiler abre o lightbox direto.
 class MessageImageGrid extends StatelessWidget {
   const MessageImageGrid({
     super.key,
@@ -114,6 +117,19 @@ class _Cell extends ConsumerStatefulWidget {
 class _CellState extends ConsumerState<_Cell> {
   bool _hovered = false;
 
+  /// Reveal por sessão: volta a borrar ao trocar de mensagem/canal
+  /// (novo `_Cell` / novo `attachment.id`).
+  bool _revealed = false;
+
+  @override
+  void didUpdateWidget(covariant _Cell oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.attachment.id != widget.attachment.id ||
+        oldWidget.attachment.isSpoiler != widget.attachment.isSpoiler) {
+      _revealed = false;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final attachment = widget.attachment;
@@ -122,25 +138,33 @@ class _CellState extends ConsumerState<_Cell> {
     final ref = this.ref;
     final failed = attachment.status == 'FAILED';
     final ready = attachment.url != null && !failed;
+    final spoilered = attachment.isSpoiler && !_revealed;
     return ClipRRect(
       borderRadius: BorderRadius.circular(AppRadius.md),
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: AppTokens.surface2,
-          border: Border.all(color: AppTokens.borderSubtle, width: 1),
+          border: Border.all(
+            color: attachment.isSpoiler
+                ? AppTokens.accentAmber.withValues(alpha: 0.45)
+                : AppTokens.borderSubtle,
+            width: 1,
+          ),
         ),
         child: Stack(
           fit: StackFit.expand,
           children: [
             if (ready)
               MouseRegion(
-                cursor: onOpen == null
+                cursor: onOpen == null && !spoilered
                     ? SystemMouseCursors.basic
                     : SystemMouseCursors.click,
                 onEnter: (_) => setState(() => _hovered = true),
                 onExit: (_) => setState(() => _hovered = false),
                 child: GestureDetector(
-                  onTap: onOpen == null ? null : () => onOpen(attachment.url!),
+                  onTap: spoilered
+                      ? () => setState(() => _revealed = true)
+                      : (onOpen == null ? null : () => onOpen(attachment.url!)),
                   onSecondaryTapUp: (details) => showChatImageMenu(
                     context: context,
                     ref: ref,
@@ -151,31 +175,48 @@ class _CellState extends ConsumerState<_Cell> {
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
-                      AppFileImage(
-                        path: attachment.url,
-                        fit: BoxFit.cover,
-                        fallback: const _Spinner(),
-                      ),
-                      // Overlay de hover estilo Discord: escurece + ícone
-                      // expandir no canto para sinalizar que abre o viewer.
-                      AnimatedOpacity(
-                        duration: const Duration(milliseconds: 120),
-                        opacity: _hovered && onOpen != null ? 1 : 0,
-                        child: IgnorePointer(
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: 0.28),
-                            ),
-                            child: const Align(
-                              alignment: Alignment.bottomRight,
-                              child: Padding(
-                                padding: EdgeInsets.all(8),
-                                child: _ExpandHint(),
+                      if (spoilered)
+                        SpoilerCover(
+                          onReveal: () => setState(() => _revealed = true),
+                          child: AppFileImage(
+                            path: attachment.url,
+                            fit: BoxFit.cover,
+                            fallback: const _Spinner(),
+                          ),
+                        )
+                      else ...[
+                        AppFileImage(
+                          path: attachment.url,
+                          fit: BoxFit.cover,
+                          fallback: const _Spinner(),
+                        ),
+                        // Overlay de hover estilo Discord: escurece + ícone
+                        // expandir no canto para sinalizar que abre o viewer.
+                        AnimatedOpacity(
+                          duration: const Duration(milliseconds: 120),
+                          opacity: _hovered && onOpen != null ? 1 : 0,
+                          child: IgnorePointer(
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: Colors.black.withValues(alpha: 0.28),
+                              ),
+                              child: const Align(
+                                alignment: Alignment.bottomRight,
+                                child: Padding(
+                                  padding: EdgeInsets.all(8),
+                                  child: _ExpandHint(),
+                                ),
                               ),
                             ),
                           ),
                         ),
-                      ),
+                        if (attachment.isSpoiler)
+                          const Positioned(
+                            top: 8,
+                            left: 8,
+                            child: SpoilerBadge(compact: true),
+                          ),
+                      ],
                     ],
                   ),
                 ),

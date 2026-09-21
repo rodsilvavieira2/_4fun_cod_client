@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/auth/auth_controller.dart';
 import '../../core/auth/auth_state.dart';
+import '../../core/logging/app_logger.dart';
 import '../../core/storage/image_selection.dart';
 import '../../core/ui/ui.dart';
 import '../../shared/models/message.dart';
@@ -223,7 +224,7 @@ class _ChatError extends StatelessWidget {
   }
 }
 
-class _MessageList extends StatefulWidget {
+class _MessageList extends ConsumerStatefulWidget {
   const _MessageList({
     required this.state,
     required this.channelName,
@@ -241,7 +242,7 @@ class _MessageList extends StatefulWidget {
   final String channelName;
   final String? myUserId;
   final List<ServerMember> members;
-  final VoidCallback onLoadMore;
+  final Future<void> Function() onLoadMore;
   final ValueChanged<ChatMessage> onReply;
   final Future<void> Function(ChatMessage message, String emoji) onReact;
   final Future<void> Function(ChatMessage message, String content) onEdit;
@@ -249,11 +250,14 @@ class _MessageList extends StatefulWidget {
   final ValueChanged<String> onRetryAttachment;
 
   @override
-  State<_MessageList> createState() => _MessageListState();
+  ConsumerState<_MessageList> createState() => _MessageListState();
 }
 
-class _MessageListState extends State<_MessageList> {
+class _MessageListState extends ConsumerState<_MessageList> {
   static const _loadMoreThreshold = 300.0;
+
+  /// Tag dos logs de diagnóstico do "pular para a resposta".
+  static const _jumpTag = 'chat-reply-jump';
 
   /// Distância do presente (offset 0, lista `reverse: true`) a partir da
   /// qual o pill "voltar ao presente" aparece.
@@ -261,6 +265,16 @@ class _MessageListState extends State<_MessageList> {
 
   final ScrollController _scrollController = ScrollController();
   bool _awayFromPresent = false;
+
+  /// Chaves por mensagem para o "pular para a resposta" (scroll animado).
+  final Map<String, GlobalKey> _itemKeys = {};
+
+  /// Mensagem destacada após pular da resposta (flash temporário).
+  String? _highlightedId;
+  Timer? _highlightTimer;
+
+  /// Evita buscas concorrentes de "pular para a resposta".
+  bool _jumping = false;
 
   @override
   void initState() {
@@ -270,6 +284,7 @@ class _MessageListState extends State<_MessageList> {
 
   @override
   void dispose() {
+    _highlightTimer?.cancel();
     _scrollController.dispose();
     super.dispose();
   }
@@ -296,6 +311,156 @@ class _MessageListState extends State<_MessageList> {
       duration: const Duration(milliseconds: 300),
       curve: Curves.easeOut,
     );
+  }
+
+  /// Vai até a mensagem respondida com scroll animado + flash de destaque.
+  /// Se a original ainda não está carregada, pagina para trás até a janela
+  /// conter o `createdAt` do alvo (a lista é ordenada; sem chute de N
+  /// páginas). Teto de segurança de 200 páginas. Alvo excluído: avisa.
+  Future<void> _scrollToMessage(MessageReplyPreview reply) async {
+    final log = ref.read(appLoggerProvider);
+    final id = reply.id;
+    if (_jumping) {
+      log.d('jump ignorado (busca em andamento) target=$id', tag: _jumpTag);
+      return;
+    }
+    final messenger = ScaffoldMessenger.of(context);
+    final loaded = widget.state.messages.length;
+    final keyHit = _itemKeys[id]?.currentContext != null;
+    log.d(
+      'tap resposta target=$id alvoEm=${reply.createdAt.toIso8601String()} '
+      'carregadas=$loaded '
+      'hasMore=${widget.state.hasMore} loadingMore=${widget.state.loadingMore} '
+      'keyHit=$keyHit',
+      tag: _jumpTag,
+    );
+    final direct = _itemKeys[id]?.currentContext;
+    if (direct != null) {
+      log.d('jump direto (já carregada) target=$id', tag: _jumpTag);
+      _reveal(direct, id);
+      return;
+    }
+    // Margem de 1s p/ desempate (createdAt, id) em rajadas.
+    final cutoff = reply.createdAt.subtract(const Duration(seconds: 1));
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text('Buscando mensagem original…'),
+        duration: Duration(seconds: 30),
+      ),
+    );
+    _jumping = true;
+    try {
+      var guard = 0;
+      // Páginas extras após a janela cobrir o alvo: descartam anomalia de
+      // ordenação/cursor do `before` antes de concluir "não existe".
+      var aposJanela = 0;
+      BuildContext? ctx;
+      while (ctx == null && mounted) {
+        final state = widget.state;
+        final oldest = state.messages.isEmpty
+            ? null
+            : state.messages.first.createdAt;
+        final inWindow =
+            oldest != null && !oldest.isAfter(cutoff);
+        if (state.loadingMore) {
+          // Outro load (ex. do scroll) em voo: espera um frame e reavalia
+          // sem consumir o teto — o controller sempre desliga loadingMore.
+          log.d(
+            'aguardando load em voo target=$id carregadas=${state.messages.length}',
+            tag: _jumpTag,
+          );
+          await _waitNextFrame();
+          if (!mounted) return;
+          continue;
+        }
+        if (inWindow) aposJanela++;
+        if (!state.hasMore || aposJanela > 5 || guard >= 200) {
+          // Vizinhas (±24h do alvo) presentes + alvo ausente = original
+          // quase certamente excluída (só o preview restou no reply).
+          final vizinhas = state.messages.where((m) {
+            return (m.createdAt.difference(reply.createdAt).inHours).abs() <=
+                24;
+          }).length;
+          log.d(
+            'paginacao interrompida target=$id motivo='
+            '${!state.hasMore ? 'sem-mais' : aposJanela > 5 ? 'janela-ok' : 'limite-200'} '
+            'carregadas=${state.messages.length} '
+            'maisAntiga=${oldest?.toIso8601String()} vizinhas=$vizinhas',
+            tag: _jumpTag,
+          );
+          break;
+        }
+        guard++;
+        final before = state.messages.length;
+        log.d(
+          'loadMore #$guard target=$id antes=$before first=${state.firstMessageId}',
+          tag: _jumpTag,
+        );
+        try {
+          await widget.onLoadMore();
+        } catch (error, stack) {
+          log.e('loadMore falhou target=$id', error: error, stackTrace: stack, tag: _jumpTag);
+          break;
+        }
+        if (!mounted) return;
+        // Aguarda a lista reconstruir com a página nova antes de procurar.
+        // Com timeout: endOfFrame puro pode pendurar para sempre se nenhum
+        // frame for agendado (e travaria _jumping para todos os cliques).
+        await _waitNextFrame();
+        if (!mounted) return;
+        ctx = _itemKeys[id]?.currentContext;
+        log.d(
+          'pos-loadMore #$guard target=$id depois=${widget.state.messages.length} '
+          'hasMore=${widget.state.hasMore} achou=${ctx != null}',
+          tag: _jumpTag,
+        );
+      }
+      if (ctx == null) {
+        log.w('original nao encontrada target=$id', tag: _jumpTag);
+        messenger.hideCurrentSnackBar();
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text('Mensagem original não encontrada.'),
+          ),
+        );
+        return;
+      }
+      log.d('jump apos paginar target=$id', tag: _jumpTag);
+      messenger.hideCurrentSnackBar();
+      // ctx é o contexto do tile destino (outro elemento), lido fresh
+      // após o frame — seguro aqui.
+      // ignore: use_build_context_synchronously
+      _reveal(ctx, id);
+    } finally {
+      _jumping = false;
+    }
+  }
+
+  /// Espera o próximo frame (lista reconstruída) com fallback de timeout —
+  /// nunca pendura: sem isso um `endOfFrame` sem frame agendado travaria
+  /// `_jumping` e mataria todos os cliques seguintes.
+  Future<void> _waitNextFrame() {
+    final done = Completer<void>();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!done.isCompleted) done.complete();
+    });
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (!done.isCompleted) done.complete();
+    });
+    return done.future;
+  }
+
+  void _reveal(BuildContext ctx, String id) {    Scrollable.ensureVisible(
+      ctx,
+      duration: const Duration(milliseconds: 400),
+      curve: Curves.easeInOut,
+      alignment: 0.5,
+    );
+    _highlightTimer?.cancel();
+    setState(() => _highlightedId = id);
+    _highlightTimer = Timer(const Duration(milliseconds: 1600), () {
+      if (mounted) setState(() => _highlightedId = null);
+    });
   }
 
   @override
@@ -360,6 +525,10 @@ class _MessageListState extends State<_MessageList> {
     );
     final mentionTargets = _mentionTargetsFor(widget.members);
 
+    // Limpa chaves de mensagens que saíram da janela (evita vazamento).
+    final liveIds = messages.map((m) => m.id).toSet();
+    _itemKeys.removeWhere((id, _) => !liveIds.contains(id));
+
     return Stack(
       children: [
         ListView.builder(
@@ -390,6 +559,7 @@ class _MessageListState extends State<_MessageList> {
               previous: previous,
             );
             return Column(
+              key: _itemKeys.putIfAbsent(message.id, () => GlobalKey()),
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -404,6 +574,8 @@ class _MessageListState extends State<_MessageList> {
                   channelName: widget.channelName,
                   mentionTargets: mentionTargets,
                   quickReactionEmojis: quickReactionEmojis,
+                  highlighted: _highlightedId == message.id,
+                  onJumpToMessage: _scrollToMessage,
                   onReply: widget.onReply,
                   onReact: widget.onReact,
                   onEdit: widget.onEdit,
@@ -490,12 +662,21 @@ class _MessageTile extends StatefulWidget {
     required this.onRetryAttachment,
     this.myUserId,
     this.channelName,
+    this.highlighted = false,
+    this.onJumpToMessage,
   });
 
   final ChatMessage message;
   final bool showHeader;
   final String? myUserId;
   final String? channelName;
+
+  /// Flash temporário ao pular da resposta para esta mensagem.
+  final bool highlighted;
+
+  /// (resposta) — scroll animado até a mensagem original da resposta.
+  final ValueChanged<MessageReplyPreview>? onJumpToMessage;
+
   final List<MentionTarget> mentionTargets;
   final List<String> quickReactionEmojis;
   final ValueChanged<ChatMessage> onReply;
@@ -687,7 +868,9 @@ class _MessageTileState extends State<_MessageTile> {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 120),
         decoration: BoxDecoration(
-          color: _hovered ? colors.chatRowHover : Colors.transparent,
+          color: widget.highlighted
+              ? colors.accent.withValues(alpha: 0.18)
+              : (_hovered ? colors.chatRowHover : Colors.transparent),
         ),
         padding: EdgeInsets.fromLTRB(16, widget.showHeader ? 6 : 2, 16, 2),
         child: Stack(
@@ -763,7 +946,14 @@ class _MessageTileState extends State<_MessageTile> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             if (widget.message.replyTo != null) ...[
-                              _ReplyPreview(replyTo: widget.message.replyTo!),
+                              _ReplyPreview(
+                                replyTo: widget.message.replyTo!,
+                                onTap: widget.onJumpToMessage == null
+                                    ? null
+                                    : () => widget.onJumpToMessage!(
+                                          widget.message.replyTo!,
+                                        ),
+                              ),
                               const SizedBox(height: 4),
                             ],
                             if (_editing)
@@ -980,35 +1170,56 @@ class _MentionMessageText extends StatelessWidget {
   }
 }
 
-class _ReplyPreview extends StatelessWidget {
-  const _ReplyPreview({required this.replyTo});
+class _ReplyPreview extends StatefulWidget {
+  const _ReplyPreview({required this.replyTo, this.onTap});
 
   final MessageReplyPreview replyTo;
 
+  /// Pular para a mensagem original (scroll animado). Nulo = sem ação.
+  final VoidCallback? onTap;
+
+  @override
+  State<_ReplyPreview> createState() => _ReplyPreviewState();
+}
+
+class _ReplyPreviewState extends State<_ReplyPreview> {
+  bool _hovered = false;
+
   @override
   Widget build(BuildContext context) {
-    return Row(
+    final colors = context.appColors;
+    final replyTo = widget.replyTo;
+    final tappable = widget.onTap != null;
+    final content = Row(
       children: [
         Container(
           width: 22,
           height: 16,
           margin: const EdgeInsets.only(right: 8),
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             border: Border(
-              left: BorderSide(color: AppTokens.borderStrong, width: 2),
-              top: BorderSide(color: AppTokens.borderStrong, width: 2),
+              left: BorderSide(color: colors.borderStrong, width: 2),
+              top: BorderSide(color: colors.borderStrong, width: 2),
             ),
-            borderRadius: BorderRadius.only(topLeft: AppRadius.rSm),
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(AppRadius.sm),
+            ),
           ),
         ),
         Flexible(
-          child: Container(
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 120),
             constraints: const BoxConstraints(maxWidth: 520),
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
-              color: AppTokens.surface1,
+              color: _hovered && tappable ? colors.surface3 : colors.surface1,
               borderRadius: BorderRadius.circular(AppRadius.sm),
-              border: Border.all(color: AppTokens.borderHairline, width: 1),
+              border: Border.all(
+                color: _hovered && tappable
+                    ? colors.borderSubtle
+                    : colors.borderHairline,
+                width: 1,
+              ),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -1018,11 +1229,14 @@ class _ReplyPreview extends StatelessWidget {
                   child: Text(
                     replyTo.author.name,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontFamily: 'Geist',
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
-                      color: AppTokens.textSecondary,
+                      color: colors.textSecondary,
+                      decoration: _hovered && tappable
+                          ? TextDecoration.underline
+                          : TextDecoration.none,
                     ),
                   ),
                 ),
@@ -1031,10 +1245,10 @@ class _ReplyPreview extends StatelessWidget {
                   child: Text(
                     _replySnippet(replyTo),
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontFamily: 'Geist',
                       fontSize: 12,
-                      color: AppTokens.textMuted,
+                      color: colors.textMuted,
                     ),
                   ),
                 ),
@@ -1043,6 +1257,20 @@ class _ReplyPreview extends StatelessWidget {
           ),
         ),
       ],
+    );
+    if (!tappable) return content;
+    return Tooltip(
+      message: 'Ir para a mensagem',
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() => _hovered = false),
+        child: GestureDetector(
+          onTap: widget.onTap,
+          behavior: HitTestBehavior.opaque,
+          child: content,
+        ),
+      ),
     );
   }
 
@@ -2074,6 +2302,28 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
+  void _toggleAttachmentSpoiler(ChatImageSlot slot) {
+    setState(() {
+      _attachments = [
+        for (final s in _attachments)
+          identical(s, slot) ? s.copyWith(isSpoiler: !s.isSpoiler) : s,
+      ];
+    });
+  }
+
+  Future<void> _editAttachment(ChatImageSlot slot) async {
+    final result = await showEditAttachmentDialog(context, slot);
+    if (result == null || !mounted) return;
+    setState(() {
+      _attachments = [
+        for (final s in _attachments)
+          identical(s, slot)
+              ? s.copyWith(fileName: result.fileName, isSpoiler: result.isSpoiler)
+              : s,
+      ];
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return AppChatInput(
@@ -2166,6 +2416,8 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
                     onRemove: (slot) => setState(
                       () => _attachments = [..._attachments]..remove(slot),
                     ),
+                    onToggleSpoiler: _toggleAttachmentSpoiler,
+                    onEdit: _editAttachment,
                   ),
                 ],
               ],
@@ -2293,73 +2545,346 @@ class _ComposerGifPanel extends StatelessWidget {
   }
 }
 
-/// Preview dos slots de imagem do composer (upload-no-enviar): só miniatura
-/// local + remover. Nenhum upload acontece antes de apertar enviar.
+/// Preview dos slots de imagem do composer (upload-no-enviar) estilo Discord.
+///
+/// - Card largo com toolbar flutuante (spoiler / editar / remover) + nome do
+///   arquivo embaixo, como no Discord.
+/// - Spoiler borra o preview local (só visual; o flag vai no `POST /messages`).
+/// - Nenhum upload acontece antes de apertar enviar.
 class _ComposerAttachmentsPanel extends StatelessWidget {
   const _ComposerAttachmentsPanel({
     required this.attachments,
     required this.onRemove,
+    required this.onToggleSpoiler,
+    required this.onEdit,
   });
 
   final List<ChatImageSlot> attachments;
   final ValueChanged<ChatImageSlot> onRemove;
+  final ValueChanged<ChatImageSlot> onToggleSpoiler;
+  final ValueChanged<ChatImageSlot> onEdit;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
       child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
+        spacing: 12,
+        runSpacing: 12,
         children: [
           for (final slot in attachments)
-            SizedBox(
-              width: 86,
-              height: 86,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(AppRadius.sm),
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: AppTokens.surface2,
-                        border: Border.all(
-                          color: AppTokens.borderSubtle,
-                          width: 1,
-                        ),
-                      ),
-                      child: Image.memory(slot.bytes, fit: BoxFit.cover),
-                    ),
-                  ),
-                  Positioned(
-                    top: 0,
-                    right: 0,
-                    child: GestureDetector(
-                      onTap: () => onRemove(slot),
-                      child: DecoratedBox(
-                        decoration: const BoxDecoration(
-                          color: Color(0xAA000000),
-                          shape: BoxShape.circle,
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.all(2),
-                          child: AppIcon(
-                            AppIcons.close,
-                            color: Colors.white,
-                            size: 14,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+            _AttachmentCard(
+              slot: slot,
+              onRemove: () => onRemove(slot),
+              onToggleSpoiler: () => onToggleSpoiler(slot),
+              onEdit: () => onEdit(slot),
             ),
         ],
       ),
     );
   }
+}
+
+/// Card Discord-like de um anexo: imagem 240x150 + toolbar + filename.
+class _AttachmentCard extends StatelessWidget {
+  const _AttachmentCard({
+    required this.slot,
+    required this.onRemove,
+    required this.onToggleSpoiler,
+    required this.onEdit,
+  });
+
+  final ChatImageSlot slot;
+  final VoidCallback onRemove;
+  final VoidCallback onToggleSpoiler;
+  final VoidCallback onEdit;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 240,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Stack(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(AppRadius.md),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: AppTokens.surface2,
+                    border: Border.all(
+                      color: slot.isSpoiler
+                          ? AppTokens.accentAmber.withValues(alpha: 0.6)
+                          : AppTokens.borderSubtle,
+                      width: 1,
+                    ),
+                    borderRadius: BorderRadius.circular(AppRadius.md),
+                  ),
+                  child: SizedBox(
+                    width: 240,
+                    height: 150,
+                    child: slot.isSpoiler
+                        ? SpoilerCover(
+                            revealHint: 'Spoiler ativado',
+                            child: Image.memory(
+                              slot.bytes,
+                              fit: BoxFit.cover,
+                            ),
+                          )
+                        : Image.memory(slot.bytes, fit: BoxFit.cover),
+                  ),
+                ),
+              ),
+              // Toolbar flutuante estilo Discord (olho / lápis / lixeira).
+              Positioned(
+                top: 8,
+                left: 8,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: const Color(0xE61A1A1E),
+                    borderRadius: BorderRadius.circular(AppRadius.sm),
+                    border: Border.all(
+                      color: AppTokens.borderSubtle,
+                      width: 1,
+                    ),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x66000000),
+                        blurRadius: 8,
+                        offset: Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 2,
+                      vertical: 2,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        AppIconButton(
+                          icon: slot.isSpoiler
+                              ? AppIcons.spoilerOff
+                              : AppIcons.spoiler,
+                          tooltip: slot.isSpoiler
+                              ? 'Remover spoiler'
+                              : 'Marcar como spoiler',
+                          minSize: 28,
+                          iconSize: 15,
+                          isActive: slot.isSpoiler,
+                          activeColor: AppTokens.accentAmber,
+                          onPressed: onToggleSpoiler,
+                        ),
+                        AppIconButton(
+                          icon: AppIcons.edit,
+                          tooltip: 'Editar anexo',
+                          minSize: 28,
+                          iconSize: 15,
+                          onPressed: onEdit,
+                        ),
+                        AppIconButton(
+                          icon: AppIcons.trash,
+                          tooltip: 'Remover',
+                          minSize: 28,
+                          iconSize: 15,
+                          color: const Color(0xFFF87171),
+                          onPressed: onRemove,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              if (slot.isSpoiler)
+                const Positioned(
+                  bottom: 8,
+                  left: 8,
+                  child: SpoilerBadge(compact: true),
+                ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  slot.fileName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontFamily: 'Geist',
+                    fontSize: 12.5,
+                    color: AppTokens.textSecondary,
+                  ),
+                ),
+              ),
+              if (slot.isSpoiler) ...[
+                const SizedBox(width: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 5,
+                    vertical: 1,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppTokens.accentAmber.withValues(alpha: 0.16),
+                    borderRadius: BorderRadius.circular(AppRadius.xs),
+                    border: Border.all(
+                      color: AppTokens.accentAmber.withValues(alpha: 0.45),
+                      width: 1,
+                    ),
+                  ),
+                  child: const Text(
+                    'SPOILER',
+                    style: TextStyle(
+                      fontFamily: 'Geist',
+                      fontSize: 9,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.6,
+                      color: AppTokens.accentAmber,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Resultado do diálogo de edição simples do anexo (lápis).
+typedef EditAttachmentResult = ({String fileName, bool isSpoiler});
+
+/// Diálogo simples do lápis: renomear arquivo + switch spoiler.
+///
+/// Preserva a extensão original se o usuário removê-la.
+Future<EditAttachmentResult?> showEditAttachmentDialog(
+  BuildContext context,
+  ChatImageSlot slot,
+) {
+  final controller = TextEditingController(text: slot.fileName);
+  var isSpoiler = slot.isSpoiler;
+  return showDialog<EditAttachmentResult>(
+    context: context,
+    builder: (dialogContext) => StatefulBuilder(
+      builder: (context, setDialogState) => AlertDialog(
+        backgroundColor: AppTokens.surface2,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          side: const BorderSide(color: AppTokens.borderSubtle, width: 1),
+        ),
+        title: const Text(
+          'Editar anexo',
+          style: TextStyle(
+            fontFamily: 'Geist',
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
+            color: AppTokens.textPrimary,
+          ),
+        ),
+        content: SizedBox(
+          width: 320,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Nome do arquivo',
+                style: TextStyle(
+                  fontFamily: 'Geist',
+                  fontSize: 12,
+                  color: AppTokens.textMuted,
+                ),
+              ),
+              const SizedBox(height: 6),
+              TextField(
+                controller: controller,
+                autofocus: true,
+                maxLength: 100,
+                style: const TextStyle(
+                  fontFamily: 'Geist',
+                  fontSize: 13,
+                  color: AppTokens.textPrimary,
+                ),
+                decoration: const InputDecoration(
+                  isDense: true,
+                  counterText: '',
+                  border: OutlineInputBorder(),
+                ),
+                onSubmitted: (_) => Navigator.of(dialogContext).pop(
+                  (
+                    fileName: _normalizeAttachmentName(
+                      controller.text,
+                      slot.fileName,
+                    ),
+                    isSpoiler: isSpoiler,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+                title: const Text(
+                  'Marcar como spoiler',
+                  style: TextStyle(
+                    fontFamily: 'Geist',
+                    fontSize: 13,
+                    color: AppTokens.textSecondary,
+                  ),
+                ),
+                subtitle: const Text(
+                  'A imagem fica borrada até alguém revelar.',
+                  style: TextStyle(
+                    fontFamily: 'Geist',
+                    fontSize: 11.5,
+                    color: AppTokens.textMuted,
+                  ),
+                ),
+                value: isSpoiler,
+                onChanged: (v) => setDialogState(() => isSpoiler = v),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(
+              (
+                fileName: _normalizeAttachmentName(
+                  controller.text,
+                  slot.fileName,
+                ),
+                isSpoiler: isSpoiler,
+              ),
+            ),
+            child: const Text('Salvar'),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+String _normalizeAttachmentName(String raw, String fallback) {
+  final trimmed = raw.trim();
+  if (trimmed.isEmpty) return fallback;
+  final dot = fallback.lastIndexOf('.');
+  final originalExt = dot >= 0 ? fallback.substring(dot) : '';
+  if (originalExt.isNotEmpty && !trimmed.toLowerCase().endsWith(originalExt.toLowerCase())) {
+    final withoutTrailingDots = trimmed.replaceAll(RegExp(r'\.+$'), '');
+    if (withoutTrailingDots.contains('.')) return withoutTrailingDots;
+    return '$withoutTrailingDots$originalExt';
+  }
+  return trimmed;
 }
 
 class _MentionOption {

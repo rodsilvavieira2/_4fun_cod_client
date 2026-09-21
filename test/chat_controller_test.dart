@@ -70,6 +70,7 @@ class FakeServersRepository implements ServersRepository {
     String? gifUrl,
     String? replyToId,
     List<String>? uploadIds,
+    List<ChatAttachmentMeta>? attachments,
   }) async {
     sentContents.add(content);
     return _msg(

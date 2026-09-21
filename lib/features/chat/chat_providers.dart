@@ -20,11 +20,29 @@ class ChatImageSlot {
     required this.bytes,
     required this.fileName,
     required this.contentType,
+    this.isSpoiler = false,
   });
 
   final Uint8List bytes;
   final String fileName;
   final String contentType;
+
+  /// Blur estilo Discord até o destinatário revelar.
+  final bool isSpoiler;
+
+  ChatImageSlot copyWith({
+    Uint8List? bytes,
+    String? fileName,
+    String? contentType,
+    bool? isSpoiler,
+  }) {
+    return ChatImageSlot(
+      bytes: bytes ?? this.bytes,
+      fileName: fileName ?? this.fileName,
+      contentType: contentType ?? this.contentType,
+      isSpoiler: isSpoiler ?? this.isSpoiler,
+    );
+  }
 }
 
 /// Estado do chat de um canal: mensagens carregadas (mais antigas primeiro)
@@ -160,6 +178,7 @@ class ChatController
     String? gifUrl,
     String? replyToId,
     List<String>? uploadIds,
+    List<ChatAttachmentMeta>? attachments,
   }) async {
     final message = await ref
         .read(serversRepositoryProvider)
@@ -170,6 +189,7 @@ class ChatController
           gifUrl: gifUrl,
           replyToId: replyToId,
           uploadIds: uploadIds,
+          attachments: attachments,
         );
     if (_disposed) return;
     final current = state.valueOrNull;
@@ -210,6 +230,7 @@ class ChatController
             height: null,
             status: 'UPLOADING',
             createdAt: now,
+            isSpoiler: slots[i].isSpoiler,
           ),
       ],
     );
@@ -228,6 +249,13 @@ class ChatController
           ),
         ),
       );
+      final metas = [
+        for (var i = 0; i < uploadIds.length; i++)
+          ChatAttachmentMeta(
+            uploadId: uploadIds[i],
+            spoiler: slots[i].isSpoiler,
+          ),
+      ];
       final message = await ref
           .read(serversRepositoryProvider)
           .sendMessage(
@@ -236,6 +264,7 @@ class ChatController
             kind: ChatMessageKind.image,
             replyToId: replyToId,
             uploadIds: uploadIds,
+            attachments: metas,
           );
       if (_disposed) return;
       confirmOptimistic(tempId, message);

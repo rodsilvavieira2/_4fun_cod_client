@@ -262,6 +262,8 @@ class ServersRepository {
   }
 
   /// `POST /channels/:id/messages` → 201 com a mensagem criada.
+  /// `attachments` carrega o flag spoiler por upload; `uploadIds` é mantido
+  /// por compatibilidade (backend novo prefere `attachments`).
   Future<ChatMessage> sendMessage(
     String channelId,
     String content, {
@@ -269,6 +271,7 @@ class ServersRepository {
     String? gifUrl,
     String? replyToId,
     List<String>? uploadIds,
+    List<ChatAttachmentMeta>? attachments,
   }) async {
     try {
       final response = await _dio.post(
@@ -279,6 +282,7 @@ class ServersRepository {
           'gifUrl': ?gifUrl,
           'replyToId': ?replyToId,
           'uploadIds': ?uploadIds,
+          'attachments': ?attachments?.map((e) => e.toJson()).toList(),
         },
       );
       return ChatMessage.fromJson(response.data as Map<String, dynamic>);

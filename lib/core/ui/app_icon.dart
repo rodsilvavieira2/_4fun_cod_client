@@ -131,6 +131,8 @@ class AppIcons {
   static const screenShare = HugeIcons.strokeRoundedScreenShare;
   static const view = HugeIcons.strokeRoundedView;
   static const viewOff = HugeIcons.strokeRoundedViewOff;
+  static const spoiler = HugeIcons.strokeRoundedView;
+  static const spoilerOff = HugeIcons.strokeRoundedViewOff;
   static const wifi = HugeIcons.strokeRoundedWifi01;
 
   // Chat / social

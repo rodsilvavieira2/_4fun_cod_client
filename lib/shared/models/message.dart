@@ -24,6 +24,7 @@ enum ChatMessageKind {
 ///
 /// `url` é nulo enquanto o upload está PENDING/PROCESSING; `status` resolve
 /// do `upload` aninhado (READY/FAILED) para o retry parcial por anexo.
+/// `isSpoiler` borra a imagem até o usuário revelar (estilo Discord).
 class MessageAttachment {
   const MessageAttachment({
     required this.id,
@@ -33,6 +34,7 @@ class MessageAttachment {
     required this.height,
     required this.status,
     required this.createdAt,
+    this.isSpoiler = false,
   });
 
   final String id;
@@ -45,10 +47,42 @@ class MessageAttachment {
   final String status;
   final DateTime createdAt;
 
+  /// Blur estilo Discord até revelar. Sessão local; persistido via API.
+  final bool isSpoiler;
+
   /// Aspect ratio real (width/height) ou 1 enquanto sem dimensões.
   double get aspectRatio {
     if (width == null || height == null || height == 0) return 1;
     return width! / height!;
+  }
+
+  MessageAttachment copyWith({bool? isSpoiler}) {
+    return MessageAttachment(
+      id: id,
+      uploadId: uploadId,
+      url: url,
+      width: width,
+      height: height,
+      status: status,
+      createdAt: createdAt,
+      isSpoiler: isSpoiler ?? this.isSpoiler,
+    );
+  }
+
+  static bool _parseSpoiler(Map<String, dynamic> json) {
+    for (final key in const ['spoiler', 'isSpoiler', 'is_spoiler']) {
+      final value = json[key];
+      if (value is bool) return value;
+      if (value is num) return value != 0;
+      if (value is String) {
+        final lower = value.toLowerCase();
+        if (lower == 'true' || lower == '1') return true;
+        if (lower == 'false' || lower == '0') return false;
+      }
+    }
+    final upload = json['upload'];
+    if (upload is Map<String, dynamic>) return _parseSpoiler(upload);
+    return false;
   }
 
   factory MessageAttachment.fromJson(Map<String, dynamic> json) {
@@ -66,8 +100,20 @@ class MessageAttachment {
       createdAt:
           DateTime.tryParse(json['createdAt'] as String? ?? '') ??
           DateTime.fromMillisecondsSinceEpoch(0),
+      isSpoiler: _parseSpoiler(json),
     );
   }
+}
+
+/// Meta de anexo para `POST /messages`: id do upload + flag spoiler.
+/// Mantém ordem dos slots (índice a índice com os `uploadIds`).
+class ChatAttachmentMeta {
+  const ChatAttachmentMeta({required this.uploadId, this.spoiler = false});
+
+  final String uploadId;
+  final bool spoiler;
+
+  Map<String, Object?> toJson() => {'uploadId': uploadId, 'spoiler': spoiler};
 }
 
 class MessageReplyPreview {
