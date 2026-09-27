@@ -15,6 +15,7 @@ import '../../core/ui/ui.dart';
 import '../voice/voice_controls_provider.dart';
 import '../voice/voice_providers.dart';
 import '../voice/voice_volume_controller.dart';
+import '../profile/profile_repository.dart';
 
 /// Rodapé da sidebar no padrão Discord: sessão de voz no topo, ações de mídia
 /// agrupadas e identidade/controles pessoais na base.
@@ -44,7 +45,8 @@ class UserPanel extends ConsumerWidget {
     final colors = context.appColors;
     final authState = ref.watch(authControllerProvider).valueOrNull;
     final user = authState is Authenticated ? authState.user : null;
-    final name = user?.username ?? '…';
+    final name = user?.name ?? '…';
+    final manualStatus = user?.manualStatus ?? 'ONLINE';
     final avatarUrl = user?.avatarUrl;
     final devices = ref.watch(audioDevicesProvider);
     final controls = ref.watch(voiceControlsProvider);
@@ -125,11 +127,16 @@ class UserPanel extends ConsumerWidget {
                             )
                           : _initial(name),
                     ),
-                    const Positioned(
+                    Positioned(
                       right: -2,
                       bottom: -2,
                       child: PresenceDot(
-                        status: PresenceStatus.online,
+                        status: switch (manualStatus) {
+                          'IDLE' => PresenceStatus.idle,
+                          'DND' => PresenceStatus.dnd,
+                          'INVISIBLE' => PresenceStatus.offline,
+                          _ => PresenceStatus.online,
+                        },
                         size: 10,
                       ),
                     ),
@@ -151,12 +158,40 @@ class UserPanel extends ConsumerWidget {
                           color: colors.textPrimary,
                         ),
                       ),
-                      const Text(
-                        'Online',
-                        style: TextStyle(
-                          fontFamily: 'Geist',
-                          fontSize: 11,
-                          color: AppTokens.accentGreen,
+                      PopupMenuButton<String>(
+                        tooltip: 'Alterar status',
+                        onSelected: (status) async {
+                          await ref
+                              .read(profileRepositoryProvider)
+                              .setStatus(status);
+                          await ref
+                              .read(authControllerProvider.notifier)
+                              .refreshCurrentUser();
+                        },
+                        itemBuilder: (_) => const [
+                          PopupMenuItem(value: 'ONLINE', child: Text('Online')),
+                          PopupMenuItem(value: 'IDLE', child: Text('Ausente')),
+                          PopupMenuItem(
+                            value: 'DND',
+                            child: Text('Não perturbe'),
+                          ),
+                          PopupMenuItem(
+                            value: 'INVISIBLE',
+                            child: Text('Invisível'),
+                          ),
+                        ],
+                        child: Text(
+                          switch (manualStatus) {
+                            'IDLE' => 'Ausente',
+                            'DND' => 'Não perturbe',
+                            'INVISIBLE' => 'Invisível',
+                            _ => 'Online',
+                          },
+                          style: TextStyle(
+                            fontFamily: 'Geist',
+                            fontSize: 11,
+                            color: colors.textSecondary,
+                          ),
                         ),
                       ),
                     ],
@@ -501,11 +536,7 @@ class _ConnectionLatency extends StatelessWidget {
       message: latency == null
           ? 'Medindo latência da conexão…'
           : 'Latência da conexão: $latency ms',
-      child: AppIcon(
-        AppIcons.wifi,
-        size: 18,
-        color: color,
-      ),
+      child: AppIcon(AppIcons.wifi, size: 18, color: color),
     );
   }
 }

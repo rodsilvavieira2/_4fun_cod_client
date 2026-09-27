@@ -3,6 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/ui/ui.dart';
 import '../servers/servers_providers.dart';
+import '../profile/profile_repository.dart';
+import '../../core/ui/profile_card.dart';
+import '../../core/ui/profile_popup.dart';
 
 /// Painel de perfil do contato estilo macOS Sidebar:
 /// Avatar 80, username com alto contraste, dados de adesão e ação de perfil.
@@ -20,6 +23,11 @@ class DmProfilePanel extends ConsumerWidget {
 
     final detail = ref.watch(serverDetailProvider(serverId)).valueOrNull;
     final member = detail?.members.where((m) => m.userId == userId).firstOrNull;
+    final profile = ref
+        .watch(profileProvider((userId: userId, serverId: null)))
+        .valueOrNull;
+    final catalog = ref.watch(visualCatalogProvider).valueOrNull ?? const [];
+    final fonts = ref.watch(profileFontsProvider).valueOrNull ?? const [];
 
     return Container(
       width: AppLayout.memberPanelWidth,
@@ -34,6 +42,15 @@ class DmProfilePanel extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            if (profile != null) ...[
+              ProfileCard(
+                profile: profile,
+                catalog: catalog,
+                fonts: fonts,
+                compact: true,
+              ),
+              const SizedBox(height: 18),
+            ],
             Center(
               child: Container(
                 width: 72,
@@ -50,15 +67,24 @@ class DmProfilePanel extends ConsumerWidget {
                         path: member?.user.avatarUrl,
                         width: 72,
                         height: 72,
-                        fallback: _initial(member?.user.name ?? '?', colors),
+                        fallback: _initial(
+                          member?.user.displayName ?? member?.user.name ?? '?',
+                          colors,
+                        ),
                       )
-                    : _initial(member?.user.name ?? '?', colors),
+                    : _initial(
+                        member?.user.displayName ?? member?.user.name ?? '?',
+                        colors,
+                      ),
               ),
             ),
             const SizedBox(height: 14),
             Center(
               child: Text(
-                member?.user.name ?? 'Contato',
+                profile?.displayName ??
+                    member?.user.displayName ??
+                    member?.user.name ??
+                    'Contato',
                 style: TextStyle(
                   fontFamily: 'Geist',
                   fontSize: 16,
@@ -89,13 +115,18 @@ class DmProfilePanel extends ConsumerWidget {
                   : '—',
             ),
             const SizedBox(height: 14),
-            const _InfoRow(label: 'SOBRE', value: 'Sem descrição'),
+            _InfoRow(
+              label: 'SOBRE',
+              value: profile?.bio.isNotEmpty == true
+                  ? profile!.bio
+                  : 'Sem descrição',
+            ),
             const SizedBox(height: 22),
             AppButton(
               label: 'Ver perfil completo',
               variant: AppButtonVariant.secondary,
               size: AppButtonSize.sm,
-              onPressed: () {},
+              onPressed: () => showProfilePopup(context, userId),
             ),
           ],
         ),

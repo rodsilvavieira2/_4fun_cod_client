@@ -8,6 +8,7 @@ import 'core/router/app_router.dart';
 import 'core/telemetry/telemetry_service.dart';
 import 'core/theme/app_theme.dart';
 import 'features/voice/push_to_talk_listener.dart';
+import 'core/ui/presence_activity_listener.dart';
 
 /// Widget raiz da aplicação.
 ///
@@ -37,13 +38,15 @@ class App extends ConsumerWidget {
       // `init` é idempotente + anti-concorrente.
       if (state is Authenticated && !telemetry.ready) telemetry.init();
     });
-    return PushToTalkListener(
-      child: MaterialApp.router(
-        title: '4FunCode',
-        debugShowCheckedModeBanner: false,
-        // Design system dark-only (Discord + Vercel dark/Geist).
-        theme: build4funTheme(palette),
-        routerConfig: router,
+    return PresenceActivityListener(
+      child: PushToTalkListener(
+        child: MaterialApp.router(
+          title: '4FunCode',
+          debugShowCheckedModeBanner: false,
+          // Design system dark-only (Discord + Vercel dark/Geist).
+          theme: build4funTheme(palette),
+          routerConfig: router,
+        ),
       ),
     );
   }

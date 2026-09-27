@@ -19,6 +19,7 @@ typedef NotificationPreferencesReader =
 typedef CurrentUserIdReader = String? Function();
 typedef NotificationNavigator =
     Future<void> Function(String serverId, String channelId);
+bool _alwaysFalse() => false;
 
 class NotificationCoordinator {
   NotificationCoordinator({
@@ -29,6 +30,7 @@ class NotificationCoordinator {
     required this.readCurrentUserId,
     required this.shouldShowSystemNotification,
     required this.openChannel,
+    this.isDoNotDisturb = _alwaysFalse,
   });
 
   final Stream<RealtimeEvent> events;
@@ -38,6 +40,7 @@ class NotificationCoordinator {
   final CurrentUserIdReader readCurrentUserId;
   final Future<bool> Function() shouldShowSystemNotification;
   final NotificationNavigator openChannel;
+  final bool Function() isDoNotDisturb;
 
   final Set<String> _seenMessageIds = {};
   final Queue<String> _seenMessageOrder = Queue<String>();
@@ -69,7 +72,7 @@ class NotificationCoordinator {
     } else if (!preferences.channelMessages) {
       return;
     }
-    if (!await shouldShowSystemNotification()) return;
+    if (isDoNotDisturb() || !await shouldShowSystemNotification()) return;
 
     await notifications.show(
       SystemNotification(
@@ -151,6 +154,10 @@ final notificationCoordinatorProvider = Provider<NotificationCoordinator>((
       return auth is Authenticated ? auth.user.id : null;
     },
     shouldShowSystemNotification: window.shouldShowSystemNotification,
+    isDoNotDisturb: () {
+      final auth = ref.read(authControllerProvider).valueOrNull;
+      return auth is Authenticated && auth.user.manualStatus == 'DND';
+    },
     openChannel: (serverId, channelId) async {
       await window.restoreAndFocus();
       _goToChannel(router, serverId, channelId);

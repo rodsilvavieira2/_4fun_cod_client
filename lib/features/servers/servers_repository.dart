@@ -60,6 +60,20 @@ class ServersRepository {
     }
   }
 
+  Future<void> updateSelfNicknamePermission(
+    String serverId,
+    bool allowed,
+  ) async {
+    try {
+      await _dio.patch(
+        '/servers/$serverId',
+        data: {'allowSelfNickname': allowed},
+      );
+    } on DioException catch (e) {
+      throw ApiException.fromDio(e);
+    }
+  }
+
   /// `POST /uploads` (kind `server-icon`, async) + polling até `READY` →
   /// URL do ícone persistido.
   Future<String> uploadServerIcon(
@@ -335,10 +349,7 @@ class ServersRepository {
   /// Usado para o histórico (mensagens que chegaram sem `embeds` efêmeros).
   Future<LinkEmbed?> fetchLinkEmbed(String url) async {
     try {
-      final response = await _dio.get(
-        '/unfurl',
-        queryParameters: {'url': url},
-      );
+      final response = await _dio.get('/unfurl', queryParameters: {'url': url});
       final data = response.data as Map<String, dynamic>;
       final embed = data['embed'];
       if (embed is! Map<String, dynamic>) return null;

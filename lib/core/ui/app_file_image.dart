@@ -60,6 +60,7 @@ class AppFileImage extends ConsumerWidget {
     this.width,
     this.height,
     this.fit = BoxFit.cover,
+    this.alignment = Alignment.center,
     this.fallback = const SizedBox.shrink(),
   });
 
@@ -68,6 +69,7 @@ class AppFileImage extends ConsumerWidget {
   final double? width;
   final double? height;
   final BoxFit fit;
+  final Alignment alignment;
   final Widget fallback;
 
   @override
@@ -88,6 +90,7 @@ class AppFileImage extends ConsumerWidget {
             width: width,
             height: height,
             fit: fit,
+            alignment: alignment,
             gaplessPlayback: true,
             errorBuilder: (_, _, _) => fallback,
           ),

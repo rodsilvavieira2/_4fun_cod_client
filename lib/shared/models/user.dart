@@ -10,6 +10,8 @@ class User {
     required this.username,
     this.email,
     this.avatarUrl,
+    this.manualStatus = 'ONLINE',
+    this.displayName,
   });
 
   factory User.fromJson(Map<String, dynamic> json) => User(
@@ -18,6 +20,8 @@ class User {
     username: json['username'] as String,
     email: json['email'] as String?,
     avatarUrl: json['avatarUrl'] as String?,
+    manualStatus: json['manualStatus'] as String? ?? 'ONLINE',
+    displayName: json['displayName'] as String?,
   );
 
   final String id;
@@ -25,4 +29,6 @@ class User {
   final String username;
   final String? email;
   final String? avatarUrl;
+  final String manualStatus;
+  final String? displayName;
 }

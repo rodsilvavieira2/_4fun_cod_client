@@ -61,6 +61,7 @@ class SocketService {
   final StreamController<void> _reconnected =
       StreamController<void>.broadcast();
   Timer? _heartbeat;
+  DateTime? _lastActivitySignal;
 
   /// Invalida restaurações assíncronas de uma conexão anterior. O evento
   /// `connect` do Socket.IO pode chegar antes de o `handleConnection` async do
@@ -123,6 +124,19 @@ class SocketService {
     _openServers.clear();
     _openChannelId = null;
     _hasConnectedOnce = false;
+    _lastActivitySignal = null;
+  }
+
+  /// Atividade real de mouse/teclado; heartbeat sozinho não cancela Idle.
+  void signalActivity() {
+    final now = DateTime.now();
+    final previous = _lastActivitySignal;
+    if (previous != null &&
+        now.difference(previous) < const Duration(seconds: 15)) {
+      return;
+    }
+    _lastActivitySignal = now;
+    _emit('presence:activity');
   }
 
   void joinServer(String serverId) {
@@ -221,6 +235,7 @@ class SocketService {
       'presence.changed',
       (data) => _dispatch('presence.changed', data),
     );
+    socket.on('profile.changed', (data) => _dispatch('profile.changed', data));
     socket.on(
       'voice.presence.changed',
       (data) => _dispatch('voice.presence.changed', data),

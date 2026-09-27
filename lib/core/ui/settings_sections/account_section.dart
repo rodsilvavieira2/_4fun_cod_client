@@ -11,6 +11,7 @@ import '../../auth/auth_state.dart';
 import '../../storage/api_storage_service.dart';
 import '../settings_section_layout.dart';
 import '../ui.dart';
+import '../profile_editor_dialog.dart';
 
 /// Conta do usuário dentro do modal principal de configurações.
 class AccountSection extends ConsumerStatefulWidget {
@@ -104,11 +105,10 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
   }
 
   Future<void> _openProfileDialog(BuildContext context, User user) {
-    return showMacModalWindow<void>(
+    return showDialog<void>(
       context: context,
-      title: 'Editar perfil',
-      maxWidth: 420,
-      child: _ProfileEditDialog(initialUser: user),
+      barrierDismissible: false,
+      builder: (_) => const ProfileEditorDialog(),
     );
   }
 

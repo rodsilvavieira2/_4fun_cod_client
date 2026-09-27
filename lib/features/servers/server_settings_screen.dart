@@ -429,6 +429,29 @@ class _ServerSettingsContentState extends ConsumerState<ServerSettingsContent> {
                   : null,
               onFieldSubmitted: (_) => _save(),
             ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Membros podem alterar o próprio nickname'),
+              subtitle: const Text(
+                'Administradores ainda podem gerenciar nicknames de membros.',
+              ),
+              value: detail.server.allowSelfNickname,
+              onChanged: _saving || _working
+                  ? null
+                  : (allowed) async {
+                      try {
+                        await ref
+                            .read(serversRepositoryProvider)
+                            .updateSelfNicknamePermission(
+                              widget.serverId,
+                              allowed,
+                            );
+                        ref.invalidate(serverDetailProvider(widget.serverId));
+                      } on ApiException catch (error) {
+                        if (mounted) setState(() => _error = error.message);
+                      }
+                    },
+            ),
             if (_error != null) ...[
               const SizedBox(height: 12),
               Text(
@@ -542,10 +565,8 @@ class _ServerIconEditor extends StatelessWidget {
                   width: 58,
                   height: 58,
                   fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) => AppIcon(
-                    AppIcons.server,
-                    color: AppTokens.textMuted,
-                  ),
+                  errorBuilder: (_, _, _) =>
+                      AppIcon(AppIcons.server, color: AppTokens.textMuted),
                 )
               : iconUrl == null
               ? Text(

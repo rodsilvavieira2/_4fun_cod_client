@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import '../../core/ui/profile_popup.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -142,6 +143,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final serverDetail = ref.watch(serverDetailProvider(widget.serverId));
     final members = serverDetail.valueOrNull?.members ?? const <ServerMember>[];
     final onlineUserIds = ref.watch(presenceProvider(widget.serverId));
+    final presenceStatuses = ref.watch(presenceStatusProvider(widget.serverId));
 
     return Column(
       children: [
@@ -163,6 +165,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               ),
             ),
             data: (state) => _MessageList(
+              serverId: widget.serverId,
               state: state,
               channelName: widget.channelName,
               myUserId: myUserId,
@@ -189,6 +192,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           channelName: widget.channelName,
           members: members,
           onlineUserIds: onlineUserIds,
+          presenceStatuses: presenceStatuses,
           replyTo: _replyTo,
           onCancelReply: _clearReply,
         ),
@@ -230,6 +234,7 @@ class _ChatError extends StatelessWidget {
 
 class _MessageList extends ConsumerStatefulWidget {
   const _MessageList({
+    required this.serverId,
     required this.state,
     required this.channelName,
     required this.onLoadMore,
@@ -243,6 +248,7 @@ class _MessageList extends ConsumerStatefulWidget {
   });
 
   final ChatState state;
+  final String serverId;
   final String channelName;
   final String? myUserId;
   final List<ServerMember> members;
@@ -364,8 +370,7 @@ class _MessageListState extends ConsumerState<_MessageList> {
         final oldest = state.messages.isEmpty
             ? null
             : state.messages.first.createdAt;
-        final inWindow =
-            oldest != null && !oldest.isAfter(cutoff);
+        final inWindow = oldest != null && !oldest.isAfter(cutoff);
         if (state.loadingMore) {
           // Outro load (ex. do scroll) em voo: espera um frame e reavalia
           // sem consumir o teto — o controller sempre desliga loadingMore.
@@ -387,7 +392,11 @@ class _MessageListState extends ConsumerState<_MessageList> {
           }).length;
           log.d(
             'paginacao interrompida target=$id motivo='
-            '${!state.hasMore ? 'sem-mais' : aposJanela > 5 ? 'janela-ok' : 'limite-200'} '
+            '${!state.hasMore
+                ? 'sem-mais'
+                : aposJanela > 5
+                ? 'janela-ok'
+                : 'limite-200'} '
             'carregadas=${state.messages.length} '
             'maisAntiga=${oldest?.toIso8601String()} vizinhas=$vizinhas',
             tag: _jumpTag,
@@ -403,7 +412,12 @@ class _MessageListState extends ConsumerState<_MessageList> {
         try {
           await widget.onLoadMore();
         } catch (error, stack) {
-          log.e('loadMore falhou target=$id', error: error, stackTrace: stack, tag: _jumpTag);
+          log.e(
+            'loadMore falhou target=$id',
+            error: error,
+            stackTrace: stack,
+            tag: _jumpTag,
+          );
           break;
         }
         if (!mounted) return;
@@ -423,9 +437,7 @@ class _MessageListState extends ConsumerState<_MessageList> {
         log.w('original nao encontrada target=$id', tag: _jumpTag);
         messenger.hideCurrentSnackBar();
         messenger.showSnackBar(
-          const SnackBar(
-            content: Text('Mensagem original não encontrada.'),
-          ),
+          const SnackBar(content: Text('Mensagem original não encontrada.')),
         );
         return;
       }
@@ -454,7 +466,8 @@ class _MessageListState extends ConsumerState<_MessageList> {
     return done.future;
   }
 
-  void _reveal(BuildContext ctx, String id) {    Scrollable.ensureVisible(
+  void _reveal(BuildContext ctx, String id) {
+    Scrollable.ensureVisible(
       ctx,
       duration: const Duration(milliseconds: 400),
       curve: Curves.easeInOut,
@@ -569,6 +582,7 @@ class _MessageListState extends ConsumerState<_MessageList> {
               children: [
                 if (showDayDivider) _DayDivider(time: message.createdAt),
                 _MessageTile(
+                  serverId: widget.serverId,
                   message: message,
                   showHeader: ChatGrouping.shouldStartNewGroup(
                     current: message,
@@ -655,6 +669,7 @@ class _DayDivider extends StatelessWidget {
 
 class _MessageTile extends StatefulWidget {
   const _MessageTile({
+    required this.serverId,
     required this.message,
     required this.showHeader,
     required this.mentionTargets,
@@ -671,6 +686,7 @@ class _MessageTile extends StatefulWidget {
   });
 
   final ChatMessage message;
+  final String serverId;
   final bool showHeader;
   final String? myUserId;
   final String? channelName;
@@ -768,9 +784,7 @@ class _MessageTileState extends State<_MessageTile> {
     for (final attachment in message.attachments) {
       final url = attachment.url;
       if (url == null || attachment.status == 'FAILED') continue;
-      items.add(
-        MediaItem(url: url, label: 'imagem-${attachment.id}'),
-      );
+      items.add(MediaItem(url: url, label: 'imagem-${attachment.id}'));
     }
     return items;
   }
@@ -890,17 +904,31 @@ class _MessageTileState extends State<_MessageTile> {
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        _Avatar(author: author),
+                        GestureDetector(
+                          onTap: () => showProfilePopup(
+                            context,
+                            author.id,
+                            serverId: widget.serverId,
+                          ),
+                          child: _Avatar(author: author),
+                        ),
                         const SizedBox(width: 12),
                         Flexible(
-                          child: Text(
-                            author.name,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontFamily: 'Geist',
-                              fontSize: 14.5,
-                              fontWeight: FontWeight.w700,
-                              color: colors.authorColors[authorColorIndex],
+                          child: GestureDetector(
+                            onTap: () => showProfilePopup(
+                              context,
+                              author.id,
+                              serverId: widget.serverId,
+                            ),
+                            child: Text(
+                              author.name,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontFamily: 'Geist',
+                                fontSize: 14.5,
+                                fontWeight: FontWeight.w700,
+                                color: colors.authorColors[authorColorIndex],
+                              ),
                             ),
                           ),
                         ),
@@ -955,8 +983,8 @@ class _MessageTileState extends State<_MessageTile> {
                                 onTap: widget.onJumpToMessage == null
                                     ? null
                                     : () => widget.onJumpToMessage!(
-                                          widget.message.replyTo!,
-                                        ),
+                                        widget.message.replyTo!,
+                                      ),
                               ),
                               const SizedBox(height: 4),
                             ],
@@ -1195,9 +1223,7 @@ class _MentionMessageTextState extends State<_MentionMessageText> {
       return SelectableText(widget.text, style: baseStyle);
     }
 
-    return SelectableText.rich(
-      TextSpan(style: baseStyle, children: spans),
-    );
+    return SelectableText.rich(TextSpan(style: baseStyle, children: spans));
   }
 
   bool _containsLink(String text) => extractHttpUrls(text).isNotEmpty;
@@ -1445,16 +1471,13 @@ class _GifEmbedState extends State<_GifEmbed> {
     _detach();
     final provider = NetworkImage(widget.url);
     final stream = provider.resolve(createLocalImageConfiguration(context));
-    final listener = ImageStreamListener(
-      (info, _) {
-        final w = info.image.width.toDouble();
-        final h = info.image.height.toDouble();
-        if (h <= 0) return;
-        if (!mounted) return;
-        setState(() => _aspect = (w / h).clamp(0.5, 2.5));
-      },
-      onError: (_, _) {},
-    );
+    final listener = ImageStreamListener((info, _) {
+      final w = info.image.width.toDouble();
+      final h = info.image.height.toDouble();
+      if (h <= 0) return;
+      if (!mounted) return;
+      setState(() => _aspect = (w / h).clamp(0.5, 2.5));
+    }, onError: (_, _) {});
     _stream = stream;
     _listener = listener;
     stream.addListener(listener);
@@ -1500,9 +1523,7 @@ class _GifEmbedState extends State<_GifEmbed> {
                             child: SizedBox(
                               width: 18,
                               height: 18,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                              ),
+                              child: CircularProgressIndicator(strokeWidth: 2),
                             ),
                           );
                         },
@@ -1547,8 +1568,7 @@ class _GifEmbedState extends State<_GifEmbed> {
                     Positioned.fill(
                       child: AnimatedOpacity(
                         duration: const Duration(milliseconds: 120),
-                        opacity:
-                            _hovered && widget.onOpen != null ? 1 : 0,
+                        opacity: _hovered && widget.onOpen != null ? 1 : 0,
                         child: IgnorePointer(
                           child: DecoratedBox(
                             decoration: BoxDecoration(
@@ -1968,10 +1988,7 @@ class _ReactionChipState extends State<_ReactionChip> {
         children: [
           WidgetSpan(
             alignment: PlaceholderAlignment.middle,
-            child: Text(
-              summary.emoji,
-              style: const TextStyle(fontSize: 20),
-            ),
+            child: Text(summary.emoji, style: const TextStyle(fontSize: 20)),
           ),
           const TextSpan(text: '  '),
           TextSpan(
@@ -2000,45 +2017,41 @@ class _ReactionChipState extends State<_ReactionChip> {
         child: GestureDetector(
           onTap: widget.onPressed,
           behavior: HitTestBehavior.opaque,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 120),
-              height: 26,
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              decoration: BoxDecoration(
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 120),
+            height: 26,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            decoration: BoxDecoration(
+              color: active
+                  ? colors.accent.withValues(alpha: _hovered ? 0.22 : 0.16)
+                  : (_hovered ? colors.surface3 : colors.surface2),
+              borderRadius: BorderRadius.circular(AppRadius.sm),
+              border: Border.all(
                 color: active
-                    ? colors.accent.withValues(alpha: _hovered ? 0.22 : 0.16)
-                    : (_hovered ? colors.surface3 : colors.surface2),
-                borderRadius: BorderRadius.circular(AppRadius.sm),
-                border: Border.all(
-                  color: active
-                      ? colors.accent.withValues(alpha: _hovered ? 0.85 : 0.65)
-                      : (_hovered
-                            ? colors.borderSubtle
-                            : colors.borderHairline),
-                  width: 1,
-                ),
+                    ? colors.accent.withValues(alpha: _hovered ? 0.85 : 0.65)
+                    : (_hovered ? colors.borderSubtle : colors.borderHairline),
+                width: 1,
               ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(summary.emoji, style: const TextStyle(fontSize: 14)),
-                  const SizedBox(width: 4),
-                  Text(
-                    '${summary.count}',
-                    style: TextStyle(
-                      fontFamily: 'Geist',
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: active
-                          ? colors.accent
-                          : colors.textSecondary,
-                    ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(summary.emoji, style: const TextStyle(fontSize: 14)),
+                const SizedBox(width: 4),
+                Text(
+                  '${summary.count}',
+                  style: TextStyle(
+                    fontFamily: 'Geist',
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: active ? colors.accent : colors.textSecondary,
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),
+      ),
     );
   }
 }
@@ -2086,9 +2099,7 @@ class _ReactionSummary {
           tooltip: _reactionTooltip(entry.key, entry.value),
           reactors: [
             for (final reaction in entry.value)
-              reaction.user?.name ??
-                  reaction.user?.username ??
-                  reaction.userId,
+              reaction.user?.name ?? reaction.user?.username ?? reaction.userId,
           ],
         ),
     ];
@@ -2121,6 +2132,7 @@ class _ChatComposer extends ConsumerStatefulWidget {
     required this.channelName,
     required this.members,
     required this.onlineUserIds,
+    required this.presenceStatuses,
     required this.onCancelReply,
     this.replyTo,
   });
@@ -2130,6 +2142,7 @@ class _ChatComposer extends ConsumerStatefulWidget {
   final String channelName;
   final List<ServerMember> members;
   final Set<String> onlineUserIds;
+  final Map<String, String> presenceStatuses;
   final ChatMessage? replyTo;
   final VoidCallback onCancelReply;
 
@@ -2200,7 +2213,7 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
           _MentionOption(
             target: target,
             member: membersByUserId[target.userId]!,
-            online: widget.onlineUserIds.contains(target.userId),
+            status: widget.presenceStatuses[target.userId],
           ),
     ];
   }
@@ -2425,7 +2438,10 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
       _attachments = [
         for (final s in _attachments)
           identical(s, slot)
-              ? s.copyWith(fileName: result.fileName, isSpoiler: result.isSpoiler)
+              ? s.copyWith(
+                  fileName: result.fileName,
+                  isSpoiler: result.isSpoiler,
+                )
               : s,
       ];
     });
@@ -2735,10 +2751,7 @@ class _AttachmentCard extends StatelessWidget {
                     child: slot.isSpoiler
                         ? SpoilerCover(
                             revealHint: 'Spoiler ativado',
-                            child: Image.memory(
-                              slot.bytes,
-                              fit: BoxFit.cover,
-                            ),
+                            child: Image.memory(slot.bytes, fit: BoxFit.cover),
                           )
                         : Image.memory(slot.bytes, fit: BoxFit.cover),
                   ),
@@ -2752,10 +2765,7 @@ class _AttachmentCard extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: const Color(0xE61A1A1E),
                     borderRadius: BorderRadius.circular(AppRadius.sm),
-                    border: Border.all(
-                      color: AppTokens.borderSubtle,
-                      width: 1,
-                    ),
+                    border: Border.all(color: AppTokens.borderSubtle, width: 1),
                     boxShadow: const [
                       BoxShadow(
                         color: Color(0x66000000),
@@ -2922,15 +2932,13 @@ Future<EditAttachmentResult?> showEditAttachmentDialog(
                   counterText: '',
                   border: OutlineInputBorder(),
                 ),
-                onSubmitted: (_) => Navigator.of(dialogContext).pop(
-                  (
-                    fileName: _normalizeAttachmentName(
-                      controller.text,
-                      slot.fileName,
-                    ),
-                    isSpoiler: isSpoiler,
+                onSubmitted: (_) => Navigator.of(dialogContext).pop((
+                  fileName: _normalizeAttachmentName(
+                    controller.text,
+                    slot.fileName,
                   ),
-                ),
+                  isSpoiler: isSpoiler,
+                )),
               ),
               const SizedBox(height: 8),
               SwitchListTile(
@@ -2964,15 +2972,13 @@ Future<EditAttachmentResult?> showEditAttachmentDialog(
             child: const Text('Cancelar'),
           ),
           TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(
-              (
-                fileName: _normalizeAttachmentName(
-                  controller.text,
-                  slot.fileName,
-                ),
-                isSpoiler: isSpoiler,
+            onPressed: () => Navigator.of(dialogContext).pop((
+              fileName: _normalizeAttachmentName(
+                controller.text,
+                slot.fileName,
               ),
-            ),
+              isSpoiler: isSpoiler,
+            )),
             child: const Text('Salvar'),
           ),
         ],
@@ -2986,7 +2992,8 @@ String _normalizeAttachmentName(String raw, String fallback) {
   if (trimmed.isEmpty) return fallback;
   final dot = fallback.lastIndexOf('.');
   final originalExt = dot >= 0 ? fallback.substring(dot) : '';
-  if (originalExt.isNotEmpty && !trimmed.toLowerCase().endsWith(originalExt.toLowerCase())) {
+  if (originalExt.isNotEmpty &&
+      !trimmed.toLowerCase().endsWith(originalExt.toLowerCase())) {
     final withoutTrailingDots = trimmed.replaceAll(RegExp(r'\.+$'), '');
     if (withoutTrailingDots.contains('.')) return withoutTrailingDots;
     return '$withoutTrailingDots$originalExt';
@@ -2998,12 +3005,12 @@ class _MentionOption {
   const _MentionOption({
     required this.target,
     required this.member,
-    required this.online,
+    required this.status,
   });
 
   final MentionTarget target;
   final ServerMember member;
-  final bool online;
+  final String? status;
 }
 
 class _MentionSuggestionsPanel extends StatelessWidget {
@@ -3210,9 +3217,12 @@ class _MentionAvatar extends StatelessWidget {
           right: -2,
           bottom: -2,
           child: PresenceDot(
-            status: option.online
-                ? PresenceStatus.online
-                : PresenceStatus.offline,
+            status: switch (option.status) {
+              'ONLINE' => PresenceStatus.online,
+              'IDLE' => PresenceStatus.idle,
+              'DND' => PresenceStatus.dnd,
+              _ => PresenceStatus.offline,
+            },
             size: 8,
           ),
         ),

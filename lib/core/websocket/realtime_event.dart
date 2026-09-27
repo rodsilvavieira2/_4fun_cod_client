@@ -24,10 +24,22 @@ sealed class RealtimeEvent {
       'member.left' => MemberRemovedEvent.fromJson(json),
       'member.role_updated' => MemberRoleUpdatedEvent.fromJson(json),
       'presence.changed' => PresenceChangedEvent.fromJson(json),
+      'profile.changed' => ProfileChangedEvent.fromJson(json),
       'voice.presence.changed' => VoicePresenceChangedEvent.fromJson(json),
       _ => null,
     };
   }
+}
+
+class ProfileChangedEvent extends RealtimeEvent {
+  const ProfileChangedEvent({required this.userId, this.serverId});
+  factory ProfileChangedEvent.fromJson(Map<String, dynamic> json) =>
+      ProfileChangedEvent(
+        userId: json['userId'] as String,
+        serverId: json['serverId'] as String?,
+      );
+  final String userId;
+  final String? serverId;
 }
 
 /// `message.created { channelId, message }` — mensagem nova no canal.
@@ -206,7 +218,7 @@ class MemberRoleUpdatedEvent extends RealtimeEvent {
 }
 
 /// Status de presença de um usuário (espelho do enum do backend).
-enum PresenceStatus { online, offline }
+enum PresenceStatus { online, idle, dnd, offline }
 
 /// `presence.changed { userId, status: ONLINE|OFFLINE }` — presença efêmera
 /// do servidor (Redis, TTL 60s + heartbeat).
@@ -216,9 +228,12 @@ class PresenceChangedEvent extends RealtimeEvent {
   factory PresenceChangedEvent.fromJson(Map<String, dynamic> json) =>
       PresenceChangedEvent(
         userId: json['userId'] as String,
-        status: json['status'] == 'ONLINE'
-            ? PresenceStatus.online
-            : PresenceStatus.offline,
+        status: switch (json['status']) {
+          'ONLINE' => PresenceStatus.online,
+          'IDLE' => PresenceStatus.idle,
+          'DND' => PresenceStatus.dnd,
+          _ => PresenceStatus.offline,
+        },
       );
 
   final String userId;

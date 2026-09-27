@@ -39,7 +39,7 @@ final dmConversationsProvider = Provider.family<List<DmConversation>, String>((
     conversations.add(
       DmConversation(
         userId: member.userId,
-        name: member.user.name,
+        name: member.user.displayName ?? member.user.name,
         avatarUrl: member.user.avatarUrl,
         online: true,
       ),

@@ -31,7 +31,7 @@ class PresenceDot extends StatelessWidget {
     final (color, label) = switch (effectiveStatus) {
       PresenceStatus.online => (AppTokens.accentGreen, 'Online'),
       PresenceStatus.idle => (AppTokens.accentAmber, 'Ausente'),
-      PresenceStatus.dnd => (AppTokens.accentPurple, 'Não perturbe'),
+      PresenceStatus.dnd => (AppTokens.accentDanger, 'Não perturbe'),
       PresenceStatus.offline => (AppTokens.accentOffline, 'Offline'),
     };
 

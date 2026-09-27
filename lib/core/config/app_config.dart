@@ -4,8 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// Configuração da aplicação, lida de `--dart-define` com defaults locais.
 ///
-/// - `API_URL`: base URL da API NestJS (default `http://localhost:3000` — lab
-///   sem Caddy; a API é publicada direto na 3000).
+/// - `API_URL`: base URL da API NestJS (default `http://localhost:3002` — lab
+///   sem Caddy; a API é publicada no host 3002 -> container 3000
+///   pois 3000/3001 estão ocupados pelo tc-crm-relay).
 /// - `LIVEKIT_URL`: URL do servidor LiveKit (default `ws://localhost:7880`).
 /// - `OTEL_ENDPOINT`: base do OpenObserve (default `http://localhost:5080` —
 ///   Fase 1, desktop Linux/Windows). Pode incluir o path da org
@@ -37,7 +38,7 @@ class AppConfig {
   factory AppConfig.fromEnvironment() {
     const apiBaseUrl = String.fromEnvironment(
       'API_URL',
-      defaultValue: 'http://localhost:3000',
+      defaultValue: 'http://localhost:3002',
     );
     const livekitUrl = String.fromEnvironment(
       'LIVEKIT_URL',
@@ -82,7 +83,7 @@ class AppConfig {
     );
   }
 
-  /// Base URL da API NestJS — origem pura (ex. `http://localhost:3000`).
+  /// Base URL da API NestJS — origem pura (ex. `http://localhost:3002`).
   final String apiBaseUrl;
 
   /// Base URL da API REST: origem + prefixo global `/api/v1` do NestJS

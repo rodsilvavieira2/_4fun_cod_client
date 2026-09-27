@@ -556,6 +556,8 @@ class ChatController
             ],
           ),
         );
+      case ProfileChangedEvent(:final serverId):
+        if (serverId == null || serverId == arg.serverId) ref.invalidateSelf();
       case ChannelCreatedEvent() ||
           ChannelUpdatedEvent() ||
           ChannelDeletedEvent() ||

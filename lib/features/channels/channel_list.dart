@@ -349,8 +349,8 @@ String _displayName(
   RtcParticipant? participant,
   String fallbackId,
 ) {
-  final username = member?.user.username.trim();
-  if (username != null && username.isNotEmpty) return username;
+  final displayName = member?.user.name.trim();
+  if (displayName != null && displayName.isNotEmpty) return displayName;
   final rtcName = participant?.name.trim();
   if (rtcName != null && rtcName.isNotEmpty) return rtcName;
   return member?.user.name ?? fallbackId;

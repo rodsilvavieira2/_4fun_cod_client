@@ -54,9 +54,19 @@ class ServerDetailController
     _reconnectedSubscription?.cancel();
     final socket = ref.read(socketServiceProvider);
     _membershipSubscription = socket.events.listen((event) {
+      if (event is ProfileChangedEvent &&
+          event.serverId == null &&
+          state.valueOrNull?.members.any(
+                (member) => member.userId == event.userId,
+              ) ==
+              true) {
+        ref.invalidateSelf();
+        return;
+      }
       final eventServerId = switch (event) {
         MemberRemovedEvent(:final serverId) => serverId,
         MemberRoleUpdatedEvent(:final serverId) => serverId,
+        ProfileChangedEvent(:final serverId) => serverId,
         _ => null,
       };
       if (eventServerId == serverId) ref.invalidateSelf();
@@ -278,7 +288,7 @@ class PresenceController
   void _applyEvent(String userId, PresenceStatus status) {
     _seenEvents.add(userId);
     final online = {...state};
-    if (status == PresenceStatus.online) {
+    if (status != PresenceStatus.offline) {
       online.add(userId);
     } else {
       online.remove(userId);
@@ -314,6 +324,102 @@ class PresenceController
 /// cancela o listener).
 final presenceProvider = NotifierProvider.autoDispose
     .family<PresenceController, Set<String>, String>(PresenceController.new);
+
+class PresenceStatusController
+    extends AutoDisposeFamilyNotifier<Map<String, String>, String> {
+  StreamSubscription<RealtimeEvent>? _events;
+  StreamSubscription<void>? _reconnected;
+  bool _disposed = false;
+  int _generation = 0;
+  int _fetchGeneration = 0;
+  Set<String>? _memberIds;
+  final Map<String, String> _latestEvents = {};
+  final Map<String, String> _pendingEvents = {};
+
+  @override
+  Map<String, String> build(String serverId) {
+    _disposed = false;
+    _events?.cancel();
+    _reconnected?.cancel();
+    _latestEvents.clear();
+    _pendingEvents.clear();
+    final generation = ++_generation;
+    _memberIds = ref
+        .read(serverDetailProvider(serverId))
+        .valueOrNull
+        ?.members
+        .map((member) => member.userId)
+        .toSet();
+    ref.listen(serverDetailProvider(serverId), (_, next) {
+      if (_disposed || generation != _generation) return;
+      final ids = next.valueOrNull?.members
+          .map((member) => member.userId)
+          .toSet();
+      _memberIds = ids;
+      if (ids == null) return;
+      final filtered = {...state}..removeWhere((id, _) => !ids.contains(id));
+      for (final entry in _pendingEvents.entries) {
+        if (ids.contains(entry.key)) {
+          filtered[entry.key] = entry.value;
+          _latestEvents[entry.key] = entry.value;
+        }
+      }
+      _pendingEvents.clear();
+      state = filtered;
+    });
+    _events = ref.read(socketServiceProvider).events.listen((event) {
+      if (event is! PresenceChangedEvent ||
+          _disposed ||
+          generation != _generation) {
+        return;
+      }
+      final status = event.status.name.toUpperCase();
+      final members = _memberIds;
+      if (members == null) {
+        _pendingEvents[event.userId] = status;
+      } else if (members.contains(event.userId)) {
+        _latestEvents[event.userId] = status;
+        state = {...state, event.userId: status};
+      }
+    });
+    _reconnected = ref.read(socketServiceProvider).reconnected.listen((_) {
+      if (_disposed || generation != _generation) return;
+      _latestEvents.clear();
+      _pendingEvents.clear();
+      state = const {};
+      _fetch(serverId, generation);
+    });
+    ref.onDispose(() {
+      _disposed = true;
+      _events?.cancel();
+      _reconnected?.cancel();
+    });
+    _fetch(serverId, generation);
+    return const {};
+  }
+
+  Future<void> _fetch(String serverId, int generation) async {
+    final fetchGeneration = ++_fetchGeneration;
+    try {
+      final snapshot = await ref
+          .read(serversRepositoryProvider)
+          .fetchPresence(serverId);
+      if (_disposed ||
+          generation != _generation ||
+          fetchGeneration != _fetchGeneration) {
+        return;
+      }
+      state = {...snapshot.statuses, ..._latestEvents};
+    } catch (_) {
+      // A presença é efêmera; eventos seguintes atualizam o indicador.
+    }
+  }
+}
+
+final presenceStatusProvider = NotifierProvider.autoDispose
+    .family<PresenceStatusController, Map<String, String>, String>(
+      PresenceStatusController.new,
+    );
 
 /// Ocupantes de voz por canal (`channelId -> userIds`). É separado da
 /// presença online para não alterar os consumidores existentes de

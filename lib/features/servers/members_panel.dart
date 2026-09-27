@@ -6,6 +6,7 @@ import '../../core/ui/participant_volume_popover.dart';
 import '../../core/ui/ui.dart';
 import '../../shared/models/servers.dart';
 import 'servers_providers.dart';
+import '../../core/ui/profile_popup.dart';
 
 /// Painel lateral de membros estilo macOS Sidebar (240px, grupos ONLINE/OFFLINE).
 class MembersPanel extends ConsumerWidget {
@@ -18,6 +19,7 @@ class MembersPanel extends ConsumerWidget {
     final colors = context.appColors;
     final detail = ref.watch(serverDetailProvider(serverId));
     final online = ref.watch(presenceProvider(serverId));
+    final statuses = ref.watch(presenceStatusProvider(serverId));
     final members = detail.valueOrNull?.members ?? const <ServerMember>[];
 
     final onlineMembers = <ServerMember>[];
@@ -47,7 +49,12 @@ class MembersPanel extends ConsumerWidget {
               padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
             ),
             for (final member in onlineMembers)
-              _MemberRow(member: member, online: true),
+              _MemberRow(
+                member: member,
+                serverId: serverId,
+                online: true,
+                status: statuses[member.userId] ?? 'ONLINE',
+              ),
           ],
           if (offlineMembers.isNotEmpty) ...[
             SectionHeader(
@@ -55,7 +62,12 @@ class MembersPanel extends ConsumerWidget {
               padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
             ),
             for (final member in offlineMembers)
-              _MemberRow(member: member, online: false),
+              _MemberRow(
+                member: member,
+                serverId: serverId,
+                online: false,
+                status: 'OFFLINE',
+              ),
           ],
         ],
       ),
@@ -64,10 +76,17 @@ class MembersPanel extends ConsumerWidget {
 }
 
 class _MemberRow extends ConsumerStatefulWidget {
-  const _MemberRow({required this.member, required this.online});
+  const _MemberRow({
+    required this.member,
+    required this.serverId,
+    required this.online,
+    required this.status,
+  });
 
   final ServerMember member;
+  final String serverId;
   final bool online;
+  final String status;
 
   @override
   ConsumerState<_MemberRow> createState() => _MemberRowState();
@@ -81,78 +100,88 @@ class _MemberRowState extends ConsumerState<_MemberRow> {
     final colors = context.appColors;
     final user = widget.member.user;
     final online = widget.online;
-    // Nickname (username) primeiro — cai para o nome se vazio.
-    final displayName = user.username.trim().isNotEmpty
-        ? user.username
-        : user.name;
+    final displayName = user.name;
 
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
-      child: Container(
-        height: 40,
-        margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(
-          color: _hovered ? colors.hoverOverlay : Colors.transparent,
-          borderRadius: BorderRadius.circular(AppRadius.sm),
+      child: GestureDetector(
+        onTap: () => showProfilePopup(
+          context,
+          widget.member.userId,
+          serverId: widget.serverId,
         ),
-        child: Row(
-          children: [
-            Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Container(
-                  width: 30,
-                  height: 30,
-                  decoration: BoxDecoration(
-                    color: colors.surface2,
-                    borderRadius: BorderRadius.circular(AppRadius.sm),
-                    border: Border.all(color: colors.borderHairline, width: 1),
+        child: Container(
+          height: 40,
+          margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            color: _hovered ? colors.hoverOverlay : Colors.transparent,
+            borderRadius: BorderRadius.circular(AppRadius.sm),
+          ),
+          child: Row(
+            children: [
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Container(
+                    width: 30,
+                    height: 30,
+                    decoration: BoxDecoration(
+                      color: colors.surface2,
+                      borderRadius: BorderRadius.circular(AppRadius.sm),
+                      border: Border.all(
+                        color: colors.borderHairline,
+                        width: 1,
+                      ),
+                    ),
+                    alignment: Alignment.center,
+                    clipBehavior: Clip.antiAlias,
+                    child: user.avatarUrl != null
+                        ? AppFileImage(
+                            path: user.avatarUrl,
+                            width: 30,
+                            height: 30,
+                            fallback: _initial(displayName),
+                          )
+                        : _initial(displayName),
                   ),
-                  alignment: Alignment.center,
-                  clipBehavior: Clip.antiAlias,
-                  child: user.avatarUrl != null
-                      ? AppFileImage(
-                          path: user.avatarUrl,
-                          width: 30,
-                          height: 30,
-                          fallback: _initial(displayName),
-                        )
-                      : _initial(displayName),
-                ),
-                Positioned(
-                  right: -2,
-                  bottom: -2,
-                  child: PresenceDot(
-                    status: online
-                        ? PresenceStatus.online
-                        : PresenceStatus.offline,
-                    size: 9,
+                  Positioned(
+                    right: -2,
+                    bottom: -2,
+                    child: PresenceDot(
+                      status: switch (widget.status) {
+                        'IDLE' => PresenceStatus.idle,
+                        'DND' => PresenceStatus.dnd,
+                        'ONLINE' => PresenceStatus.online,
+                        _ => PresenceStatus.offline,
+                      },
+                      size: 9,
+                    ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                displayName,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontFamily: 'Geist',
-                  fontSize: 13.5,
-                  fontWeight: FontWeight.w500,
-                  color: online ? colors.textPrimary : colors.textMuted,
+                ],
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  displayName,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontFamily: 'Geist',
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w500,
+                    color: online ? colors.textPrimary : colors.textMuted,
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(width: 4),
-            ServerRoleBadge(role: widget.member.role, showLabel: false),
-            _VoiceVolumeAction(
-              userId: widget.member.userId,
-              displayName: displayName,
-            ),
-          ],
+              const SizedBox(width: 4),
+              ServerRoleBadge(role: widget.member.role, showLabel: false),
+              _VoiceVolumeAction(
+                userId: widget.member.userId,
+                displayName: displayName,
+              ),
+            ],
+          ),
         ),
       ),
     );

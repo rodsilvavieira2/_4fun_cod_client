@@ -2,7 +2,7 @@
 ///
 /// Cobre os formatos aceitos:
 /// - `https://app.4funcod.dev/invite/<code>` (produção)
-/// - `http://localhost:3000/invite/<code>` (API local)
+/// - `http://localhost:3002/invite/<code>` (API local)
 /// - `http://localhost:8090/#/invite/<code>` (client web, hash routing)
 /// - `<code>` puro (base62 de 10 chars)
 /// - com `?query` / `#hash` (ignorados)

@@ -7,6 +7,7 @@ import '../../core/auth/auth_state.dart';
 import '../../core/ui/ui.dart';
 import '../../shared/models/servers.dart';
 import 'servers_providers.dart';
+import '../profile/profile_repository.dart';
 
 /// Administração de membros e cargos com hierarquia inspirada no Discord.
 class MembersScreen extends ConsumerWidget {
@@ -17,7 +18,7 @@ class MembersScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final detail = ref.watch(serverDetailProvider(serverId));
-    final online = ref.watch(presenceProvider(serverId));
+    final statuses = ref.watch(presenceStatusProvider(serverId));
     final authState = ref.watch(authControllerProvider).valueOrNull;
     final currentUserId = authState is Authenticated ? authState.user.id : null;
 
@@ -63,10 +64,11 @@ class MembersScreen extends ConsumerWidget {
                         member: member,
                         actorRole: actorRole,
                         isCurrentUser: member.userId == currentUserId,
-                        online: online.contains(member.userId),
+                        status: statuses[member.userId],
                         onRoleChanged: (role) =>
                             _changeRole(context, ref, member, role),
                         onRemove: () => _confirmRemove(context, ref, member),
+                        onNickname: () => _changeNickname(context, ref, member),
                       ),
                   ],
                 ],
@@ -137,6 +139,56 @@ class MembersScreen extends ConsumerWidget {
       ).showSnackBar(SnackBar(content: Text(error.message)));
     }
   }
+
+  Future<void> _changeNickname(
+    BuildContext context,
+    WidgetRef ref,
+    ServerMember member,
+  ) async {
+    final controller = TextEditingController(text: member.nickname ?? '');
+    try {
+      final nickname = await showDialog<String>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text('Nickname de ${member.user.name}'),
+          content: TextField(
+            controller: controller,
+            maxLength: 50,
+            decoration: const InputDecoration(
+              hintText: 'Em branco usa o Display Name',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, controller.text.trim()),
+              child: const Text('Salvar'),
+            ),
+          ],
+        ),
+      );
+      if (nickname == null) return;
+      await ref
+          .read(profileRepositoryProvider)
+          .setMemberNickname(
+            serverId,
+            member.userId,
+            nickname.isEmpty ? null : nickname,
+          );
+      ref.invalidate(serverDetailProvider(serverId));
+    } on ApiException catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.message)));
+      }
+    } finally {
+      controller.dispose();
+    }
+  }
 }
 
 class _PermissionOverview extends StatelessWidget {
@@ -197,17 +249,19 @@ class _MemberAdminTile extends StatelessWidget {
     required this.member,
     required this.actorRole,
     required this.isCurrentUser,
-    required this.online,
+    required this.status,
     required this.onRoleChanged,
     required this.onRemove,
+    required this.onNickname,
   });
 
   final ServerMember member;
   final ServerRole actorRole;
   final bool isCurrentUser;
-  final bool online;
+  final String? status;
   final ValueChanged<ServerRole> onRoleChanged;
   final VoidCallback onRemove;
+  final VoidCallback onNickname;
 
   @override
   Widget build(BuildContext context) {
@@ -215,6 +269,10 @@ class _MemberAdminTile extends StatelessWidget {
     final canChangeRole =
         actorRole.canManageRoles && !member.isOwner && !isCurrentUser;
     final canRemove = !isCurrentUser && actorRole.canRemove(member.role);
+    final canManageNickname =
+        !isCurrentUser &&
+        (actorRole.isOwner ||
+            (actorRole.isAdmin && member.role == ServerRole.member));
     return Container(
       margin: const EdgeInsets.only(bottom: 4),
       decoration: BoxDecoration(
@@ -251,7 +309,12 @@ class _MemberAdminTile extends StatelessWidget {
               right: -2,
               bottom: -2,
               child: PresenceDot(
-                status: online ? PresenceStatus.online : PresenceStatus.offline,
+                status: switch (status) {
+                  'ONLINE' => PresenceStatus.online,
+                  'IDLE' => PresenceStatus.idle,
+                  'DND' => PresenceStatus.dnd,
+                  _ => PresenceStatus.offline,
+                },
                 size: 10,
               ),
             ),
@@ -265,6 +328,8 @@ class _MemberAdminTile extends StatelessWidget {
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (canManageNickname)
+              TextButton(onPressed: onNickname, child: const Text('Nickname')),
             if (canChangeRole)
               AppMenuButton<ServerRole>(
                 tooltip: 'Alterar cargo',

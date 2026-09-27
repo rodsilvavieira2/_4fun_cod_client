@@ -69,6 +69,7 @@ class Server {
     required this.id,
     required this.name,
     this.iconUrl,
+    this.allowSelfNickname = true,
     this.createdAt,
     this.channels = const [],
     this.myRole,
@@ -78,6 +79,7 @@ class Server {
     id: json['id'] as String,
     name: json['name'] as String,
     iconUrl: json['iconUrl'] as String?,
+    allowSelfNickname: json['allowSelfNickname'] as bool? ?? true,
     createdAt: DateTime.tryParse(json['createdAt'] as String? ?? ''),
     channels: (json['channels'] as List<dynamic>? ?? const [])
         .map((e) => ServerChannel.fromJson(e as Map<String, dynamic>))
@@ -88,6 +90,7 @@ class Server {
   final String id;
   final String name;
   final String? iconUrl;
+  final bool allowSelfNickname;
   final DateTime? createdAt;
 
   /// Canais embutidos na listagem (`GET /servers`).
@@ -109,6 +112,7 @@ class ServerMember {
     required this.role,
     required this.joinedAt,
     required this.user,
+    this.nickname,
   });
 
   factory ServerMember.fromJson(Map<String, dynamic> json) => ServerMember(
@@ -121,6 +125,7 @@ class ServerMember {
         DateTime.tryParse(json['joinedAt'] as String? ?? '') ??
         DateTime.fromMillisecondsSinceEpoch(0),
     user: User.fromJson(json['user'] as Map<String, dynamic>),
+    nickname: json['nickname'] as String?,
   );
 
   final String id;
@@ -128,6 +133,7 @@ class ServerMember {
   final ServerRole role;
   final DateTime joinedAt;
   final User user;
+  final String? nickname;
 
   bool get isOwner => role.isOwner;
   bool get isAdmin => role.isAdmin;
@@ -229,10 +235,17 @@ class ServerDetail {
 /// `{ online: string[], voiceByChannel: { channelId: string[] } }`.
 /// Estado efêmero (Redis, TTL 60s), NUNCA persistido.
 class ServerPresence {
-  const ServerPresence({required this.online, this.voiceByChannel = const {}});
+  const ServerPresence({
+    required this.online,
+    this.statuses = const {},
+    this.voiceByChannel = const {},
+  });
 
   factory ServerPresence.fromJson(Map<String, dynamic> json) => ServerPresence(
     online: {...(json['online'] as List<dynamic>? ?? const []).cast<String>()},
+    statuses: (json['statuses'] as Map<String, dynamic>? ?? const {}).map(
+      (key, value) => MapEntry(key, value as String),
+    ),
     voiceByChannel:
         (json['voiceByChannel'] as Map<String, dynamic>? ?? const {}).map(
           (channelId, userIds) =>
@@ -242,6 +255,7 @@ class ServerPresence {
 
   /// Ids dos usuários online no servidor.
   final Set<String> online;
+  final Map<String, String> statuses;
 
   /// Ids dos usuários em voz, agrupados por canal (usado na Fase 4).
   final Map<String, List<String>> voiceByChannel;
