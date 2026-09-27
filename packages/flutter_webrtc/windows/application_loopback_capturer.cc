@@ -6,6 +6,7 @@
 #include <chrono>
 #include <cstring>
 #include <iostream>
+#include <mmdeviceapi.h>
 #include <roapi.h>
 #include <timeapi.h>
 
