@@ -68,14 +68,14 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
 
-# Fork do livekit_client 2.11.0 com ajustes de áudio usados pelo desktop.
-# Web não é target suportado do app; não tratar fixes web desse fork como
-# contrato de compatibilidade do produto. Revisitar em todo upgrade do SDK.
+# Fork do livekit_client 2.11.0 com negociação Opus estéreo no áudio de tela
+# e controle de ganho de áudio remoto. Fixado em commit para builds reproduzíveis.
+# Revisitar os ajustes em todo upgrade do SDK.
 dependency_overrides:
   livekit_client:
     git:
       url: https://github.com/rodsilvavieira2/client-sdk-flutter.git
-      ref: feat/remote-audio-gain
+      ref: ceb973e5e2c47bffca42ef78fa84758b57350ba0
   flutter_webrtc:
     path: packages/flutter_webrtc
   # Vendored tray_manager 0.5.3 (path override, como flutter_webrtc): o

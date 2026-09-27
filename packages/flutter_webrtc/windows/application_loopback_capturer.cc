@@ -6,7 +6,6 @@
 #include <chrono>
 #include <cstring>
 #include <iostream>
-#include <mmdeviceapi.h>
 #include <roapi.h>
 #include <timeapi.h>
 
@@ -123,7 +122,7 @@ bool ApplicationLoopbackCapturer::Start(
     scoped_refptr<RTCAudioSource> source) {
   if (running_) return true;
 
-    source_ = source;
+  source_ = source;
 
   audio_client_ = TryInitApplicationLoopback();
   if (!audio_client_) {
@@ -177,8 +176,8 @@ bool ApplicationLoopbackCapturer::Start(
 
   // Cache audio format for FeederThread (mix_format_ lives on this thread).
   cached_sample_rate_  = static_cast<int>(mix_format_->nSamplesPerSec);
-  cached_out_channels_ = 1;
-  // Initialise ring buffer: 500 ms of mono int16 samples.
+  cached_out_channels_ = mix_format_->nChannels > 1 ? 2 : 1;
+  // Initialise ring buffer: 500 ms of int16 frames, preserving stereo.
   {
     const size_t frames_per_20ms =
         static_cast<size_t>(cached_sample_rate_) / 50;
@@ -328,35 +327,24 @@ IAudioClient* ApplicationLoopbackCapturer::TryInitApplicationLoopback() {
     IAudioClient* client = handler->client_;
     handler->Release();
 
-    // GetMixFormat is not supported on the loopback IAudioClient (E_NOTIMPL).
-    // Instead, get the system mix format from the default render endpoint.
-    WAVEFORMATEX* fmt = nullptr;
-    {
-      IMMDeviceEnumerator* enumerator = nullptr;
-      IMMDevice*           device     = nullptr;
-      IAudioClient*        rc         = nullptr;
-      HRESULT fmt_hr = CoCreateInstance(
-          __uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL,
-          IID_PPV_ARGS(&enumerator));
-      if (SUCCEEDED(fmt_hr))
-        fmt_hr = enumerator->GetDefaultAudioEndpoint(eRender, eConsole, &device);
-      if (SUCCEEDED(fmt_hr))
-        fmt_hr = device->Activate(__uuidof(IAudioClient), CLSCTX_ALL,
-                                  nullptr, reinterpret_cast<void**>(&rc));
-      if (SUCCEEDED(fmt_hr))
-        fmt_hr = rc->GetMixFormat(&fmt);
-      if (rc)        rc->Release();
-      if (device)    device->Release();
-      if (enumerator) enumerator->Release();
-      if (FAILED(fmt_hr) || !fmt) {
-        std::cerr << "[LoopbackCapturer] GetMixFormat (render endpoint) failed: 0x"
-                  << std::hex << fmt_hr << "\n";
-        client->Release();
-        RoUninitialize();
-        SetEvent(done_event);
-        return;
-      }
+    // Process loopback is independent of the default render endpoint. Ask the
+    // audio engine for a known stereo PCM format and let WASAPI convert to it,
+    // as in Microsoft's ApplicationLoopback sample. Using the endpoint mix
+    // format can describe a different stream than this virtual capture device.
+    auto* fmt = static_cast<WAVEFORMATEX*>(CoTaskMemAlloc(sizeof(WAVEFORMATEX)));
+    if (!fmt) {
+      client->Release();
+      RoUninitialize();
+      SetEvent(done_event);
+      return;
     }
+    *fmt = {};
+    fmt->wFormatTag = WAVE_FORMAT_PCM;
+    fmt->nChannels = 2;
+    fmt->nSamplesPerSec = 48000;
+    fmt->wBitsPerSample = 16;
+    fmt->nBlockAlign = fmt->nChannels * fmt->wBitsPerSample / 8;
+    fmt->nAvgBytesPerSec = fmt->nSamplesPerSec * fmt->nBlockAlign;
 
     // Try IAudioClient3 to query the minimum engine period and use it as the
     // buffer-duration hint.  This reduces capture latency without the risk of
@@ -385,7 +373,8 @@ IAudioClient* ApplicationLoopbackCapturer::TryInitApplicationLoopback() {
 
     hr = client->Initialize(
         AUDCLNT_SHAREMODE_SHARED,
-        AUDCLNT_STREAMFLAGS_LOOPBACK | AUDCLNT_STREAMFLAGS_EVENTCALLBACK,
+        AUDCLNT_STREAMFLAGS_LOOPBACK | AUDCLNT_STREAMFLAGS_EVENTCALLBACK |
+            AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM,
         buffer_duration, 0, fmt, nullptr);
     if (FAILED(hr)) {
       std::cerr << "[LoopbackCapturer] IAudioClient::Initialize failed: 0x"
@@ -490,16 +479,13 @@ void ApplicationLoopbackCapturer::CaptureThread() {
             // Find the start of this frame in the raw WASAPI buffer
             const BYTE* frame_ptr = data + (f * in_channels * bytes_per_sample);
             
-            // Extract the Left channel
-            int16_t left = extractor(frame_ptr);
-            
-            // Extract the Right channel (or duplicate Left if mono input)
-            int16_t right = (in_channels > 1) 
-                ? extractor(frame_ptr + bytes_per_sample) 
-                : left;
-                
-            // Write to our stereo output buffer
-            conv[f] = static_cast<int16_t>((static_cast<int32_t>(left) + right) / 2);
+            // Preserve the first two channels. Averaging L and R can cancel
+            // out-of-phase stereo content and make video audio sound hollow.
+            conv[f * out_channels] = extractor(frame_ptr);
+            if (out_channels > 1) {
+              conv[f * out_channels + 1] =
+                  extractor(frame_ptr + bytes_per_sample);
+            }
           }
         }
         {
@@ -555,7 +541,7 @@ void ApplicationLoopbackCapturer::FeederThread() {
   HANDLE task = AvSetMmThreadCharacteristicsW(L"Audio", &task_index);
 
   const int    sample_rate     = cached_sample_rate_;
-  const size_t out_channels    = 1;
+  const size_t out_channels    = cached_out_channels_;
 
   // 480 samples = one 10 ms frame at 48 kHz.
   const size_t frames_per_10ms = static_cast<size_t>(sample_rate) / 100;
@@ -564,7 +550,7 @@ void ApplicationLoopbackCapturer::FeederThread() {
   const size_t target_prebuf  = 16 * frames_per_10ms;  // 160 ms startup fill
   const size_t max_buffered   = 20 * frames_per_10ms;  // 200 ms hard cap
 
-  // Stereo ring-read buffer
+  // Interleaved mono/stereo ring-read buffer.
   std::vector<int16_t> feed(frames_per_10ms * out_channels, int16_t{0});
 
   // true until the ring has at least 160 ms buffered.

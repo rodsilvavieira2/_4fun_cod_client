@@ -437,7 +437,11 @@ class LiveKitRtcService implements RtcService {
       );
     } catch (error, stackTrace) {
       _rtcDebug('rtc publishVoiceSound falhou (${sound.name}): $error');
-      _rtcError('rtc publishVoiceSound falhou (${sound.name})', error, stackTrace);
+      _rtcError(
+        'rtc publishVoiceSound falhou (${sound.name})',
+        error,
+        stackTrace,
+      );
     }
   }
 
@@ -730,18 +734,45 @@ class LiveKitRtcService implements RtcService {
     // (TrackCreateException — ex. permissão negada; mobile nem chega a rodar,
     // local.dart:789-791) PROPAGAM para o controller: falha de share NUNCA
     // derruba a sessão (nada de _cleanupRoom aqui).
-    await localParticipant.setScreenShareEnabled(
-      true,
-      // flutter_webrtc 1.6.0 já tem loopback nativo no Linux via libpulse
-      // para getDisplayMedia({audio:true}). Esse caminho captura o monitor do
-      // sink padrão (PipeWire/PulseAudio), ou seja, qualquer áudio tocando no
-      // computador, sem depender de enumerateDevices expor ".monitor".
-      captureScreenAudio: includeSystemAudio,
-      // A fonte é capturada uma vez em 1080p60; o perfil do sender começa em
-      // Auto (15 FPS) e pode subir para 60 ao vivo. O helper também explicita
-      // maxFrameRate, campo lido pelo capturador desktop do Linux.
-      screenShareCaptureOptions: screenShareCaptureOptionsFor(sourceId),
-    );
+    // O SDK publica automaticamente a faixa de tela com o default da sala.
+    // O default do microfone (64 kbps, DTX ligado) corta música e efeitos;
+    // altere-o apenas enquanto o SDK cria/publica o áudio da tela.
+    final microphonePublishOptions =
+        room.roomOptions.defaultAudioPublishOptions;
+    if (includeSystemAudio) {
+      // O SDK não expõe setter público para os defaults da sala.
+      // ignore: invalid_use_of_internal_member
+      room.engine.roomOptions = room.roomOptions.copyWith(
+        defaultAudioPublishOptions: const AudioPublishOptions(
+          name: 'system-audio',
+          encoding: AudioEncoding(maxBitrate: 128000),
+          dtx: false,
+          stereo: true,
+          red: true,
+        ),
+      );
+    }
+    try {
+      await localParticipant.setScreenShareEnabled(
+        true,
+        // flutter_webrtc 1.6.0 já tem loopback nativo no Linux via libpulse
+        // para getDisplayMedia({audio:true}). Esse caminho captura o monitor do
+        // sink padrão (PipeWire/PulseAudio), ou seja, qualquer áudio tocando no
+        // computador, sem depender de enumerateDevices expor ".monitor".
+        captureScreenAudio: includeSystemAudio,
+        // A fonte é capturada uma vez em 1080p60; o perfil do sender começa em
+        // Auto (15 FPS) e pode subir para 60 ao vivo. O helper também explicita
+        // maxFrameRate, campo lido pelo capturador desktop do Linux.
+        screenShareCaptureOptions: screenShareCaptureOptionsFor(sourceId),
+      );
+    } finally {
+      if (includeSystemAudio) {
+        // ignore: invalid_use_of_internal_member
+        room.engine.roomOptions = room.roomOptions.copyWith(
+          defaultAudioPublishOptions: microphonePublishOptions,
+        );
+      }
+    }
     final publication = localParticipant.getTrackPublicationBySource(
       TrackSource.screenShareVideo,
     );
@@ -921,8 +952,8 @@ class LiveKitRtcService implements RtcService {
     //    - name 'system-audio' (default seria 'microphone' — local.dart:183);
     //    - 128 kbps = presetMusicHighQualityStereo (audio_encoding.dart:64-69);
     //    - dtx:false (DTX faz gating em música — options.dart:510-513);
-    //    - red:false HABILITA RED (bug do SDK: disableRed SEM negação —
-    //      local.dart:189 — red:true desligaria).
+    //    - estéreo negociado no SDP para preservar os dois canais do loopback;
+    //    - red:true desliga RED neste fork (mapeado para disableRed).
     // Erros de captura/publish PROPAGAM — a track de vídeo já saiu (o SDK
     // faz track.stop() em falha de publish: shouldStopOnFailure lido antes
     // do start — local.dart:177-179).
@@ -932,7 +963,8 @@ class LiveKitRtcService implements RtcService {
         name: 'system-audio',
         encoding: AudioEncoding(maxBitrate: 128000),
         dtx: false,
-        red: false,
+        stereo: true,
+        red: true,
       ),
     );
   }
@@ -1124,10 +1156,7 @@ class LiveKitRtcService implements RtcService {
   /// `TrackSubscribedEvent` chega antes do `start()` do SDK, então `stop()`
   /// ali é no-op garantido).
   @override
-  Future<void> setScreenShareAudioEnabled(
-    String identity,
-    bool enabled,
-  ) async {
+  Future<void> setScreenShareAudioEnabled(String identity, bool enabled) async {
     if (identity.isEmpty || _disposed) {
       if (!_disposed) {
         if (enabled) {
@@ -1153,7 +1182,9 @@ class LiveKitRtcService implements RtcService {
       _watchedScreenAudioIds.add(identity);
       final publication = _screenShareAudioPublicationOf(room, identity);
       if (publication == null) {
-        _rtcDebug('rtc screen audio enable pendente (sem publicação): $identity');
+        _rtcDebug(
+          'rtc screen audio enable pendente (sem publicação): $identity',
+        );
         return;
       }
       try {
@@ -1904,14 +1935,16 @@ class LiveKitRtcService implements RtcService {
         if (publication.source == TrackSource.screenShareAudio &&
             e.participant.identity != room.localParticipant?.identity &&
             !_watchedScreenAudioIds.contains(e.participant.identity)) {
-          unawaited(publication.disable().catchError((Object err, StackTrace st) {
-            _rtcError(
-              'rtc screen audio disable no publish falhou '
-              'para ${e.participant.identity}',
-              err,
-              st,
-            );
-          }));
+          unawaited(
+            publication.disable().catchError((Object err, StackTrace st) {
+              _rtcError(
+                'rtc screen audio disable no publish falhou '
+                'para ${e.participant.identity}',
+                err,
+                st,
+              );
+            }),
+          );
         }
         _syncParticipant(e.participant);
         _emitSnapshot();
@@ -1931,36 +1964,35 @@ class LiveKitRtcService implements RtcService {
               e.publication.source == TrackSource.screenShareAudio;
           if (isScreenShareAudio &&
               !_watchedScreenAudioIds.contains(e.participant.identity)) {
-            unawaited(e.publication.disable().catchError((
-              Object err,
-              StackTrace st,
-            ) {
-              _rtcError(
-                'rtc screen audio disable no subscribe falhou '
-                'para ${e.participant.identity}',
-                err,
-                st,
-              );
-            }));
+            unawaited(
+              e.publication.disable().catchError((Object err, StackTrace st) {
+                _rtcError(
+                  'rtc screen audio disable no subscribe falhou '
+                  'para ${e.participant.identity}',
+                  err,
+                  st,
+                );
+              }),
+            );
           } else {
             // Nova faixa remota (voz ou áudio de screen share assistido):
             // aplica o ganho efetivo pendente (saída × fonte) — cada fonte
             // só toca nas suas.
             final track = e.track as RemoteAudioTrack;
-          final gain = effectiveVolumeGain(
-            _outputGain,
-            _sourceGain(
-              e.participant.identity,
-              e.publication.source == TrackSource.screenShareAudio,
-            ),
-          );
-          unawaited(
-            _applyTrackVolume(track, gain).catchError((Object err) {
-              debugPrint(
-                '[rtc] volume falhou para ${e.participant.identity}: $err',
-              );
-            }),
-          );
+            final gain = effectiveVolumeGain(
+              _outputGain,
+              _sourceGain(
+                e.participant.identity,
+                e.publication.source == TrackSource.screenShareAudio,
+              ),
+            );
+            unawaited(
+              _applyTrackVolume(track, gain).catchError((Object err) {
+                debugPrint(
+                  '[rtc] volume falhou para ${e.participant.identity}: $err',
+                );
+              }),
+            );
           }
         }
         _syncParticipant(e.participant);

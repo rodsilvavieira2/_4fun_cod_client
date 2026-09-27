@@ -763,8 +763,8 @@ packages:
     dependency: "direct main"
     description:
       path: "."
-      ref: "feat/remote-audio-gain"
-      resolved-ref: ff7571a51e2c3bcfa28db60ae518b485f39f089a
+      ref: ceb973e5e2c47bffca42ef78fa84758b57350ba0
+      resolved-ref: ceb973e5e2c47bffca42ef78fa84758b57350ba0
       url: "https://github.com/rodsilvavieira2/client-sdk-flutter.git"
     source: git
     version: "2.11.0"
