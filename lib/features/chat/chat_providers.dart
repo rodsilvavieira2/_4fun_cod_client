@@ -7,10 +7,12 @@ import '../../core/api/api_client.dart';
 import '../../core/storage/uploads_client.dart';
 import '../../core/websocket/realtime_event.dart';
 import '../../core/websocket/socket_service.dart';
+import '../../shared/models/link_embed.dart';
 import '../../shared/models/message.dart';
 import '../../shared/models/user.dart';
 import '../servers/servers_providers.dart';
 import 'chat_grouping.dart';
+import 'link_utils.dart';
 
 /// Slot de imagem a enviar (upload-no-enviar): os bytes vivem SÓ no composer
 /// até o usuário apertar enviar. O `POST /uploads` roda dentro de
@@ -86,6 +88,9 @@ class ChatController
   StreamSubscription<RealtimeEvent>? _subscription;
   StreamSubscription<void>? _reconnectedSub;
   bool _disposed = false;
+
+  /// Mensagens com unfurl do histórico em voo (evita refetch por rebuild).
+  final Set<String> _embedFetching = {};
 
   @override
   Future<ChatState> build(({String serverId, String channelId}) arg) async {
@@ -164,6 +169,7 @@ class ChatController
     for (final event in pending) {
       _applyEvent(event);
     }
+    unawaited(ensureEmbeds(messages));
     return state.requireValue;
   }
 
@@ -397,6 +403,7 @@ class ChatController
           loadingMore: false,
         ),
       );
+      unawaited(ensureEmbeds(older));
     } catch (_) {
       // Falha de paginação: apenas desliga o indicador (novo scroll tenta
       // de novo); o chat já carregado continua utilizável.
@@ -440,8 +447,70 @@ class ChatController
           hasMore: page.nextCursor != null || next.hasMore,
         ),
       );
+      unawaited(ensureEmbeds(merged));
     } catch (_) {
       // Resync best-effort: a próxima reconexão tenta de novo.
+    }
+  }
+
+  /// Unfurl do histórico: mensagens com link mas `embeds == null` (o server
+  /// só emite efêmero para cria/edita; o `GET` inicial não traz embeds).
+  /// Dedupe por URL + guarda `[]` quando nenhum link rende card (evita
+  /// skeleton eterno e refetch a cada rebuild).
+  Future<void> ensureEmbeds(List<ChatMessage> messages) async {
+    final repo = ref.read(serversRepositoryProvider);
+    final targets = [
+      for (final m in messages)
+        if (m.embeds == null &&
+            !m.id.startsWith('local-') &&
+            !_embedFetching.contains(m.id) &&
+            hasUnfurlableLink(m.content))
+          m,
+    ];
+    if (targets.isEmpty) return;
+    final urlCache = <String, Future<List<LinkEmbed>>>{};
+    Future<List<LinkEmbed>> embedsFor(String url) {
+      return urlCache.putIfAbsent(url, () async {
+        try {
+          final embed = await repo.fetchLinkEmbed(url);
+          return embed == null ? const [] : [embed];
+        } catch (_) {
+          return const [];
+        }
+      });
+    }
+
+    for (final m in targets) {
+      _embedFetching.add(m.id);
+    }
+    try {
+      final resolved = <String, List<LinkEmbed>>{};
+      for (final m in targets) {
+        final urls = extractHttpUrls(m.content);
+        final perUrl = await Future.wait(urls.map(embedsFor));
+        resolved[m.id] = [for (final list in perUrl) ...list];
+      }
+      if (_disposed) return;
+      final current = state.valueOrNull;
+      if (current == null) return;
+      var changed = false;
+      final merged = [
+        for (final m in current.messages)
+          if (resolved.containsKey(m.id) && m.embeds == null)
+            (() {
+              changed = true;
+              return m.copyWith(embeds: resolved[m.id]);
+            })()
+          else
+            m,
+      ];
+      if (changed) {
+        state = AsyncData(current.copyWith(messages: merged));
+      }
+    } finally {
+      for (final m in targets) {
+        _embedFetching.remove(m.id);
+      }
     }
   }
 
@@ -457,18 +526,28 @@ class ChatController
         final merged = [...current.messages, message]
           ..sort(ChatGrouping.compare);
         state = AsyncData(current.copyWith(messages: merged));
+        if (message.embeds == null && hasUnfurlableLink(message.content)) {
+          unawaited(ensureEmbeds([message]));
+        }
       case MessageUpdatedEvent(:final channelId, :final message):
         if (channelId != arg.channelId) return;
         state = AsyncData(
           current.copyWith(
             messages: [
               for (final m in current.messages)
-                if (m.id == message.id) message else m,
+                if (m.id == message.id)
+                  // PATCH/reaction retorna sem `embeds`: preserva os já
+                  // resolvidos; o unfurl efêmero (com array) sempre vence.
+                  // Edit que removeu links emite `embeds: []` e limpa.
+                  (message.embeds == null ? _mergeEmbeds(m, message) : message)
+                else
+                  m,
             ],
           ),
         );
       case MessageDeletedEvent(:final channelId, :final messageId):
         if (channelId != arg.channelId) return;
+        _embedFetching.remove(messageId);
         state = AsyncData(
           current.copyWith(
             messages: [
@@ -487,6 +566,22 @@ class ChatController
           VoicePresenceChangedEvent():
         break; // não afetam a lista de mensagens
     }
+  }
+
+  /// Preserva `embeds` já resolvidos quando o update não os traz
+  /// (reaction/PATCH). Se o conteúdo mudou, invalida para re-resolver.
+  ChatMessage _mergeEmbeds(ChatMessage current, ChatMessage incoming) {
+    if (current.content != incoming.content) {
+      // Edit com texto novo: descarta embeds obsoletos; o server emite o
+      // unfurl novo em seguida + ensureEmbeds cobre o histórico.
+      final reset = incoming.copyWith(embeds: null);
+      if (hasUnfurlableLink(incoming.content)) {
+        unawaited(ensureEmbeds([incoming]));
+      }
+      return reset;
+    }
+    if (current.embeds == null) return incoming;
+    return incoming.copyWith(embeds: current.embeds);
   }
 }
 

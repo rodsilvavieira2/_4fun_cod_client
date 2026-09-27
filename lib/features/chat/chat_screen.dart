@@ -1,12 +1,14 @@
 import 'dart:async';
 
 import 'package:file_selector/file_selector.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/auth/auth_controller.dart';
 import '../../core/auth/auth_state.dart';
+import '../../core/links/external_link.dart';
 import '../../core/logging/app_logger.dart';
 import '../../core/storage/image_selection.dart';
 import '../../core/ui/ui.dart';
@@ -18,6 +20,8 @@ import 'chat_grouping.dart';
 import 'chat_providers.dart';
 import 'emoji_catalog.dart';
 import 'gif_repository.dart';
+import 'link_embed_card.dart';
+import 'link_utils.dart';
 import 'mention_utils.dart';
 
 /// Chat de um canal de texto: fluxo contínuo estilo Discord, com ações no
@@ -982,6 +986,7 @@ class _MessageTileState extends State<_MessageTile> {
                                 onOpen: () =>
                                     _openMedia(widget.message.gifUrl!),
                               ),
+                            _LinkEmbeds(message: widget.message),
                             if (widget.message.attachments.isNotEmpty)
                               Padding(
                                 padding: EdgeInsets.only(
@@ -1129,11 +1134,28 @@ class _Avatar extends StatelessWidget {
   }
 }
 
-class _MentionMessageText extends StatelessWidget {
+/// Texto da mensagem com menções destacadas + links http(s) clicáveis
+/// (abrem no navegador externo). Recognizers com dispose correto.
+class _MentionMessageText extends StatefulWidget {
   const _MentionMessageText({required this.text, required this.targets});
 
   final String text;
   final List<MentionTarget> targets;
+
+  @override
+  State<_MentionMessageText> createState() => _MentionMessageTextState();
+}
+
+class _MentionMessageTextState extends State<_MentionMessageText> {
+  final List<TapGestureRecognizer> _recognizers = [];
+
+  @override
+  void dispose() {
+    for (final r in _recognizers) {
+      r.dispose();
+    }
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1144,26 +1166,111 @@ class _MentionMessageText extends StatelessWidget {
       height: 1.42,
       color: colors.textPrimary,
     );
-    final parts = buildMentionTextParts(text, targets);
-    if (parts.length == 1 && !parts.first.isMention) {
-      return SelectableText(text, style: baseStyle);
+    for (final r in _recognizers) {
+      r.dispose();
+    }
+    _recognizers.clear();
+    final parts = buildMentionTextParts(widget.text, widget.targets);
+    final spans = <InlineSpan>[];
+    var hasRich = false;
+    for (final part in parts) {
+      if (part.isMention) {
+        hasRich = true;
+        spans.add(
+          TextSpan(
+            text: part.text,
+            style: TextStyle(
+              color: colors.accent,
+              fontWeight: FontWeight.w700,
+              backgroundColor: colors.accent.withValues(alpha: 0.20),
+            ),
+          ),
+        );
+      } else {
+        spans.addAll(_linkSpans(part.text, colors));
+        if (_containsLink(part.text)) hasRich = true;
+      }
+    }
+    if (!hasRich) {
+      return SelectableText(widget.text, style: baseStyle);
     }
 
     return SelectableText.rich(
-      TextSpan(
-        style: baseStyle,
+      TextSpan(style: baseStyle, children: spans),
+    );
+  }
+
+  bool _containsLink(String text) => extractHttpUrls(text).isNotEmpty;
+
+  List<InlineSpan> _linkSpans(String text, AppThemePalette colors) {
+    final urls = extractHttpUrls(text);
+    if (urls.isEmpty) return [TextSpan(text: text)];
+    final spans = <InlineSpan>[];
+    var cursor = 0;
+    for (final url in urls) {
+      final index = text.indexOf(url, cursor);
+      if (index < 0) continue;
+      if (index > cursor) {
+        spans.add(TextSpan(text: text.substring(cursor, index)));
+      }
+      final recognizer = TapGestureRecognizer()
+        ..onTap = () => openExternalLink(url);
+      _recognizers.add(recognizer);
+      spans.add(
+        TextSpan(
+          text: url,
+          recognizer: recognizer,
+          style: TextStyle(
+            color: colors.accent,
+            decoration: TextDecoration.underline,
+            decorationColor: colors.accent,
+          ),
+          mouseCursor: SystemMouseCursors.click,
+        ),
+      );
+      cursor = index + url.length;
+    }
+    if (cursor < text.length) {
+      spans.add(TextSpan(text: text.substring(cursor)));
+    }
+    return spans;
+  }
+}
+
+/// Embeds de links abaixo do texto (estilo Discord).
+///
+/// - Sem link unfurlável ou bolha otimista local → nada (aguarda o 201).
+/// - `embeds == null` → skeleton único (resolve via `message.updated` ou
+///   `GET /unfurl` do histórico).
+/// - `embeds == []` (sem card) → nada, só o link clicável no texto.
+class _LinkEmbeds extends StatelessWidget {
+  const _LinkEmbeds({required this.message});
+
+  final ChatMessage message;
+
+  @override
+  Widget build(BuildContext context) {
+    if (message.content.isEmpty) return const SizedBox.shrink();
+    if (message.id.startsWith('local-')) return const SizedBox.shrink();
+    if (!hasUnfurlableLink(message.content)) return const SizedBox.shrink();
+    final embeds = message.embeds;
+    if (embeds == null) {
+      return const Padding(
+        padding: EdgeInsets.only(top: 6),
+        child: LinkEmbedSkeleton(),
+      );
+    }
+    if (embeds.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          for (final part in parts)
-            TextSpan(
-              text: part.text,
-              style: part.isMention
-                  ? TextStyle(
-                      color: colors.accent,
-                      fontWeight: FontWeight.w700,
-                      backgroundColor: colors.accent.withValues(alpha: 0.20),
-                    )
-                  : null,
-            ),
+          for (var i = 0; i < embeds.length; i++) ...[
+            if (i > 0) const SizedBox(height: 6),
+            LinkEmbedCard(embed: embeds[i]),
+          ],
         ],
       ),
     );

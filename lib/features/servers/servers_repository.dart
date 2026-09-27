@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 
 import '../../core/api/api_exception.dart';
 import '../../core/storage/uploads_client.dart';
+import '../../shared/models/link_embed.dart';
 import '../../shared/models/message.dart';
 import '../../shared/models/servers.dart';
 import '../../shared/models/voice.dart';
@@ -325,6 +326,24 @@ class ServersRepository {
   Future<void> deleteMessage(String messageId) async {
     try {
       await _dio.delete('/messages/$messageId');
+    } on DioException catch (e) {
+      throw ApiException.fromDio(e);
+    }
+  }
+
+  /// `GET /unfurl?url=` → `{ embed }` (`null` = sem card, silencioso).
+  /// Usado para o histórico (mensagens que chegaram sem `embeds` efêmeros).
+  Future<LinkEmbed?> fetchLinkEmbed(String url) async {
+    try {
+      final response = await _dio.get(
+        '/unfurl',
+        queryParameters: {'url': url},
+      );
+      final data = response.data as Map<String, dynamic>;
+      final embed = data['embed'];
+      if (embed is! Map<String, dynamic>) return null;
+      final parsed = LinkEmbed.fromJson(embed);
+      return parsed.hasTitle ? parsed : null;
     } on DioException catch (e) {
       throw ApiException.fromDio(e);
     }

@@ -1,3 +1,4 @@
+import 'link_embed.dart';
 import 'user.dart';
 
 enum ChatMessageKind {
@@ -202,6 +203,7 @@ class ChatMessage {
     this.reactions = const [],
     this.mentions = const [],
     this.attachments = const [],
+    this.embeds,
     this.updatedAt,
   });
 
@@ -228,6 +230,10 @@ class ChatMessage {
     attachments: (json['attachments'] as List<dynamic>? ?? const [])
         .map((e) => MessageAttachment.fromJson(e as Map<String, dynamic>))
         .toList(),
+    embeds: (json['embeds'] as List<dynamic>?)
+        ?.whereType<Map<String, dynamic>>()
+        .map(LinkEmbed.fromJson)
+        .toList(),
   );
 
   final String id;
@@ -239,11 +245,33 @@ class ChatMessage {
   final List<MessageReaction> reactions;
   final List<MessageMention> mentions;
   final List<MessageAttachment> attachments;
+
+  /// Embeds efêmeros de links (`message.updated` / `GET /unfurl`).
+  /// `null` = ainda não resolvido; `[]` = resolvido sem cards.
+  final List<LinkEmbed>? embeds;
   final User author;
   final DateTime createdAt;
 
   /// Nulo enquanto a mensagem nunca foi editada.
   final DateTime? updatedAt;
+
+  ChatMessage copyWith({List<LinkEmbed>? embeds}) {
+    return ChatMessage(
+      id: id,
+      channelId: channelId,
+      content: content,
+      kind: kind,
+      author: author,
+      createdAt: createdAt,
+      gifUrl: gifUrl,
+      replyTo: replyTo,
+      reactions: reactions,
+      mentions: mentions,
+      attachments: attachments,
+      embeds: embeds ?? this.embeds,
+      updatedAt: updatedAt,
+    );
+  }
 }
 
 User _parseMessageAuthor(Object? value) {
