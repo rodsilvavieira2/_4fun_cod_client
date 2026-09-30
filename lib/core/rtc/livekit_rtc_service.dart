@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart'
-    show debugPrint, kIsWeb, visibleForTesting;
+    show debugPrint, kDebugMode, kIsWeb, visibleForTesting;
 import 'package:flutter_webrtc/flutter_webrtc.dart' as rtc;
 
 // `SpeakingChangedEvent` e `ReconnectingEvent` (mixin, events.dart:71)
@@ -2515,6 +2515,7 @@ class LiveKitRtcService implements RtcService {
         _lastLatencyMs = latencyMs;
         _emitEvent(ConnectionLatencyChangedEvent(latencyMs: latencyMs));
       }
+      if (kDebugMode) await _logScreenAudioStats(room);
       // A adaptação do screen share reaproveita este timer (~5 s, spec V1).
       await _adaptScreenShareQuality(room, generation);
     } catch (error) {
@@ -2524,6 +2525,32 @@ class LiveKitRtcService implements RtcService {
     } finally {
       if (generation == _latencyGeneration) {
         _latencyPollInFlight = false;
+      }
+    }
+  }
+
+  Future<void> _logScreenAudioStats(Room room) async {
+    for (final participant in room.remoteParticipants.values) {
+      if (!_watchedScreenAudioIds.contains(participant.identity)) continue;
+      for (final publication in participant.audioTrackPublications) {
+        if (publication.source != TrackSource.screenShareAudio) continue;
+        final track = publication.track;
+        if (track is! RemoteAudioTrack) continue;
+        try {
+          final stats = await track.getReceiverStats();
+          _rtcDebug(
+            'rtc screen audio stats '
+            '(mic=$_microphoneEnabled, volume=${track.volume}, '
+            'energy=${stats?.totalAudioEnergy}, '
+            'duration=${stats?.totalSamplesDuration}, '
+            'received=${stats?.packetsReceived}, '
+            'lost=${stats?.packetsLost}, '
+            'concealed=${stats?.concealedSamples}, '
+            'jitter=${stats?.jitter})',
+          );
+        } catch (error) {
+          _rtcDebug('rtc screen audio stats indisponíveis: $error');
+        }
       }
     }
   }
