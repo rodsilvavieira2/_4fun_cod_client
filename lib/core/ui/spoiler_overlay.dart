@@ -58,58 +58,59 @@ class SpoilerCover extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        ImageFiltered(
-          imageFilter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
-          child: child,
-        ),
-        DecoratedBox(
-          decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: 0.42),
+    // RepaintBoundary: o ImageFiltered força um saveLayer a cada raster;
+    // isolado aqui, o blur estático entra no raster cache em vez de
+    // reexecutar a cada scroll/hover da lista.
+    return RepaintBoundary(
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          ImageFiltered(
+            imageFilter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+            child: child,
           ),
-        ),
-        Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const SpoilerBadge(),
-              const SizedBox(height: 6),
-              AppIcon(
-                AppIcons.view,
-                size: 18,
-                color: AppTokens.textPrimary,
-              ),
-              const SizedBox(height: 4),
-              Text(
-                revealHint,
-                style: const TextStyle(
-                  fontFamily: 'Geist',
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w600,
-                  color: AppTokens.textPrimary,
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.42),
+            ),
+          ),
+          Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SpoilerBadge(),
+                const SizedBox(height: 6),
+                AppIcon(AppIcons.view, size: 18, color: AppTokens.textPrimary),
+                const SizedBox(height: 4),
+                Text(
+                  revealHint,
+                  style: const TextStyle(
+                    fontFamily: 'Geist',
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w600,
+                    color: AppTokens.textPrimary,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-        if (onReveal != null)
-          Positioned.fill(
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: onReveal,
-                hoverColor: Colors.white.withValues(alpha: 0.04),
-                child: Semantics(
-                  button: true,
-                  label: 'Imagem com spoiler, toque para revelar',
-                  child: const SizedBox.expand(),
+          if (onReveal != null)
+            Positioned.fill(
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: onReveal,
+                  hoverColor: Colors.white.withValues(alpha: 0.04),
+                  child: Semantics(
+                    button: true,
+                    label: 'Imagem com spoiler, toque para revelar',
+                    child: const SizedBox.expand(),
+                  ),
                 ),
               ),
             ),
-          ),
-      ],
+        ],
+      ),
     );
   }
 }

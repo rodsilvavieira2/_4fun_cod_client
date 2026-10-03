@@ -468,8 +468,16 @@ class VoiceController
           tag: 'voice',
         );
     if (wasConnected) {
-      // Anuncia ANTES do disconnect (depois não há mais sala para publicar).
-      unawaited(_publishSound(RtcVoiceSound.leave));
+      // Anuncia ANTES do disconnect (depois não há mais sala para publicar)
+      // e AGUARDA com teto: fire-and-forget aqui perdia a corrida contra o
+      // teardown — o publishData ficava pendente até o timeout de 10s do SDK.
+      try {
+        await _publishSound(
+          RtcVoiceSound.leave,
+        ).timeout(const Duration(milliseconds: 400));
+      } catch (_) {
+        // Best-effort: remotos detectam a saída pelo diff de participants.
+      }
     }
     await ref.read(rtcServiceProvider).disconnect();
     await ref.read(voiceControlsProvider.notifier).resetPushToTalkPress();
@@ -768,6 +776,7 @@ class VoiceController
   /// Chave de uma publicação assistível no [VoiceState.watchedPublicationIds].
   static String watchKey(String participantId, VoiceSpotlightSource source) =>
       '$participantId:${source.name}';
+
   /// Se o id é o participante local (sempre renderiza o próprio vídeo,
   /// nunca entra no opt-in).
   bool isLocalParticipant(String participantId) =>
@@ -1176,7 +1185,9 @@ class VoiceController
           );
           if (id.isNotEmpty) {
             unawaited(
-              ref.read(rtcServiceProvider).setScreenShareAudioEnabled(id, false),
+              ref
+                  .read(rtcServiceProvider)
+                  .setScreenShareAudioEnabled(id, false),
             );
           }
         }
@@ -1319,9 +1330,7 @@ class VoiceController
           // e o evento seguinte é no-op (sem duplo som).
           unawaited(
             _playSound(
-              isScreenSharing
-                  ? VoiceSound.streamStart
-                  : VoiceSound.streamStop,
+              isScreenSharing ? VoiceSound.streamStart : VoiceSound.streamStop,
             ),
           );
           // Mesma regra para o anúncio: só o caso externo chega aqui.
@@ -1387,10 +1396,7 @@ class VoiceController
           ParticipantLeftEvent() ||
           SpeakingChangedEvent():
         break; // Sem estado derivado: o snapshot de participants cobre.
-      case VoiceSoundSignalEvent(
-        :final participantId,
-        :final sound,
-      ):
+      case VoiceSoundSignalEvent(:final participantId, :final sound):
         // Sinal de outro participante (ADR-0001): eco próprio é ignorado
         // (minha ação já tocou o som local). Cooldown + Deafen ficam com o
         // serviço; o timestamp registrado suprime o fallback por diff.

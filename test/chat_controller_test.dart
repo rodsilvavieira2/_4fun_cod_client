@@ -627,6 +627,28 @@ void main() {
 
       expect(online(), {'u3'});
     });
+
+    test('os três controllers compartilham 1 GET por mount', () async {
+      var presenceFetches = 0;
+      repo.onFetchPresence = (_) async {
+        presenceFetches++;
+        return const ServerPresence(online: {'u1'});
+      };
+      final sub1 = container.listen(presenceProvider('s1'), (_, _) {});
+      final sub2 = container.listen(presenceStatusProvider('s1'), (_, _) {});
+      final sub3 = container.listen(voicePresenceProvider('s1'), (_, _) {});
+      addTearDown(sub1.close);
+      addTearDown(sub2.close);
+      addTearDown(sub3.close);
+      await pumpEventQueue();
+      await pumpEventQueue();
+      await pumpEventQueue();
+
+      expect(presenceFetches, 1, reason: 'snapshot REST compartilhado');
+      expect(online(), {'u1'});
+      expect(container.read(presenceStatusProvider('s1')), isEmpty);
+      expect(container.read(voicePresenceProvider('s1')), isEmpty);
+    });
   });
 
   group('VoicePresenceController', () {

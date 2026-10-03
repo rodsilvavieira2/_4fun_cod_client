@@ -1,4 +1,3 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -31,63 +30,59 @@ class DmChatArea extends ConsumerWidget {
       color: colors.background,
       child: Column(
         children: [
-          // Header estilo macOS Toolbar
-          ClipRect(
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-              child: Container(
-                height: AppLayout.headerHeight,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                decoration: BoxDecoration(
-                  color: colors.background.withValues(alpha: 0.80),
-                  border: Border(
-                    bottom: BorderSide(color: colors.borderHairline, width: 1),
+          // Header estilo macOS Toolbar (sem BackdropFilter: header em fluxo
+          // sobre fundo opaco — o blur só custava um saveLayer por frame).
+          Container(
+            height: AppLayout.headerHeight,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            decoration: BoxDecoration(
+              color: colors.background.withValues(alpha: 0.80),
+              border: Border(
+                bottom: BorderSide(color: colors.borderHairline, width: 1),
+              ),
+            ),
+            child: Row(
+              children: [
+                if (userId != null && onBack != null) ...[
+                  AppIconButton(
+                    icon: AppIcons.back,
+                    tooltip: 'Voltar para conversas',
+                    onPressed: onBack,
+                  ),
+                  const SizedBox(width: 6),
+                ],
+                Text(
+                  conversation != null
+                      ? '@${conversation.name}'
+                      : 'Mensagens Diretas',
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontFamily: 'Geist',
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w600,
+                    color: colors.textPrimary,
+                    letterSpacing: 0,
                   ),
                 ),
-                child: Row(
-                  children: [
-                    if (userId != null && onBack != null) ...[
-                      AppIconButton(
-                        icon: AppIcons.back,
-                        tooltip: 'Voltar para conversas',
-                        onPressed: onBack,
-                      ),
-                      const SizedBox(width: 6),
-                    ],
-                    Text(
-                      conversation != null
-                          ? '@${conversation.name}'
-                          : 'Mensagens Diretas',
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontFamily: 'Geist',
-                        fontSize: 14.5,
-                        fontWeight: FontWeight.w600,
-                        color: colors.textPrimary,
-                        letterSpacing: 0,
-                      ),
-                    ),
-                    const Spacer(),
-                    AppIconButton(
-                      icon: AppIcons.search,
-                      tooltip: 'Buscar',
-                      onPressed: () {},
-                    ),
-                    const SizedBox(width: 4),
-                    AppIconButton(
-                      icon: AppIcons.call,
-                      tooltip: 'Chamada de voz',
-                      onPressed: () {},
-                    ),
-                    const SizedBox(width: 4),
-                    AppIconButton(
-                      icon: AppIcons.video,
-                      tooltip: 'Chamada de vídeo',
-                      onPressed: () {},
-                    ),
-                  ],
+                const Spacer(),
+                AppIconButton(
+                  icon: AppIcons.search,
+                  tooltip: 'Buscar',
+                  onPressed: () {},
                 ),
-              ),
+                const SizedBox(width: 4),
+                AppIconButton(
+                  icon: AppIcons.call,
+                  tooltip: 'Chamada de voz',
+                  onPressed: () {},
+                ),
+                const SizedBox(width: 4),
+                AppIconButton(
+                  icon: AppIcons.video,
+                  tooltip: 'Chamada de vídeo',
+                  onPressed: () {},
+                ),
+              ],
             ),
           ),
           // Placeholder com contraste nítido

@@ -428,20 +428,20 @@ class LiveKitRtcService implements RtcService {
     final localParticipant = room.localParticipant;
     if (localParticipant == null) return;
     // Best-effort: o som local já tocou e a sessão não pode cair porque o
-    // anúncio falhou (rede instável, sala morrendo...).
+    // anúncio falhou (rede instável, sala morrendo...). Teto próprio: sem
+    // isso um publish em voo durante o teardown pendura até o timeout de
+    // ~10s do SDK (observado no leave).
     try {
-      await localParticipant.publishData(
-        utf8.encode(jsonEncode({'sound': sound.name})),
-        reliable: true,
-        topic: voiceSoundTopic,
-      );
-    } catch (error, stackTrace) {
+      await localParticipant
+          .publishData(
+            utf8.encode(jsonEncode({'sound': sound.name})),
+            reliable: true,
+            topic: voiceSoundTopic,
+          )
+          .timeout(const Duration(milliseconds: 500));
+    } catch (error) {
+      // Ruído de teardown/rede: debug, não error (não é falha acionável).
       _rtcDebug('rtc publishVoiceSound falhou (${sound.name}): $error');
-      _rtcError(
-        'rtc publishVoiceSound falhou (${sound.name})',
-        error,
-        stackTrace,
-      );
     }
   }
 

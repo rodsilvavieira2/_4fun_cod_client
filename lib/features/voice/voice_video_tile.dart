@@ -608,7 +608,9 @@ class _TransmitTopOverlay extends StatelessWidget {
               const Spacer(),
               if (onExpand != null)
                 OverlayIconButton(
-                  icon: isFullscreen ? AppIcons.fullscreenExit : AppIcons.fullscreen,
+                  icon: isFullscreen
+                      ? AppIcons.fullscreenExit
+                      : AppIcons.fullscreen,
                   tooltip: isFullscreen
                       ? 'Sair do fullscreen'
                       : 'Expandir transmissão',
@@ -1021,51 +1023,61 @@ class _SpeakingAvatarPulseState extends State<_SpeakingAvatarPulse>
   Widget build(BuildContext context) {
     if (!widget.active) return const SizedBox.shrink();
 
+    // Sem AnimatedBuilder: o painter observa o controller via `repaint` —
+    // nenhum widget/painter é alocado por frame, só o repaint da área isolada.
     return RepaintBoundary(
       key: const ValueKey('voice-speaking-avatar-pulse'),
-      child: AnimatedBuilder(
-        animation: _controller,
-        builder: (context, _) {
-          return CustomPaint(
-            painter: _SpeakingPulsePainter(
-              progress: _controller.value,
-              palette: widget.palette,
-              compact: widget.compact,
-            ),
-            child: const SizedBox.expand(),
-          );
-        },
+      child: CustomPaint(
+        painter: _SpeakingPulsePainter(
+          animation: _controller,
+          palette: widget.palette,
+          compact: widget.compact,
+        ),
+        child: const SizedBox.expand(),
       ),
     );
   }
 }
 
 class _SpeakingPulsePainter extends CustomPainter {
-  const _SpeakingPulsePainter({
-    required this.progress,
+  _SpeakingPulsePainter({
+    required this.animation,
     required this.palette,
     required this.compact,
-  });
+  }) : super(repaint: animation);
 
-  final double progress;
+  final Animation<double> animation;
   final _ParticipantVisualPalette palette;
   final bool compact;
 
+  /// Shader do preenchimento radial: independe do progresso — cacheado por
+  /// instância e refeito só quando tamanho/paleta mudam.
+  Shader? _fillShader;
+  Rect? _fillKey;
+
   @override
   void paint(Canvas canvas, Size size) {
+    final progress = animation.value;
     final center = size.center(Offset.zero);
     final baseRadius = compact ? 30.0 : 42.0;
     final travel = compact ? 18.0 : 26.0;
-    final fill = Paint()
-      ..style = PaintingStyle.fill
-      ..shader = RadialGradient(
+    final fillRect = Rect.fromCircle(center: center, radius: baseRadius + 12);
+    var fillShader = _fillShader;
+    if (fillShader == null || _fillKey != fillRect) {
+      fillShader = RadialGradient(
         colors: [
           palette.highlight.withValues(alpha: 0.07),
           palette.base.withValues(alpha: 0.035),
           Colors.transparent,
         ],
         stops: const [0, 0.58, 1],
-      ).createShader(Rect.fromCircle(center: center, radius: baseRadius + 12));
+      ).createShader(fillRect);
+      _fillShader = fillShader;
+      _fillKey = fillRect;
+    }
+    final fill = Paint()
+      ..style = PaintingStyle.fill
+      ..shader = fillShader;
     canvas.drawCircle(center, baseRadius + 4, fill);
 
     for (final wave in [progress, (progress + 0.48) % 1]) {
@@ -1094,7 +1106,7 @@ class _SpeakingPulsePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_SpeakingPulsePainter oldDelegate) {
-    return oldDelegate.progress != progress ||
+    return oldDelegate.animation != animation ||
         oldDelegate.palette != palette ||
         oldDelegate.compact != compact;
   }

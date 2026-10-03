@@ -125,7 +125,10 @@ class FakeRtcService implements RtcService {
   }
 
   @override
-  Future<void> disconnect() async => disconnectCalls++;
+  Future<void> disconnect() async {
+    disconnectCalls++;
+    order.add('disconnect');
+  }
 
   @override
   Future<void> enableMicrophone() async => enableMicCalls++;
@@ -306,10 +309,7 @@ class FakeRtcService implements RtcService {
   final Set<String> enabledScreenAudioIds = {};
 
   @override
-  Future<void> setScreenShareAudioEnabled(
-    String identity,
-    bool enabled,
-  ) async {
+  Future<void> setScreenShareAudioEnabled(String identity, bool enabled) async {
     screenShareAudioEnabledCalls.add((identity: identity, enabled: enabled));
     if (enabled) {
       enabledScreenAudioIds.add(identity);
@@ -321,9 +321,13 @@ class FakeRtcService implements RtcService {
   /// Sinais de som anunciados para a sala (ADR-0001).
   final List<RtcVoiceSound> publishedSounds = [];
 
+  /// Ordem entre publish e disconnect (regressão do leave com publish em voo).
+  final List<String> order = [];
+
   @override
   Future<void> publishVoiceSound(RtcVoiceSound sound) async {
     publishedSounds.add(sound);
+    order.add('publish:${sound.name}');
   }
 
   void pushParticipants(List<RtcParticipant> list) =>
@@ -586,6 +590,23 @@ void main() {
       expect(rtc.disconnectCalls, 1);
       expect(state().status, VoiceSessionStatus.idle);
       expect(state().participants, isEmpty);
+    });
+
+    test('leave publica o som ANTES do disconnect (sem corrida)', () async {
+      repo.onJoinVoice = (serverId, channelId) async => _joinInfo;
+      final notifier = buildVoice();
+      await notifier.join();
+      await settle();
+      expect(state().status, VoiceSessionStatus.connected);
+      rtc.order.clear();
+
+      await notifier.leave();
+      await settle();
+
+      expect(rtc.order, [
+        'publish:leave',
+        'disconnect',
+      ], reason: 'anúncio concluído antes do teardown da sala');
     });
 
     test('toggleMicrophone chama enable/disable e atualiza o estado', () async {

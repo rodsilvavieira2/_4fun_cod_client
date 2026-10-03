@@ -190,6 +190,20 @@ final inviteDetailProvider = FutureProvider.autoDispose
       return ref.watch(serversRepositoryProvider).fetchInvite(code);
     });
 
+/// Snapshot REST único de presença por servidor (`GET /servers/:id/presence`).
+///
+/// Os três controllers abaixo ([PresenceController], [PresenceStatusController]
+/// e [VoicePresenceController]) derivam daqui em vez de chamar `fetchPresence()`
+/// cada um: sem isso, montar uma tela que observa os três providers (ex.:
+/// `ChatScreen` + `ChannelList`) dispara 2–3 GETs idênticos no mesmo
+/// milissegundo. Enquanto ao menos um controller estiver vivo, a instância é
+/// compartilhada (1 GET); no reconnect cada controller invalida antes de
+/// reler, e a primeira releitura vence para todos.
+final serverPresenceSnapshotProvider = FutureProvider.autoDispose
+    .family<ServerPresence, String>((ref, serverId) {
+      return ref.watch(serversRepositoryProvider).fetchPresence(serverId);
+    });
+
 /// Presença online dos membros — `GET /servers/:id/presence` (estado
 /// inicial) + eventos `presence.changed` aplicados em tempo real.
 class PresenceController
@@ -274,6 +288,7 @@ class PresenceController
       _seenEvents.clear();
       _pendingEvents.clear();
       state = const {};
+      ref.invalidate(serverPresenceSnapshotProvider(serverId));
       _fetch(serverId, generation);
     });
     ref.onDispose(() {
@@ -281,6 +296,9 @@ class PresenceController
       _subscription?.cancel();
       _reconnectedSub?.cancel();
     });
+    // Mantém o snapshot compartilhado vivo enquanto este controller vive;
+    // sem a subscrição, cada controller dispararia seu próprio GET.
+    ref.listen(serverPresenceSnapshotProvider(serverId), (_, _) {});
     _fetch(serverId, generation);
     return const {};
   }
@@ -299,9 +317,11 @@ class PresenceController
   Future<void> _fetch(String serverId, int generation) async {
     final fetchGeneration = ++_fetchGeneration;
     try {
-      final presence = await ref
-          .read(serversRepositoryProvider)
-          .fetchPresence(serverId);
+      // Snapshot compartilhado: leituras concorrentes dos três controllers
+      // resolvem o mesmo future (1 GET por mount, não 3).
+      final presence = await ref.read(
+        serverPresenceSnapshotProvider(serverId).future,
+      );
       if (_disposed ||
           generation != _generation ||
           fetchGeneration != _fetchGeneration) {
@@ -387,6 +407,7 @@ class PresenceStatusController
       _latestEvents.clear();
       _pendingEvents.clear();
       state = const {};
+      ref.invalidate(serverPresenceSnapshotProvider(serverId));
       _fetch(serverId, generation);
     });
     ref.onDispose(() {
@@ -394,6 +415,8 @@ class PresenceStatusController
       _events?.cancel();
       _reconnected?.cancel();
     });
+    // Ver comentário no PresenceController: mantém o snapshot vivo/compartilhado.
+    ref.listen(serverPresenceSnapshotProvider(serverId), (_, _) {});
     _fetch(serverId, generation);
     return const {};
   }
@@ -401,9 +424,9 @@ class PresenceStatusController
   Future<void> _fetch(String serverId, int generation) async {
     final fetchGeneration = ++_fetchGeneration;
     try {
-      final snapshot = await ref
-          .read(serversRepositoryProvider)
-          .fetchPresence(serverId);
+      final snapshot = await ref.read(
+        serverPresenceSnapshotProvider(serverId).future,
+      );
       if (_disposed ||
           generation != _generation ||
           fetchGeneration != _fetchGeneration) {
@@ -464,6 +487,7 @@ class VoicePresenceController
       if (_disposed || generation != _generation) return;
       _eventStates.clear();
       state = const {};
+      ref.invalidate(serverPresenceSnapshotProvider(serverId));
       _fetch(serverId, generation);
     });
     ref.onDispose(() {
@@ -471,6 +495,8 @@ class VoicePresenceController
       _subscription?.cancel();
       _reconnectedSub?.cancel();
     });
+    // Ver comentário no PresenceController: mantém o snapshot vivo/compartilhado.
+    ref.listen(serverPresenceSnapshotProvider(serverId), (_, _) {});
     _fetch(serverId, generation);
     return const {};
   }
@@ -478,9 +504,9 @@ class VoicePresenceController
   Future<void> _fetch(String serverId, int generation) async {
     final fetchGeneration = ++_fetchGeneration;
     try {
-      final presence = await ref
-          .read(serversRepositoryProvider)
-          .fetchPresence(serverId);
+      final presence = await ref.read(
+        serverPresenceSnapshotProvider(serverId).future,
+      );
       if (_disposed ||
           generation != _generation ||
           fetchGeneration != _fetchGeneration) {

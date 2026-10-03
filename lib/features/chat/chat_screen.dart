@@ -142,8 +142,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final myUserId = auth is Authenticated ? auth.user.id : null;
     final serverDetail = ref.watch(serverDetailProvider(widget.serverId));
     final members = serverDetail.valueOrNull?.members ?? const <ServerMember>[];
-    final onlineUserIds = ref.watch(presenceProvider(widget.serverId));
-    final presenceStatuses = ref.watch(presenceStatusProvider(widget.serverId));
 
     return Column(
       children: [
@@ -191,8 +189,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           channelId: widget.channelId,
           channelName: widget.channelName,
           members: members,
-          onlineUserIds: onlineUserIds,
-          presenceStatuses: presenceStatuses,
           replyTo: _replyTo,
           onCancelReply: _clearReply,
         ),
@@ -1432,6 +1428,19 @@ class _GifEmbedState extends State<_GifEmbed> {
   ImageStreamListener? _listener;
   String? _resolvedUrl;
 
+  /// Aspect (w/h) por URL: evita um `NetworkImage.resolve` (fetch + decode)
+  /// a cada mount de tile visível durante o scroll. LRU simples com teto.
+  static final Map<String, double> _aspectCache = {};
+  static const _aspectCacheMax = 200;
+
+  static void _cacheAspect(String url, double aspect) {
+    if (_aspectCache.containsKey(url)) return;
+    if (_aspectCache.length >= _aspectCacheMax) {
+      _aspectCache.remove(_aspectCache.keys.first);
+    }
+    _aspectCache[url] = aspect;
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -1469,14 +1478,24 @@ class _GifEmbedState extends State<_GifEmbed> {
 
   void _resolveAspect() {
     _detach();
-    final provider = NetworkImage(widget.url);
+    final cached = _aspectCache[widget.url];
+    if (cached != null) {
+      _aspect = cached;
+      return;
+    }
+    final url = widget.url;
+    final provider = NetworkImage(url);
     final stream = provider.resolve(createLocalImageConfiguration(context));
     final listener = ImageStreamListener((info, _) {
       final w = info.image.width.toDouble();
       final h = info.image.height.toDouble();
       if (h <= 0) return;
       if (!mounted) return;
-      setState(() => _aspect = (w / h).clamp(0.5, 2.5));
+      final aspect = (w / h).clamp(0.5, 2.5);
+      _cacheAspect(url, aspect);
+      // Resposta atrasada de uma URL anterior: o tile já resolve outra.
+      if (_resolvedUrl != url) return;
+      setState(() => _aspect = aspect);
     }, onError: (_, _) {});
     _stream = stream;
     _listener = listener;
@@ -2131,8 +2150,6 @@ class _ChatComposer extends ConsumerStatefulWidget {
     required this.channelId,
     required this.channelName,
     required this.members,
-    required this.onlineUserIds,
-    required this.presenceStatuses,
     required this.onCancelReply,
     this.replyTo,
   });
@@ -2141,8 +2158,6 @@ class _ChatComposer extends ConsumerStatefulWidget {
   final String channelId;
   final String channelName;
   final List<ServerMember> members;
-  final Set<String> onlineUserIds;
-  final Map<String, String> presenceStatuses;
   final ChatMessage? replyTo;
   final VoidCallback onCancelReply;
 
@@ -2179,8 +2194,7 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
   @override
   void didUpdateWidget(covariant _ChatComposer oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.members != widget.members ||
-        oldWidget.onlineUserIds != widget.onlineUserIds) {
+    if (oldWidget.members != widget.members) {
       _clampSelectedMention();
     }
   }
@@ -2197,7 +2211,20 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
     });
   }
 
-  List<_MentionOption> _currentMentionOptions() {
+  /// Presença lida sem subscrição (para handlers fora do build; o build
+  /// observa via `watch`, então o tick de presença reconstrói SÓ o composer,
+  /// nunca a coluna do chat/lista).
+  ({Set<String> online, Map<String, String> statuses}) _readPresence() {
+    return (
+      online: ref.read(presenceProvider(widget.serverId)),
+      statuses: ref.read(presenceStatusProvider(widget.serverId)),
+    );
+  }
+
+  List<_MentionOption> _currentMentionOptions({
+    required Set<String> onlineUserIds,
+    required Map<String, String> presenceStatuses,
+  }) {
     final active = _activeMention;
     if (active == null) return const [];
     final membersByUserId = {
@@ -2205,7 +2232,7 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
     };
     return [
       for (final target in rankMentionTargets(
-        _mentionTargetsFor(widget.members, onlineUserIds: widget.onlineUserIds),
+        _mentionTargetsFor(widget.members, onlineUserIds: onlineUserIds),
         active.query,
         limit: _mentionLimit,
       ))
@@ -2213,13 +2240,17 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
           _MentionOption(
             target: target,
             member: membersByUserId[target.userId]!,
-            status: widget.presenceStatuses[target.userId],
+            status: presenceStatuses[target.userId],
           ),
     ];
   }
 
   void _clampSelectedMention() {
-    final options = _currentMentionOptions();
+    final presence = _readPresence();
+    final options = _currentMentionOptions(
+      onlineUserIds: presence.online,
+      presenceStatuses: presence.statuses,
+    );
     final maxIndex = options.isEmpty ? 0 : options.length - 1;
     if (_selectedMentionIndex <= maxIndex) return;
     setState(() => _selectedMentionIndex = maxIndex);
@@ -2229,7 +2260,11 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
     if (event is! KeyDownEvent || _activeMention == null) {
       return KeyEventResult.ignored;
     }
-    final options = _currentMentionOptions();
+    final presence = _readPresence();
+    final options = _currentMentionOptions(
+      onlineUserIds: presence.online,
+      presenceStatuses: presence.statuses,
+    );
     final key = event.logicalKey;
     if (key == LogicalKeyboardKey.escape) {
       setState(() {
@@ -2239,23 +2274,26 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
       return KeyEventResult.handled;
     }
     if (options.isEmpty) return KeyEventResult.ignored;
+    // O índice pode ter envelhecido se a presença encolheu a lista entre
+    // eventos: fixa antes de indexar (o build também limita na renderização).
+    final selected = _selectedMentionIndex.clamp(0, options.length - 1);
     if (key == LogicalKeyboardKey.arrowDown) {
       setState(() {
-        _selectedMentionIndex = (_selectedMentionIndex + 1) % options.length;
+        _selectedMentionIndex = (selected + 1) % options.length;
       });
       return KeyEventResult.handled;
     }
     if (key == LogicalKeyboardKey.arrowUp) {
       setState(() {
         _selectedMentionIndex =
-            (_selectedMentionIndex - 1 + options.length) % options.length;
+            (selected - 1 + options.length) % options.length;
       });
       return KeyEventResult.handled;
     }
     if (key == LogicalKeyboardKey.enter ||
         key == LogicalKeyboardKey.numpadEnter ||
         key == LogicalKeyboardKey.tab) {
-      _insertMention(options[_selectedMentionIndex].target);
+      _insertMention(options[selected].target);
       return KeyEventResult.handled;
     }
     return KeyEventResult.ignored;
@@ -2449,6 +2487,14 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
 
   @override
   Widget build(BuildContext context) {
+    // Observa presença AQUI (não no ChatScreen): o tick reconstrói só o
+    // composer (popup de mentions), nunca a coluna/lista de mensagens.
+    final onlineUserIds = ref.watch(presenceProvider(widget.serverId));
+    final presenceStatuses = ref.watch(presenceStatusProvider(widget.serverId));
+    final mentionOptions = _currentMentionOptions(
+      onlineUserIds: onlineUserIds,
+      presenceStatuses: presenceStatuses,
+    );
     return AppChatInput(
       controller: _controller,
       enabled: !_sending,
@@ -2485,28 +2531,32 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
           ),
         ),
       ],
-      topPanel: _composerPanel(),
+      topPanel: _composerPanel(mentionOptions),
       onKeyEvent: _handleComposerKey,
       onSend: _handleSend,
     );
   }
 
-  Widget? _composerPanel() {
+  Widget? _composerPanel(List<_MentionOption> mentionOptions) {
     final replyTo = widget.replyTo;
     final gifUrl = _gifUrl;
-    final mentionOptions = _currentMentionOptions();
     final showMentions = _activeMention != null;
     final hasAttachments = _attachments.isNotEmpty;
     if (!showMentions && replyTo == null && gifUrl == null && !hasAttachments) {
       return null;
     }
+    // Índice limitado na renderização: a presença pode encolher a lista
+    // entre o último clamp e este frame.
+    final selectedIndex = mentionOptions.isEmpty
+        ? 0
+        : _selectedMentionIndex.clamp(0, mentionOptions.length - 1);
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         if (showMentions) ...[
           _MentionSuggestionsPanel(
             options: mentionOptions,
-            selectedIndex: _selectedMentionIndex,
+            selectedIndex: selectedIndex,
             onSelected: _insertMention,
           ),
           if (replyTo != null || gifUrl != null || hasAttachments)

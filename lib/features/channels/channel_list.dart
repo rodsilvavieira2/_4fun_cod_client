@@ -613,33 +613,36 @@ class _VoiceOccupantSpeakingMeterState
       return const SizedBox(width: 16, height: 16);
     }
 
+    // Sem AnimatedBuilder: o painter observa o controller via `repaint`.
     return RepaintBoundary(
       key: const ValueKey('voice-occupant-speaking-meter'),
-      child: AnimatedBuilder(
-        animation: _controller,
-        builder: (context, _) => CustomPaint(
-          painter: _VoiceOccupantMeterPainter(
-            progress: _controller.value,
-            accent: widget.accent,
-          ),
-          child: const SizedBox(width: 16, height: 16),
+      child: CustomPaint(
+        painter: _VoiceOccupantMeterPainter(
+          animation: _controller,
+          accent: widget.accent,
         ),
+        child: const SizedBox(width: 16, height: 16),
       ),
     );
   }
 }
 
 class _VoiceOccupantMeterPainter extends CustomPainter {
-  const _VoiceOccupantMeterPainter({
-    required this.progress,
-    required this.accent,
-  });
+  _VoiceOccupantMeterPainter({required this.animation, required this.accent})
+    : super(repaint: animation);
 
-  final double progress;
+  final Animation<double> animation;
   final Color accent;
+
+  /// Um único shader vertical para as 4 barras (o fade independe da altura
+  /// da barra) — antes eram 4 `createShader` por frame. Cacheado por
+  /// instância; tamanho é constante (16x16), refeito só se o accent mudar.
+  Shader? _barShader;
+  Color? _barShaderAccent;
 
   @override
   void paint(Canvas canvas, Size size) {
+    final progress = animation.value;
     const barWidth = 2.2;
     const gap = 1.65;
     const minHeight = 4.0;
@@ -649,7 +652,22 @@ class _VoiceOccupantMeterPainter extends CustomPainter {
     final totalWidth = barWidth * phases.length + gap * (phases.length - 1);
     final startX = (size.width - totalWidth) / 2;
     final centerY = size.height / 2;
-    final paint = Paint()..style = PaintingStyle.fill;
+    var barShader = _barShader;
+    if (barShader == null || _barShaderAccent != accent) {
+      barShader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [
+          accent.withValues(alpha: 0.95),
+          accent.withValues(alpha: 0.36),
+        ],
+      ).createShader(Offset.zero & size);
+      _barShader = barShader;
+      _barShaderAccent = accent;
+    }
+    final paint = Paint()
+      ..style = PaintingStyle.fill
+      ..shader = barShader;
 
     for (var index = 0; index < phases.length; index++) {
       final phase = (progress + phases[index]) % 1;
@@ -659,14 +677,6 @@ class _VoiceOccupantMeterPainter extends CustomPainter {
           minHeight + (maxHeight - minHeight) * eased * weights[index];
       final x = startX + index * (barWidth + gap);
       final rect = Rect.fromLTWH(x, centerY - height / 2, barWidth, height);
-      paint.shader = LinearGradient(
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-        colors: [
-          accent.withValues(alpha: 0.95),
-          accent.withValues(alpha: 0.36),
-        ],
-      ).createShader(rect);
       canvas.drawRRect(
         RRect.fromRectAndRadius(rect, const Radius.circular(barWidth)),
         paint,
@@ -676,7 +686,7 @@ class _VoiceOccupantMeterPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_VoiceOccupantMeterPainter oldDelegate) {
-    return oldDelegate.progress != progress || oldDelegate.accent != accent;
+    return oldDelegate.animation != animation || oldDelegate.accent != accent;
   }
 }
 

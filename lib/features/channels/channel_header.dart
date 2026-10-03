@@ -1,4 +1,3 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 
 import '../../core/ui/ui.dart';
@@ -36,97 +35,92 @@ class ChannelHeader extends StatelessWidget {
         ? AppIcons.channelText
         : AppIcons.volumeHigh;
 
-    return ClipRect(
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-        child: Container(
-          height: AppLayout.headerHeight,
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          decoration: BoxDecoration(
-            color: colors.background.withValues(alpha: 0.80),
-            border: Border(
-              bottom: BorderSide(color: colors.borderHairline, width: 1),
+    // Sem BackdropFilter de propósito: o header está em fluxo (Column sobre
+    // fundo opaco), então o blur só adicionava um saveLayer por frame sem
+    // nenhum efeito visual (0.80 de bg sobre bg opaco = bg).
+    return Container(
+      height: AppLayout.headerHeight,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        color: colors.background.withValues(alpha: 0.80),
+        border: Border(
+          bottom: BorderSide(color: colors.borderHairline, width: 1),
+        ),
+      ),
+      child: Row(
+        children: [
+          if (onBack != null) ...[
+            AppIconButton(
+              icon: AppIcons.back,
+              tooltip: 'Voltar para canais',
+              onPressed: onBack,
+            ),
+            const SizedBox(width: 6),
+          ],
+          AppIcon(icon, size: 16, color: colors.textSecondary),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Row(
+              children: [
+                Flexible(
+                  child: Text(
+                    channelName,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontFamily: 'Geist',
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w600,
+                      color: colors.textPrimary,
+                      letterSpacing: 0,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                SizedBox(
+                  height: 18,
+                  child: VerticalDivider(color: colors.borderStrong, width: 1),
+                ),
+                const SizedBox(width: 12),
+                Flexible(
+                  child: Text(
+                    channelType == ChannelType.text
+                        ? 'Conversa do servidor'
+                        : 'Sala de voz e vídeo',
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontFamily: 'Geist',
+                      fontSize: 12.5,
+                      color: colors.textMuted,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
-          child: Row(
-            children: [
-              if (onBack != null) ...[
-                AppIconButton(
-                  icon: AppIcons.back,
-                  tooltip: 'Voltar para canais',
-                  onPressed: onBack,
-                ),
-                const SizedBox(width: 6),
-              ],
-              AppIcon(icon, size: 16, color: colors.textSecondary),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        channelName,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontFamily: 'Geist',
-                          fontSize: 14.5,
-                          fontWeight: FontWeight.w600,
-                          color: colors.textPrimary,
-                          letterSpacing: 0,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    SizedBox(
-                      height: 18,
-                      child: VerticalDivider(
-                        color: colors.borderStrong,
-                        width: 1,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Flexible(
-                      child: Text(
-                        channelType == ChannelType.text
-                            ? 'Conversa do servidor'
-                            : 'Sala de voz e vídeo',
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontFamily: 'Geist',
-                          fontSize: 12.5,
-                          color: colors.textMuted,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (theaterToggle != null) ...[
-                theaterToggle!,
-                const SizedBox(width: 8),
-              ],
-              AppIconButton(
-                icon: AppIcons.userGroup,
-                tooltip: 'Membros',
-                onPressed: onOpenMembers,
-              ),
-              const SizedBox(width: 4),
-              AppIconButton(
-                icon: AppIcons.link,
-                tooltip: 'Convites',
-                onPressed: onOpenInvites,
-              ),
-              if (onOpenSettings != null) ...[
-                const SizedBox(width: 4),
-                AppIconButton(
-                  icon: AppIcons.settings,
-                  tooltip: 'Configurações do servidor',
-                  onPressed: onOpenSettings,
-                ),
-              ],
-            ],
+          if (theaterToggle != null) ...[
+            theaterToggle!,
+            const SizedBox(width: 8),
+          ],
+          AppIconButton(
+            icon: AppIcons.userGroup,
+            tooltip: 'Membros',
+            onPressed: onOpenMembers,
           ),
-        ),
+          const SizedBox(width: 4),
+          AppIconButton(
+            icon: AppIcons.link,
+            tooltip: 'Convites',
+            onPressed: onOpenInvites,
+          ),
+          if (onOpenSettings != null) ...[
+            const SizedBox(width: 4),
+            AppIconButton(
+              icon: AppIcons.settings,
+              tooltip: 'Configurações do servidor',
+              onPressed: onOpenSettings,
+            ),
+          ],
+        ],
       ),
     );
   }
