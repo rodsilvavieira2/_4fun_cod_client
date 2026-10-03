@@ -119,11 +119,24 @@ class _SettingsModalState extends State<_SettingsModal> {
   }
 }
 
-class _SettingsBody extends StatelessWidget {
+class _SettingsBody extends StatefulWidget {
   const _SettingsBody({required this.section, required this.onClose});
 
   final SettingsSection section;
   final VoidCallback onClose;
+
+  @override
+  State<_SettingsBody> createState() => _SettingsBodyState();
+}
+
+class _SettingsBodyState extends State<_SettingsBody> {
+  late final ScrollController _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -141,7 +154,7 @@ class _SettingsBody extends StatelessWidget {
           child: Row(
             children: [
               Text(
-                section.title,
+                widget.section.title,
                 style: TextStyle(
                   fontFamily: 'Geist',
                   fontSize: 14.5,
@@ -154,18 +167,20 @@ class _SettingsBody extends StatelessWidget {
               AppIconButton(
                 icon: AppIcons.close,
                 tooltip: 'Fechar (ESC)',
-                onPressed: onClose,
+                onPressed: widget.onClose,
               ),
             ],
           ),
         ),
         Expanded(
           child: Scrollbar(
+            controller: _scrollController,
             child: SingleChildScrollView(
+              controller: _scrollController,
               padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
-              child: switch (section) {
+              child: switch (widget.section) {
                 SettingsSection.account => AccountSection(
-                  onCloseSettings: onClose,
+                  onCloseSettings: widget.onClose,
                 ),
                 SettingsSection.voiceVideo => const VoiceVideoSection(),
                 SettingsSection.notifications => const NotificationsSection(),

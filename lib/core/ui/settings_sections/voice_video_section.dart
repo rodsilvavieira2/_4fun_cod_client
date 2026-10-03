@@ -327,25 +327,16 @@ class _VolumeField extends StatelessWidget {
         child: Row(
           children: [
             Expanded(
-              child: SliderTheme(
-                data: SliderTheme.of(context).copyWith(
-                  trackHeight: 2.5,
-                  thumbShape: const RoundSliderThumbShape(
-                    enabledThumbRadius: 6,
-                    disabledThumbRadius: 6,
-                  ),
-                  overlayShape: const RoundSliderOverlayShape(
-                    overlayRadius: 12,
-                  ),
-                ),
-                child: Slider(
-                  value: percent.toDouble(),
-                  min: 0,
-                  max: max.toDouble(),
-                  divisions: max ~/ 5,
-                  label: '$percent%',
-                  onChanged: (value) => onChanged((value / 5).round() * 5),
-                ),
+              child: AppSlider(
+                value: percent.toDouble(),
+                min: 0,
+                max: max.toDouble(),
+                divisions: max ~/ 5,
+                label: '$percent%',
+                trackHeight: 2.5,
+                thumbRadius: 6,
+                overlayRadius: 12,
+                onChanged: (value) => onChanged((value / 5).round() * 5),
               ),
             ),
             SizedBox(
@@ -552,25 +543,16 @@ class _PushToTalkDelayField extends StatelessWidget {
         child: Row(
           children: [
             Expanded(
-              child: SliderTheme(
-                data: SliderTheme.of(context).copyWith(
-                  trackHeight: 2.5,
-                  thumbShape: const RoundSliderThumbShape(
-                    enabledThumbRadius: 6,
-                    disabledThumbRadius: 6,
-                  ),
-                  overlayShape: const RoundSliderOverlayShape(
-                    overlayRadius: 12,
-                  ),
-                ),
-                child: Slider(
-                  value: delayMs.toDouble(),
-                  min: 0,
-                  max: 2000,
-                  divisions: 200,
-                  label: '$delayMs ms',
-                  onChanged: enabled ? onChanged : null,
-                ),
+              child: AppSlider(
+                value: delayMs.toDouble(),
+                min: 0,
+                max: 2000,
+                divisions: 200,
+                label: '$delayMs ms',
+                trackHeight: 2.5,
+                thumbRadius: 6,
+                overlayRadius: 12,
+                onChanged: enabled ? onChanged : null,
               ),
             ),
             SizedBox(

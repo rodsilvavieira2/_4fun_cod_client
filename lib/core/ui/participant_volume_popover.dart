@@ -7,6 +7,7 @@ import '../../features/voice/voice_volume_controller.dart';
 import '../theme/appearance_theme.dart';
 import 'app_icon.dart';
 import 'ds_tokens.dart';
+import 'inputs/app_slider.dart';
 
 class ParticipantVolumeButton extends ConsumerWidget {
   const ParticipantVolumeButton({
@@ -346,24 +347,17 @@ class _VolumeRow extends StatelessWidget {
             ),
           ],
         ),
-        SliderTheme(
-          data: SliderTheme.of(context).copyWith(
-            trackHeight: 4,
-            activeTrackColor: colors.accent,
-            inactiveTrackColor: colors.borderStrong,
-            thumbColor: colors.textPrimary,
-            overlayColor: colors.accent.withValues(alpha: 0.16),
-            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
-            overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
-          ),
-          child: Slider(
-            value: percent.toDouble(),
-            min: 0,
-            max: max.toDouble(),
-            divisions: max ~/ 5,
-            label: '$percent%',
-            onChanged: (value) => onChanged((value / 5).round() * 5),
-          ),
+        AppSlider(
+          value: percent.toDouble(),
+          min: 0,
+          max: max.toDouble(),
+          divisions: max ~/ 5,
+          label: '$percent%',
+          activeTrackColor: colors.accent,
+          inactiveTrackColor: colors.borderStrong,
+          thumbColor: colors.textPrimary,
+          overlayColor: colors.accent.withValues(alpha: 0.16),
+          onChanged: (value) => onChanged((value / 5).round() * 5),
         ),
       ],
     );

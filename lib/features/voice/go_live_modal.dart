@@ -101,6 +101,14 @@ class _GoLiveDialogState extends State<_GoLiveDialog> {
   /// Opt-out do áudio de sistema: ligado por padrão (regra 1 da SPEC).
   bool _includeAudio = true;
 
+  late final ScrollController _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
   bool get _canUseKind =>
       widget.backend.canUseKind(RtcScreenShareSourceKind.display) ||
       widget.backend.canUseKind(RtcScreenShareSourceKind.window);
@@ -162,7 +170,9 @@ class _GoLiveDialogState extends State<_GoLiveDialog> {
                     _GoLiveTitleBar(onClose: () => Navigator.of(context).pop()),
                     Flexible(
                       child: Scrollbar(
+                        controller: _scrollController,
                         child: SingleChildScrollView(
+                          controller: _scrollController,
                           padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
                           child: SettingsStack(
                             maxWidth: 460,

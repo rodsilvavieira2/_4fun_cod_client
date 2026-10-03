@@ -280,6 +280,7 @@ class _CustomColorEditor extends StatelessWidget {
                 child: TextField(
                   controller: hexController,
                   enabled: enabled,
+                  textAlignVertical: TextAlignVertical.center,
                   inputFormatters: [
                     FilteringTextInputFormatter.allow(RegExp(r'[0-9a-fA-F#]')),
                     LengthLimitingTextInputFormatter(7),
@@ -294,11 +295,7 @@ class _CustomColorEditor extends StatelessWidget {
                   decoration: InputDecoration(
                     hintText: '#5865F2',
                     errorText: errorText,
-                    prefixIcon: AppIcon(
-                      AppIcons.channelText,
-                      size: 15,
-                      color: palette.textSecondary,
-                    ),
+                    isDense: true,
                   ),
                   onChanged: onHexChanged,
                 ),
@@ -315,25 +312,20 @@ class _CustomColorEditor extends StatelessWidget {
           Row(
             children: [
               AppIcon(AppIcons.palette, size: 16, color: palette.textMuted),
-              const SizedBox(width: 10),
               Expanded(
-                child: SliderTheme(
-                  data: SliderTheme.of(context).copyWith(
-                    activeTrackColor: palette.accent,
-                    inactiveTrackColor: palette.borderStrong,
-                    thumbColor: palette.textPrimary,
-                    overlayColor: palette.accent.withValues(alpha: 0.16),
-                  ),
-                  child: Slider(
-                    min: 0,
-                    max: 360,
-                    value: hsv.hue,
-                    onChanged: enabled
-                        ? (value) => onColorChanged(
-                            hsv.withHue(value == 360 ? 0 : value).toColor(),
-                          )
-                        : null,
-                  ),
+                child: AppSlider(
+                  value: hsv.hue,
+                  min: 0,
+                  max: 360,
+                  activeTrackColor: palette.accent,
+                  inactiveTrackColor: palette.borderStrong,
+                  thumbColor: palette.textPrimary,
+                  overlayColor: palette.accent.withValues(alpha: 0.16),
+                  onChanged: enabled
+                      ? (value) => onColorChanged(
+                          hsv.withHue(value == 360 ? 0 : value).toColor(),
+                        )
+                      : null,
                 ),
               ),
             ],
