@@ -61,3 +61,11 @@ tools/studio_quality/**/*.json
 # $FOURFUN_DPDFNET_MODEL; norms .f32 (2KB) sao vendored de proposito.
 native/deepfilter_bridge/model/*.onnx
 tools/studio_quality/models/
+
+# Locally compiled Windows libwebrtc ducking patch artifacts.
+packages/flutter_webrtc/third_party/downloads/*-fourfun-ducking.zip
+packages/flutter_webrtc/third_party/downloads/*.part
+packages/flutter_webrtc/third_party/.libwebrtc_patched_extract/
+packages/flutter_webrtc/third_party/libwebrtc/fourfun-ducking-build.json
+packages/flutter_webrtc/third_party/libwebrtc/lib/libwebrtc.dll
+packages/flutter_webrtc/third_party/libwebrtc/lib/libwebrtc.dll.lib

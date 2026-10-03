@@ -58,6 +58,7 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 # --- assert dumpbin resolveu (mesma checagem da GHA) ---
 $BUNDLE = 'build\windows\x64\runner\Release'
+& (Join-Path $PSScriptRoot 'verify-windows-webrtc.ps1') -Bundle $BUNDLE
 & $dumpbin /DEPENDENTS "$BUNDLE\_4fun_cod_client.exe" | Out-String | Write-Host
 $dllDeps = & $dumpbin /DEPENDENTS "$BUNDLE\flutter_webrtc_plugin.dll" 2>$null | Out-String
 if ($dllDeps -notmatch 'DirectML\.dll') { Write-Error 'flutter_webrtc_plugin.dll nao referencia DirectML.dll'; exit 1 }

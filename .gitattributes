@@ -1,0 +1,2 @@
+# Unified diff context uses a single-space prefix, including blank lines.
+packages/flutter_webrtc/third_party/patches/*.patch whitespace=-blank-at-eol

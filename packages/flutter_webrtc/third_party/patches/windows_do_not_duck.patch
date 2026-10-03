@@ -1,0 +1,50 @@
+diff --git a/modules/audio_device/win/audio_device_core_win.cc b/modules/audio_device/win/audio_device_core_win.cc
+--- a/modules/audio_device/win/audio_device_core_win.cc
++++ b/modules/audio_device/win/audio_device_core_win.cc
+@@ -76,6 +76,37 @@
+ enum { COM_THREADING_MODEL = COINIT_MULTITHREADED };
+ 
+ enum { kAecCaptureStreamIndex = 0, kAecRenderStreamIndex = 1 };
++
++// Keep the voice render stream from attenuating other applications. Apply this
++// to every new client, including clients recreated after a device change.
++void DisableDuckingForRenderStream(IAudioClient* audio_client) {
++#if defined(__IAudioClientDuckingControl_INTERFACE_DEFINED__)
++  IAudioClientDuckingControl* ducking_control = nullptr;
++  const HRESULT service_hr = audio_client->GetService(
++      __uuidof(IAudioClientDuckingControl),
++      reinterpret_cast<void**>(&ducking_control));
++  if (FAILED(service_hr) || ducking_control == nullptr) {
++    // Older Windows releases may not implement this optional interface.
++    RTC_LOG(LS_WARNING) << "4fun ducking control unavailable, HRESULT="
++                        << static_cast<long>(service_hr);
++    return;
++  }
++
++  const HRESULT options_hr = ducking_control->SetDuckingOptionsForCurrentStream(
++      AUDIO_DUCKING_OPTIONS_DO_NOT_DUCK_OTHER_STREAMS);
++  ducking_control->Release();
++  if (SUCCEEDED(options_hr)) {
++    RTC_LOG(LS_INFO) << "4fun communications_do_not_duck";
++  } else {
++    // A failed opt-out must not prevent normal audio playback.
++    RTC_LOG(LS_WARNING) << "4fun ducking opt-out failed, HRESULT="
++                        << static_cast<long>(options_hr);
++  }
++#else
++  (void)audio_client;
++  RTC_LOG(LS_WARNING) << "4fun ducking control unavailable in Windows SDK";
++#endif
++}
+ 
+ // An implementation of IMediaBuffer, as required for
+ // IMediaObject::ProcessOutput(). After consuming data provided by
+@@ -1978,6 +2009,8 @@
+   }
+   EXIT_ON_ERROR(hr);
+ 
++  DisableDuckingForRenderStream(_ptrClientOut);
++
+   if (_ptrAudioBuffer) {
+     // Update the audio buffer with the selected parameters
+     _ptrAudioBuffer->SetPlayoutSampleRate(_playSampleRate);

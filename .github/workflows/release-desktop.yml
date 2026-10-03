@@ -68,7 +68,8 @@ jobs:
         run: flutter --version
 
       - name: Install Flutter dependencies
-        run: flutter pub get
+        shell: pwsh
+        run: ./tooling-woodpecker/restore-windows-deps.ps1
 
       - name: Resolve release version
         shell: bash
@@ -388,6 +389,10 @@ jobs:
             --build-name "$env:APP_VERSION" `
             --build-number "${{ github.run_number }}" `
             @defines
+
+      - name: Verify patched WebRTC DLL
+        shell: pwsh
+        run: ./tooling-woodpecker/verify-windows-webrtc.ps1
 
       - name: Assert Windows native deps (dumpbin)
         shell: pwsh

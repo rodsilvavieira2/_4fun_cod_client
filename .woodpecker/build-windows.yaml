@@ -16,7 +16,7 @@ steps:
   - name: dependencies
     image: powershell
     commands:
-      - flutter pub get
+      - '& ./tooling-woodpecker/restore-windows-deps.ps1'
 
   - name: bridge
     image: powershell
@@ -42,6 +42,12 @@ steps:
       # Build aqui so em tags nao-v*: em v* o step `release` faz o build UNICO
       # ja versionado. (manual sem tag tambem builda: CI_COMMIT_TAG vazio.)
       - 'if ($env:CI_COMMIT_TAG -and $env:CI_COMMIT_TAG.StartsWith("v")) { Write-Host "skip: build versionado no step release" } else { $env:ORT_CACHE_DIR = Join-Path $env:USERPROFILE ".cache\ort-cache"; New-Item -ItemType Directory -Force -Path $env:ORT_CACHE_DIR | Out-Null; $env:RUSTUP_TOOLCHAIN = "stable"; $env:PATH = "$env:USERPROFILE\.rustup\toolchains\stable-x86_64-pc-windows-msvc\bin;$env:USERPROFILE\.cargo\bin;$env:PATH"; flutter build windows --release --dart-define=API_URL=$env:API_URL --dart-define=LIVEKIT_URL=$env:LIVEKIT_URL --dart-define=OTEL_ENABLED=$env:OTEL_ENABLED --dart-define=OTEL_ENDPOINT=$env:OTEL_ENDPOINT --dart-define=OTEL_ORG=$env:OTEL_ORG --dart-define=OTEL_VIA_API=$env:OTEL_VIA_API }'
+
+  - name: verify-webrtc
+    image: powershell
+    commands:
+      # v* is verified inside release-windows.ps1 before packaging.
+      - 'if ($env:CI_COMMIT_TAG -and $env:CI_COMMIT_TAG.StartsWith("v")) { Write-Host "skip: release verifies the patched DLL" } else { & ./tooling-woodpecker/verify-windows-webrtc.ps1; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } }'
 
   # Release (tags v*): build UNICO versionado + deposita no share p/ o publish.
   # Gate v* dentro do script (exit 78 = skipped nas ci-*).
