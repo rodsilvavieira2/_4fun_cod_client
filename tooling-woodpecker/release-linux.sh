@@ -138,5 +138,9 @@ OUT="$SHARE_ROOT/$TAG/linux"
 mkdir -p "$OUT"
 cp dist/linux/*.tar.gz dist/linux/*.AppImage "$OUT/"
 cp dist/updater/linux/*.zip dist/updater/linux/release.json "$OUT/"
+# Permissão aberta no dir da tag: este step roda como root no Docker e o
+# step Windows (vboxuser via shared folder) precisa criar $TAG/windows
+# em paralelo — sem isso, UnauthorizedAccess no New-Item (pipeline #52).
+chmod -R a+rwX "$SHARE_ROOT/$TAG"
 ls -lh "$OUT"
 echo "artefatos Linux em $OUT - publish assume daqui"
