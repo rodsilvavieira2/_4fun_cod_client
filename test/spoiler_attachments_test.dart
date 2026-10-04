@@ -101,7 +101,7 @@ void main() {
         ProviderScope(
           overrides: [
             fileImageBytesProvider(
-              'http://localhost:3000/api/v1/files/img-1',
+              'http://localhost:3002/api/v1/files/img-1',
             ).overrideWith((ref) async => Uint8List.fromList(const [1, 2, 3])),
           ],
           child: MaterialApp(
@@ -142,7 +142,7 @@ void main() {
         ProviderScope(
           overrides: [
             fileImageBytesProvider(
-              'http://localhost:3000/api/v1/files/img-1',
+              'http://localhost:3002/api/v1/files/img-1',
             ).overrideWith((ref) async => Uint8List.fromList(const [1, 2, 3])),
           ],
           child: MaterialApp(

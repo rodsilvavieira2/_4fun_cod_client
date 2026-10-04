@@ -16,7 +16,7 @@ List<Override> _bytesOverrides(List<String> paths) {
   return [
     for (final path in paths)
       fileImageBytesProvider(
-        'http://localhost:3000$path',
+        'http://localhost:3002$path',
       ).overrideWith((ref) async => _png1x1),
   ];
 }

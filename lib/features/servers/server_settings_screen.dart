@@ -429,8 +429,13 @@ class _ServerSettingsContentState extends ConsumerState<ServerSettingsContent> {
                   : null,
               onFieldSubmitted: (_) => _save(),
             ),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
+            // Material próprio: o modal é um Container opaco abaixo do
+            // Material transparente da janela — sem ele o ink do tile
+            // pinta no ancestral distante e o framework acusa em debug.
+            Material(
+              type: MaterialType.transparency,
+              child: SwitchListTile(
+                contentPadding: EdgeInsets.zero,
               title: const Text('Membros podem alterar o próprio nickname'),
               subtitle: const Text(
                 'Administradores ainda podem gerenciar nicknames de membros.',
@@ -451,6 +456,7 @@ class _ServerSettingsContentState extends ConsumerState<ServerSettingsContent> {
                         if (mounted) setState(() => _error = error.message);
                       }
                     },
+              ),
             ),
             if (_error != null) ...[
               const SizedBox(height: 12),

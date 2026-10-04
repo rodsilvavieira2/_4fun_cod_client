@@ -16,7 +16,7 @@ steps:
   - name: dependencies
     image: powershell
     commands:
-      - '& ./tooling-woodpecker/restore-windows-deps.ps1'
+      - 'Set-ExecutionPolicy -Scope Process Bypass -Force; & ./tooling-woodpecker/restore-windows-deps.ps1'
 
   - name: bridge
     image: powershell
@@ -47,7 +47,7 @@ steps:
     image: powershell
     commands:
       # v* is verified inside release-windows.ps1 before packaging.
-      - 'if ($env:CI_COMMIT_TAG -and $env:CI_COMMIT_TAG.StartsWith("v")) { Write-Host "skip: release verifies the patched DLL" } else { & ./tooling-woodpecker/verify-windows-webrtc.ps1; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } }'
+      - 'if ($env:CI_COMMIT_TAG -and $env:CI_COMMIT_TAG.StartsWith("v")) { Write-Host "skip: release verifies the patched DLL" } else { Set-ExecutionPolicy -Scope Process Bypass -Force; & ./tooling-woodpecker/verify-windows-webrtc.ps1; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } }'
 
   # Release (tags v*): build UNICO versionado + deposita no share p/ o publish.
   # Gate v* dentro do script (exit 78 = skipped nas ci-*).
