@@ -5,9 +5,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/rtc/rtc_providers.dart';
+import '../../../core/telemetry/telemetry_service.dart';
 import '../../../core/theme/appearance_theme.dart';
 import '../../../core/ui/app_icon.dart';
 import '../../../core/ui/app_icon_button.dart';
+import '../../../core/ui/screen_share_pending_notice.dart';
 import '../../../core/ui/ds_tokens.dart';
 import '../../../core/ui/settings_modal.dart';
 import '../go_live_modal.dart';
@@ -158,14 +160,21 @@ class _TheaterScreenState extends ConsumerState<TheaterScreen> {
   Future<void> _toggleScreenShare() async {
     final notifier = ref.read(voiceControllerProvider(arg).notifier);
     final current = ref.read(voiceControllerProvider(arg));
+    if (current.isScreenSharePending) {
+      notifier.cancelPendingScreenShare();
+      return;
+    }
     if (current.isScreenSharing) {
       await notifier.stopScreenShare();
       return;
     }
+    final telemetry = ref.read(telemetryServiceProvider);
     final goLive = await showGoLiveModal(
       context,
       backend: ref.read(nativeMediaServicesProvider).screenShare,
       pendingQuality: ref.read(rtcServiceProvider).screenShareQuality,
+      onDiagnosticEvent: (name, attributes) =>
+          telemetry.logEvent(name, attributes: attributes),
     );
     if (goLive == null) return;
     await notifier.startScreenShare(
@@ -173,6 +182,8 @@ class _TheaterScreenState extends ConsumerState<TheaterScreen> {
       includeSystemAudio: goLive.includeAudio,
       quality: goLiveQualityFor(goLive.quality),
       kind: goLive.kind,
+      windowTarget: goLive.windowTarget,
+      attemptId: goLive.attemptId,
     );
   }
 
@@ -206,6 +217,15 @@ class _TheaterScreenState extends ConsumerState<TheaterScreen> {
                   .read(theaterUiControllerProvider(arg).notifier)
                   .toggleChat(),
             ),
+            if (voice.isScreenSharePending)
+              ScreenSharePendingNotice(
+                waiting:
+                    voice.screenShareStartStage ==
+                    ScreenShareStartStage.waitingForWindow,
+                onCancel: ref
+                    .read(voiceControllerProvider(arg).notifier)
+                    .cancelPendingScreenShare,
+              ),
             Expanded(
               child: LayoutBuilder(
                 builder: (context, constraints) {

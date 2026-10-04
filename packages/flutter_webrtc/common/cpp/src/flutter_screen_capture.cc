@@ -451,6 +451,19 @@ void FlutterScreenCapture::GetDisplayMedia(
     source = CreatePortalMediaSource(source_id);
   }
 #endif
+#ifdef _WIN32
+  const auto cleanup_failed_capture = [&]() {
+    if (loopback_capturer_) {
+      loopback_capturer_->Stop();
+      loopback_capturer_.reset();
+      loopback_audio_source_ = nullptr;
+    }
+    for (auto audio_track : stream->audio_tracks().std_vector()) {
+      stream->RemoveTrack(audio_track);
+      base_->local_tracks_.erase(audio_track->id().std_string());
+    }
+  };
+#endif
   for (auto src : sources_) {
     if (src->id().std_string() == source_id) {
       source = src;
@@ -481,6 +494,9 @@ void FlutterScreenCapture::GetDisplayMedia(
 #endif
 
   if (!source.get()) {
+#ifdef _WIN32
+    cleanup_failed_capture();
+#endif
     result->Error("Bad Arguments", "source not found!");
     return;
   }
@@ -489,6 +505,9 @@ void FlutterScreenCapture::GetDisplayMedia(
       base_->desktop_device_->CreateDesktopCapturer(source);
 
   if (!desktop_capturer.get()) {
+#ifdef _WIN32
+    cleanup_failed_capture();
+#endif
     result->Error("Bad Arguments", "CreateDesktopCapturer failed!");
     return;
   }
@@ -507,6 +526,16 @@ void FlutterScreenCapture::GetDisplayMedia(
   scoped_refptr<RTCVideoTrack> track =
       base_->factory_->CreateVideoTrack(video_source, uuid.c_str());
 
+#ifdef _WIN32
+  // SelectSource rejects minimized windows. Do not report a track as live
+  // when Start failed: Dart must be able to retry after restoration.
+  if (desktop_capturer->Start(uint32_t(fps)) != RTCDesktopCapturer::CS_RUNNING) {
+    cleanup_failed_capture();
+    result->Error("GetDisplayMedia", "Windows desktop capture did not start");
+    return;
+  }
+#endif
+
   EncodableList videoTracks;
   EncodableMap info;
   info[EncodableValue("id")] = EncodableValue(track->id().std_string());
@@ -522,7 +551,9 @@ void FlutterScreenCapture::GetDisplayMedia(
 
   base_->local_streams_[uuid] = stream;
 
+#ifndef _WIN32
   desktop_capturer->Start(uint32_t(fps));
+#endif
 
   result->Success(EncodableValue(params));
 }

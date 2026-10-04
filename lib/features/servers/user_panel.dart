@@ -8,6 +8,7 @@ import '../../core/auth/auth_state.dart';
 import '../../core/rtc/media_devices_provider.dart';
 import '../../core/rtc/rtc_providers.dart';
 import '../../core/rtc/rtc_service.dart';
+import '../../core/telemetry/telemetry_service.dart';
 import '../voice/go_live_modal.dart';
 import '../../core/ui/settings_modal.dart';
 import '../../core/ui/settings_modal_sidebar.dart';
@@ -100,6 +101,15 @@ class UserPanel extends ConsumerWidget {
                 onToggleScreenShare: () =>
                     unawaited(_toggleScreenShare(context, ref)),
                 onLeave: onLeaveVoice,
+              ),
+            if (showVoiceActions && voiceState!.isScreenSharePending)
+              ScreenSharePendingNotice(
+                waiting:
+                    voiceState!.screenShareStartStage ==
+                    ScreenShareStartStage.waitingForWindow,
+                onCancel: ref
+                    .read(voiceControllerProvider(voiceArg!).notifier)
+                    .cancelPendingScreenShare,
               ),
             Row(
               children: [
@@ -281,16 +291,23 @@ class UserPanel extends ConsumerWidget {
       return;
     }
     final notifier = ref.read(voiceControllerProvider(arg).notifier);
+    if (current.isScreenSharePending) {
+      notifier.cancelPendingScreenShare();
+      return;
+    }
     if (current.isScreenSharing) {
       await notifier.stopScreenShare();
       return;
     }
     // Modal Go Live (tipo + qualidade) → seletor do tipo → start. Cancelar em
     // qualquer etapa retorna null e nada inicia.
+    final telemetry = ref.read(telemetryServiceProvider);
     final goLive = await showGoLiveModal(
       context,
       backend: ref.read(nativeMediaServicesProvider).screenShare,
       pendingQuality: ref.read(rtcServiceProvider).screenShareQuality,
+      onDiagnosticEvent: (name, attributes) =>
+          telemetry.logEvent(name, attributes: attributes),
       channelName: voiceChannelName,
     );
     if (goLive == null) return;
@@ -299,6 +316,8 @@ class UserPanel extends ConsumerWidget {
       includeSystemAudio: goLive.includeAudio,
       quality: goLiveQualityFor(goLive.quality),
       kind: goLive.kind,
+      windowTarget: goLive.windowTarget,
+      attemptId: goLive.attemptId,
     );
   }
 

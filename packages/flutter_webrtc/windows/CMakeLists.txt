@@ -34,6 +34,7 @@ add_library(${PLUGIN_NAME} SHARED
   "loopback_capturer_factory.cc"
   "flutter_webrtc_plugin.cc"
   "task_runner_windows.cc"
+  "window_share_candidates.cc"
 )
 
 unset(DEEPFILTER_BRIDGE_DIR CACHE)
@@ -181,6 +182,7 @@ target_link_libraries(${PLUGIN_NAME} PRIVATE
   # LNK2038/LNK1319; see the bridge DLL block above).
   fourfun_deepfilter_bridge_dll
   dxguid
+  dwmapi
   DXCORE
   DXGI
   D3D12

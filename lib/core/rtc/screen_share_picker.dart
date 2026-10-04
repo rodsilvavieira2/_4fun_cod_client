@@ -6,6 +6,23 @@ import 'package:flutter/material.dart';
 import '../native/native_media_backend.dart';
 import '../ui/app_icon.dart';
 
+/// Apenas atributos diagnósticos de baixa sensibilidade. Nunca incluir
+/// título de janela, sourceId, thumbnail ou caminho de processo.
+typedef ScreenShareDiagnosticEvent =
+    void Function(String name, Map<String, String> attributes);
+
+void _emitDiagnostic(
+  ScreenShareDiagnosticEvent? callback,
+  String name,
+  Map<String, String> attributes,
+) {
+  try {
+    callback?.call(name, attributes);
+  } catch (_) {
+    // Falha de observabilidade não pode impedir a escolha da fonte.
+  }
+}
+
 /// Modal Flutter próprio para seleção de compartilhamento de tela.
 ///
 /// Estratégia por plataforma:
@@ -23,6 +40,7 @@ class RtcScreenSharePicker {
   static Future<RtcScreenShareSelection?> show(
     BuildContext context, {
     required NativeScreenShareBackend backend,
+    ScreenShareDiagnosticEvent? onDiagnosticEvent,
     String titleText = 'Compartilhar tela',
     String screenTabText = 'Display',
     String windowTabText = 'Janela',
@@ -42,11 +60,18 @@ class RtcScreenSharePicker {
       );
     }
 
+    final attemptId = DateTime.now().microsecondsSinceEpoch.toString();
+    _emitDiagnostic(onDiagnosticEvent, 'screen_share.picker.opened', {
+      'attempt_id': attemptId,
+      'initial_kind': initialKind.name,
+    });
     return showDialog<RtcScreenShareSelection>(
       context: context,
       barrierDismissible: true,
       builder: (context) => _ScreenShareDialog(
         backend: backend,
+        attemptId: attemptId,
+        onDiagnosticEvent: onDiagnosticEvent,
         titleText: titleText,
         screenTabText: screenTabText,
         windowTabText: windowTabText,
@@ -54,13 +79,22 @@ class RtcScreenSharePicker {
         shareText: shareText,
         initialKind: initialKind,
       ),
-    );
+    ).then((selection) {
+      if (selection == null) {
+        _emitDiagnostic(onDiagnosticEvent, 'screen_share.picker.cancelled', {
+          'attempt_id': attemptId,
+        });
+      }
+      return selection;
+    });
   }
 }
 
 class _ScreenShareDialog extends StatefulWidget {
   const _ScreenShareDialog({
     required this.backend,
+    required this.attemptId,
+    required this.onDiagnosticEvent,
     required this.titleText,
     required this.screenTabText,
     required this.windowTabText,
@@ -70,6 +104,8 @@ class _ScreenShareDialog extends StatefulWidget {
   });
 
   final NativeScreenShareBackend backend;
+  final String attemptId;
+  final ScreenShareDiagnosticEvent? onDiagnosticEvent;
   final String titleText;
   final String screenTabText;
   final String windowTabText;
@@ -87,6 +123,13 @@ class _ScreenShareDialogState extends State<_ScreenShareDialog> {
   String? _selectedId;
   String? _error;
   bool _loading = true;
+  int _loadAttempt = 0;
+
+  void _emit(String name, Map<String, String> attributes) => _emitDiagnostic(
+    widget.onDiagnosticEvent,
+    name,
+    {'attempt_id': widget.attemptId, ...attributes},
+  );
 
   @override
   void initState() {
@@ -98,12 +141,35 @@ class _ScreenShareDialogState extends State<_ScreenShareDialog> {
   }
 
   Future<void> _loadSources() async {
+    final loadAttempt = ++_loadAttempt;
+    final elapsed = Stopwatch()..start();
+    _emit('screen_share.picker.sources_started', {
+      'load_attempt': '$loadAttempt',
+      'reason': loadAttempt == 1 ? 'initial' : 'retry',
+    });
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
       final sources = await widget.backend.loadSources();
+      elapsed.stop();
+      final windowCount = sources
+          .where((source) => source.kind == RtcScreenShareSourceKind.window)
+          .length;
+      final displayCount = sources.length - windowCount;
+      _emit('screen_share.picker.sources_loaded', {
+        'load_attempt': '$loadAttempt',
+        'duration_ms': '${elapsed.elapsedMilliseconds}',
+        'window_count': '$windowCount',
+        'minimized_window_count':
+            '${sources.where((source) => source.kind == RtcScreenShareSourceKind.window && source.minimized).length}',
+        'display_count': '$displayCount',
+        'active_kind': _activeKind.name,
+        'visible_count':
+            '${_activeKind == RtcScreenShareSourceKind.window ? windowCount : displayCount}',
+        'dialog_mounted': '$mounted',
+      });
       if (!mounted) return;
       setState(() {
         _sources = sources;
@@ -113,7 +179,14 @@ class _ScreenShareDialogState extends State<_ScreenShareDialog> {
         }
         _loading = false;
       });
-    } catch (_) {
+    } catch (error) {
+      elapsed.stop();
+      _emit('screen_share.picker.sources_failed', {
+        'load_attempt': '$loadAttempt',
+        'duration_ms': '${elapsed.elapsedMilliseconds}',
+        'error_type': '${error.runtimeType}',
+        'dialog_mounted': '$mounted',
+      });
       if (!mounted) return;
       setState(() {
         _loading = false;
@@ -123,6 +196,13 @@ class _ScreenShareDialogState extends State<_ScreenShareDialog> {
   }
 
   void _changeKind(RtcScreenShareSourceKind kind) {
+    if (_activeKind != kind) {
+      _emit('screen_share.picker.tab_changed', {
+        'kind': kind.name,
+        'visible_count':
+            '${_sources.where((source) => source.kind == kind).length}',
+      });
+    }
     if (!widget.backend.canUseKind(kind)) {
       setState(() {
         _activeKind = kind;
@@ -161,11 +241,17 @@ class _ScreenShareDialogState extends State<_ScreenShareDialog> {
   void _share() {
     final selected = _selectedSource;
     if (selected == null) return;
+    _emit('screen_share.picker.source_selected', {
+      'kind': selected.kind.name,
+      'minimized': '${selected.minimized}',
+    });
     Navigator.of(context).pop(
       RtcScreenShareSelection(
         kind: selected.kind,
-        sourceId: selected.id,
+        sourceId: selected.windowTarget == null ? selected.id : null,
         usesSystemPicker: false,
+        windowTarget: selected.windowTarget,
+        attemptId: widget.attemptId,
       ),
     );
   }
@@ -573,7 +659,9 @@ class _WindowSourceTile extends StatelessWidget {
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
-                  source.name,
+                  source.minimized
+                      ? '${source.name} · Minimizada'
+                      : source.name,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(color: Colors.white),

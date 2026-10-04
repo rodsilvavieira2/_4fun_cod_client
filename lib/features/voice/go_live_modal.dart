@@ -46,12 +46,16 @@ class GoLiveResult {
     required this.sourceId,
     required this.quality,
     required this.includeAudio,
+    this.windowTarget,
+    this.attemptId,
   });
 
   final RtcScreenShareSourceKind kind;
   final String? sourceId;
   final GoLiveQuality quality;
   final bool includeAudio;
+  final NativeShareWindowTarget? windowTarget;
+  final String? attemptId;
 }
 
 /// Modal "Go Live" na língua do modal de configurações ([AppTokens] +
@@ -68,6 +72,7 @@ Future<GoLiveResult?> showGoLiveModal(
   BuildContext context, {
   required NativeScreenShareBackend backend,
   required RtcScreenShareQuality pendingQuality,
+  ScreenShareDiagnosticEvent? onDiagnosticEvent,
   String? channelName,
 }) {
   return showDialog<GoLiveResult>(
@@ -75,6 +80,7 @@ Future<GoLiveResult?> showGoLiveModal(
     builder: (context) => _GoLiveDialog(
       backend: backend,
       pendingQuality: pendingQuality,
+      onDiagnosticEvent: onDiagnosticEvent,
       channelName: channelName,
     ),
   );
@@ -84,11 +90,13 @@ class _GoLiveDialog extends StatefulWidget {
   const _GoLiveDialog({
     required this.backend,
     required this.pendingQuality,
+    required this.onDiagnosticEvent,
     required this.channelName,
   });
 
   final NativeScreenShareBackend backend;
   final RtcScreenShareQuality pendingQuality;
+  final ScreenShareDiagnosticEvent? onDiagnosticEvent;
   final String? channelName;
 
   @override
@@ -127,6 +135,7 @@ class _GoLiveDialogState extends State<_GoLiveDialog> {
     final selection = await RtcScreenSharePicker.show(
       context,
       backend: widget.backend,
+      onDiagnosticEvent: widget.onDiagnosticEvent,
       initialKind: _initialKind,
     );
     if (!mounted || selection == null) return;
@@ -136,6 +145,8 @@ class _GoLiveDialogState extends State<_GoLiveDialog> {
         sourceId: selection.sourceId,
         quality: _quality,
         includeAudio: _includeAudio,
+        windowTarget: selection.windowTarget,
+        attemptId: selection.attemptId,
       ),
     );
   }

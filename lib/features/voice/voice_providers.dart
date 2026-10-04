@@ -7,6 +7,8 @@ import '../../core/native/native_media_backend.dart';
 import '../../core/rtc/media_devices_provider.dart';
 import '../../core/rtc/rtc_providers.dart';
 import '../../core/rtc/rtc_service.dart';
+import '../../core/rtc/screen_share_window_waiter.dart';
+import '../../core/telemetry/telemetry_service.dart';
 import '../../core/sound/voice_sound_preferences.dart';
 import '../../core/sound/voice_sound_provider.dart';
 import '../../core/sound/voice_sound_service.dart';
@@ -17,6 +19,8 @@ import 'voice_controls_provider.dart';
 
 /// Estado da sessão de voz de um canal.
 enum VoiceSessionStatus { idle, connecting, connected, error }
+
+enum ScreenShareStartStage { idle, waitingForWindow, starting }
 
 /// Fonte visual destacada quando uma pessoa publica câmera e tela ao mesmo
 /// tempo. O grid trata as duas publicações como tiles irmãos.
@@ -43,6 +47,7 @@ class VoiceState {
     this.isMicrophoneEnabled = false,
     this.isCameraEnabled = false,
     this.isScreenSharing = false,
+    this.screenShareStartStage = ScreenShareStartStage.idle,
     this.isSystemAudioEnabled = false,
     this.isDeafened = false,
     this.isReconnecting = false,
@@ -81,6 +86,9 @@ class VoiceState {
   /// Se a tela LOCAL está sendo compartilhada (espelho do botão de share; o
   /// [ScreenShareEnabledChangedEvent] do participante local reconcilia).
   final bool isScreenSharing;
+  final ScreenShareStartStage screenShareStartStage;
+  bool get isScreenSharePending =>
+      screenShareStartStage != ScreenShareStartStage.idle;
 
   /// Se o áudio de sistema LOCAL está sendo transmitido agora (espelho do
   /// [SystemAudioEnabledChangedEvent] do participante local reconcilia).
@@ -160,6 +168,7 @@ class VoiceState {
     bool? isMicrophoneEnabled,
     bool? isCameraEnabled,
     bool? isScreenSharing,
+    ScreenShareStartStage? screenShareStartStage,
     bool? isSystemAudioEnabled,
     bool? isDeafened,
     bool? isReconnecting,
@@ -189,6 +198,8 @@ class VoiceState {
       isMicrophoneEnabled: isMicrophoneEnabled ?? this.isMicrophoneEnabled,
       isCameraEnabled: isCameraEnabled ?? this.isCameraEnabled,
       isScreenSharing: isScreenSharing ?? this.isScreenSharing,
+      screenShareStartStage:
+          screenShareStartStage ?? this.screenShareStartStage,
       isSystemAudioEnabled: isSystemAudioEnabled ?? this.isSystemAudioEnabled,
       isDeafened: isDeafened ?? this.isDeafened,
       isReconnecting: isReconnecting ?? this.isReconnecting,
@@ -261,6 +272,10 @@ class VoiceController
   StreamSubscription<List<RtcParticipant>>? _participantsSub;
   StreamSubscription<RtcEvent>? _eventsSub;
   bool _disposed = false;
+  bool _screenShareBusy = false;
+  int _shareGeneration = 0;
+  ScreenShareWindowWaiter? _windowWaiter;
+  String? _shareAttemptId;
 
   /// Geração do join em voo: [leave] incrementa para cancelar um [join]
   /// anterior ainda aguardando token/conexão. Sem isso, o connect tardio
@@ -302,6 +317,8 @@ class VoiceController
     _eventsSub = rtc.events.listen(_applyEvent);
 
     ref.onDispose(() {
+      _windowWaiter?.cancel();
+      ++_shareGeneration;
       _disposed = true;
       _participantsSub?.cancel();
       _eventsSub?.cancel();
@@ -456,6 +473,7 @@ class VoiceController
 
   /// Sai do canal de voz e volta para `idle`.
   Future<void> leave() async {
+    cancelPendingScreenShare(reason: 'leave');
     // Cancela um join em voo: sem isso, o connect tardio criaria uma sala
     // órfã depois de o usuário já ter saído.
     ++_joinGeneration;
@@ -612,74 +630,230 @@ class VoiceController
     bool includeSystemAudio = true,
     RtcScreenShareQuality? quality,
     RtcScreenShareSourceKind? kind,
+    NativeShareWindowTarget? windowTarget,
+    String? attemptId,
   }) async {
     final current = state;
-    if (current.status != VoiceSessionStatus.connected) return;
-    if (current.isScreenSharing) {
-      return; // já compartilhando (o serviço também no-op)
+    if (current.status != VoiceSessionStatus.connected ||
+        current.isReconnecting ||
+        current.isScreenSharing ||
+        _screenShareBusy) {
+      return;
     }
+    _screenShareBusy = true;
+    final generation = ++_shareGeneration;
+    final joinGeneration = _joinGeneration;
+    _shareAttemptId =
+        attemptId ?? DateTime.now().microsecondsSinceEpoch.toString();
+    final elapsed = Stopwatch()..start();
     final rtc = ref.read(rtcServiceProvider);
-    try {
-      await rtc.startScreenShare(
-        sourceId,
-        includeSystemAudio: includeSystemAudio,
-        quality: quality,
-      );
-    } on SystemAudioPublishException {
-      // O VÍDEO saiu; só o áudio de sistema falhou (sem device monitor no
-      // SO, permissão negada...). Mensagem específica — a sessão fica
-      // intacta e o evento de share reconcilia o estado.
-      if (_disposed) return;
+    final backend = ref.read(nativeMediaServicesProvider).screenShare;
+    bool active() =>
+        !_disposed &&
+        generation == _shareGeneration &&
+        joinGeneration == _joinGeneration &&
+        state.status == VoiceSessionStatus.connected &&
+        !state.isReconnecting;
+    void waiting() {
+      if (!active() ||
+          state.screenShareStartStage ==
+              ScreenShareStartStage.waitingForWindow) {
+        return;
+      }
       state = state.copyWith(
-        status: VoiceSessionStatus.connected,
-        isScreenSharing: true,
-        screenShareQuality: quality ?? rtc.screenShareQuality,
-        // Share novo começa na efetiva == objetivo; a adaptação ajusta depois.
-        screenShareEffectiveQuality: null,
-        errorMessage: 'Compartilhamento iniciado sem áudio de sistema.',
+        screenShareStartStage: ScreenShareStartStage.waitingForWindow,
       );
+      _shareDiagnostic('waiting', {
+        'duration_ms': '${elapsed.elapsedMilliseconds}',
+      });
+    }
+
+    state = state.copyWith(
+      screenShareStartStage: ScreenShareStartStage.starting,
+      errorMessage: null,
+    );
+    bool audioFailed = false;
+    bool publishAttempted = false;
+    try {
+      if (windowTarget != null) {
+        if (backend is! NativeWindowShareBackend) {
+          throw StateError('Window backend unavailable');
+        }
+        _windowWaiter = ScreenShareWindowWaiter(
+          backend: backend as NativeWindowShareBackend,
+          target: windowTarget,
+        );
+      }
+      var retry = false;
+      while (active()) {
+        final waiter = _windowWaiter;
+        if (waiter != null) {
+          sourceId = await waiter.resolve(
+            onWaiting: waiting,
+            requireFocus: retry,
+          );
+          if (!active()) return;
+          _shareDiagnostic('ready', {
+            'duration_ms': '${elapsed.elapsedMilliseconds}',
+          });
+        }
+        state = state.copyWith(
+          screenShareStartStage: ScreenShareStartStage.starting,
+        );
+        try {
+          publishAttempted = true;
+          await rtc.startScreenShare(
+            sourceId,
+            includeSystemAudio: includeSystemAudio,
+            quality: quality,
+          );
+          break;
+        } on SystemAudioPublishException {
+          audioFailed = true;
+          break;
+        } catch (_) {
+          if (!active()) return;
+          if (waiter == null) rethrow;
+          final window = await (backend as NativeWindowShareBackend)
+              .readWindowState(windowTarget!)
+              .timeout(const Duration(seconds: 3));
+          if (!window.valid) {
+            throw const WindowShareWaitException(WindowShareWaitFailure.closed);
+          }
+          if (window.capturable) rethrow;
+          // Alt+Tab entre validação e captura: descarta tracks parciais.
+          await rtc.stopScreenShare();
+          retry = true;
+          waiting();
+        }
+      }
+      if (!active()) return;
+      if (audioFailed) {
+        // O VÍDEO saiu; só o áudio de sistema falhou (sem device monitor no
+        // SO, permissão negada...). Mensagem específica — a sessão fica
+        // intacta e o evento de share reconcilia o estado.
+        state = state.copyWith(
+          status: VoiceSessionStatus.connected,
+          isScreenSharing: true,
+          screenShareQuality: quality ?? rtc.screenShareQuality,
+          // Share novo começa na efetiva == objetivo; a adaptação ajusta depois.
+          screenShareEffectiveQuality: null,
+          errorMessage: 'Compartilhamento iniciado sem áudio de sistema.',
+        );
+        unawaited(_playSound(VoiceSound.streamStart));
+        unawaited(_publishSound(RtcVoiceSound.streamStart));
+        _shareDiagnostic('started', {
+          'audio_failed': 'true',
+          'duration_ms': '${elapsed.elapsedMilliseconds}',
+        });
+        return;
+      }
+      // One-shot: o estado reflete o pedido; mantém os avisos já existentes.
+      final effectiveQuality = quality ?? rtc.screenShareQuality;
+      final warnings = <String>[];
+      if (effectiveQuality != (quality ?? current.screenShareQuality)) {
+        warnings.add(
+          'Não foi possível aplicar a qualidade escolhida; transmissão mantida em Auto.',
+        );
+      }
+      if (_usedSystemMixFallback(
+        kind: kind,
+        sourceId: sourceId,
+        includeAudio: includeSystemAudio,
+      )) {
+        warnings.add(
+          'Não foi possível isolar o áudio da janela; transmitindo o áudio geral do sistema.',
+        );
+      }
+      state = state.copyWith(
+        isScreenSharing: true,
+        screenShareQuality: effectiveQuality,
+        screenShareEffectiveQuality: null,
+        errorMessage: warnings.isEmpty ? null : warnings.join(' '),
+      );
+      _shareDiagnostic('started', {
+        'audio_failed': 'false',
+        'duration_ms': '${elapsed.elapsedMilliseconds}',
+      });
       unawaited(_playSound(VoiceSound.streamStart));
       unawaited(_publishSound(RtcVoiceSound.streamStart));
-      return;
-    } catch (_) {
+    } on WindowShareWaitException catch (error) {
+      if (!active()) return;
+      _shareDiagnostic(error.reason.name, {
+        'duration_ms': '${elapsed.elapsedMilliseconds}',
+      });
+      state = state.copyWith(
+        errorMessage: switch (error.reason) {
+          WindowShareWaitFailure.closed =>
+            'A janela escolhida foi fechada. Selecione outra janela.',
+          WindowShareWaitFailure.timeout =>
+            'A janela não voltou em 60 segundos. Tente novamente.',
+          WindowShareWaitFailure.cancelled => null,
+        },
+      );
+    } catch (error) {
       // Falha de captura (TrackCreateException/DesktopCapturerSource):
       // volta ao estado anterior (sem otimismo) e avisa — a sessão fica
       // intacta (nenhum disconnect).
-      if (_disposed) return;
+      if (!active()) return;
+      _shareDiagnostic('failed', {
+        'error_type': '${error.runtimeType}',
+        'duration_ms': '${elapsed.elapsedMilliseconds}',
+      });
       state = state.copyWith(
         status: VoiceSessionStatus.connected,
         isScreenSharing: current.isScreenSharing,
         errorMessage: 'Não foi possível iniciar o compartilhamento.',
       );
-      return;
+    } finally {
+      _windowWaiter?.cancel();
+      _windowWaiter = null;
+      // Cancelamento durante publish: desfaz o resultado tardio, sem som.
+      if (!active() &&
+          publishAttempted &&
+          !_disposed &&
+          joinGeneration == _joinGeneration &&
+          state.status == VoiceSessionStatus.connected) {
+        try {
+          await rtc.stopScreenShare();
+        } catch (_) {
+          /* desconexão já limpa */
+        }
+        if (!_disposed && joinGeneration == _joinGeneration) {
+          state = state.copyWith(
+            isScreenSharing: false,
+            isSystemAudioEnabled: false,
+          );
+        }
+      }
+      _screenShareBusy = false;
+      if (!_disposed && generation == _shareGeneration) {
+        state = state.copyWith(
+          screenShareStartStage: ScreenShareStartStage.idle,
+        );
+      }
     }
-    if (_disposed) return;
-    // One-shot: o estado reflete o pedido (o pendente ficou intacto).
-    // Pendente: o getter já reflete o pós-start (inclui fallback para Auto).
-    final effectiveQuality = quality ?? rtc.screenShareQuality;
-    final warnings = <String>[];
-    if (effectiveQuality != (quality ?? current.screenShareQuality)) {
-      warnings.add(
-        'Não foi possível aplicar a qualidade escolhida; transmissão mantida em Auto.',
-      );
+  }
+
+  void _shareDiagnostic(String event, Map<String, String> attributes) {
+    try {
+      ref
+          .read(telemetryServiceProvider)
+          .logEvent(
+            'screen_share.start.$event',
+            attributes: {'attempt_id': _shareAttemptId ?? '', ...attributes},
+          );
+    } catch (_) {
+      /* Telemetria não pode interromper a transmissão. */
     }
-    if (_usedSystemMixFallback(
-      kind: kind,
-      sourceId: sourceId,
-      includeAudio: includeSystemAudio,
-    )) {
-      warnings.add(
-        'Não foi possível isolar o áudio da janela; transmitindo o áudio geral do sistema.',
-      );
-    }
-    state = state.copyWith(
-      isScreenSharing: true,
-      screenShareQuality: effectiveQuality,
-      screenShareEffectiveQuality: null,
-      errorMessage: warnings.isEmpty ? null : warnings.join(' '),
-    );
-    unawaited(_playSound(VoiceSound.streamStart));
-    unawaited(_publishSound(RtcVoiceSound.streamStart));
+  }
+
+  void cancelPendingScreenShare({String reason = 'user'}) {
+    if (_disposed || !_screenShareBusy) return;
+    ++_shareGeneration;
+    _windowWaiter?.cancel();
+    _shareDiagnostic('cancelled', {'reason': reason});
+    state = state.copyWith(screenShareStartStage: ScreenShareStartStage.idle);
   }
 
   /// Best-effort (regra 4 da SPEC): detecta quando o nativo Windows caiu no
@@ -706,6 +880,10 @@ class VoiceController
   /// Espelho do [startScreenShare]: sem otimismo, falha não derruba a
   /// sessão; o [ScreenShareEnabledChangedEvent] local reconcilia.
   Future<void> stopScreenShare() async {
+    if (_screenShareBusy) {
+      cancelPendingScreenShare();
+      return;
+    }
     final current = state;
     if (current.status != VoiceSessionStatus.connected) return;
     if (!current.isScreenSharing) return;
@@ -1244,6 +1422,7 @@ class VoiceController
     if (_disposed) return;
     switch (event) {
       case DisconnectedEvent():
+        cancelPendingScreenShare(reason: 'disconnect');
         // Sala caiu sozinha (servidor/rede): o serviço já limpou o estado;
         // volta para idle para permitir nova entrada. Câmera/share locais
         // pararam junto e o destaque não faz mais sentido.
@@ -1313,6 +1492,7 @@ class VoiceController
         :final participantId,
         :final isScreenSharing,
       ):
+        if (_screenShareBusy) break;
         // Espelho exato do mic/câmera: só o evento do participante LOCAL
         // toca o botão de share; remotos aparecem via snapshot.
         final localId = ref.read(rtcServiceProvider).localParticipantId;
@@ -1364,10 +1544,12 @@ class VoiceController
           state = state.copyWith(isSystemAudioEnabled: isSystemAudioEnabled);
         }
       case ReconnectingEvent():
+        cancelPendingScreenShare(reason: 'reconnecting');
         // Só o banner: a sessão continua connected — o serviço está tentando
         // restabelecer; NADA aqui pode derrubar para idle/error.
         state = state.copyWith(isReconnecting: true, latencyMs: null);
       case ReconnectedEvent():
+        cancelPendingScreenShare(reason: 'reconnected');
         // Sala nova preserva mute/ensurdecer globais; câmera/share locais
         // recomeçam off. Reset também o rastreio de sharers do auto-spotlight.
         _lastQuality.clear();

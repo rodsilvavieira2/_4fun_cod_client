@@ -1,7 +1,7 @@
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/services.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart' as rtc;
 import 'package:livekit_client/livekit_client.dart';
 
@@ -47,16 +47,48 @@ AppRuntimePlatform get currentRuntimePlatform {
 
 enum RtcScreenShareSourceKind { window, display }
 
+/// Identidade local somente: nunca enviar estes campos à telemetria.
+class NativeShareWindowTarget {
+  const NativeShareWindowTarget(this.windowId, this.processId);
+  final String windowId;
+  final int processId;
+}
+
+class NativeShareWindowState {
+  const NativeShareWindowState({
+    required this.valid,
+    required this.visible,
+    required this.minimized,
+    required this.foreground,
+  });
+  final bool valid;
+  final bool visible;
+  final bool minimized;
+  final bool foreground;
+  bool get capturable => valid && visible && !minimized;
+}
+
+abstract interface class NativeWindowShareBackend {
+  Future<NativeShareWindowState> readWindowState(
+    NativeShareWindowTarget target,
+  );
+  Future<String?> resolveWindowSource(NativeShareWindowTarget target);
+}
+
 class RtcScreenShareSelection {
   const RtcScreenShareSelection({
     required this.kind,
     required this.sourceId,
     required this.usesSystemPicker,
+    this.windowTarget,
+    this.attemptId,
   });
 
   final RtcScreenShareSourceKind kind;
   final String? sourceId;
   final bool usesSystemPicker;
+  final NativeShareWindowTarget? windowTarget;
+  final String? attemptId;
 }
 
 class RtcScreenShareSource {
@@ -65,12 +97,16 @@ class RtcScreenShareSource {
     required this.name,
     required this.kind,
     this.thumbnail,
+    this.windowTarget,
+    this.minimized = false,
   });
 
   final String id;
   final String name;
   final RtcScreenShareSourceKind kind;
   final Uint8List? thumbnail;
+  final NativeShareWindowTarget? windowTarget;
+  final bool minimized;
 }
 
 class ScreenShareCapabilities {
@@ -173,8 +209,10 @@ class LinuxScreenShareBackend extends _SystemPickerScreenShareBackend {
   );
 }
 
-class WindowsScreenShareBackend implements NativeScreenShareBackend {
+class WindowsScreenShareBackend
+    implements NativeScreenShareBackend, NativeWindowShareBackend {
   const WindowsScreenShareBackend();
+  static const _channel = MethodChannel('FlutterWebRTC.Method');
 
   @override
   ScreenShareCapabilities get capabilities => const ScreenShareCapabilities(
@@ -194,7 +232,73 @@ class WindowsScreenShareBackend implements NativeScreenShareBackend {
     final sources = await rtc.desktopCapturer.getSources(
       types: const [rtc.SourceType.Window, rtc.SourceType.Screen],
     );
-    return sources.map(_screenShareSourceFromWebRtc).toList(growable: false);
+    final windows =
+        await _channel.invokeListMethod<dynamic>('fourfunGetShareWindows') ??
+        [];
+    final candidates = <String, RtcScreenShareSource>{};
+    for (final raw in windows) {
+      final window = raw as Map;
+      final id = window['id'] as String;
+      candidates[id] = RtcScreenShareSource(
+        id: id,
+        name: window['name'] as String,
+        kind: RtcScreenShareSourceKind.window,
+        windowTarget: NativeShareWindowTarget(id, window['processId'] as int),
+        minimized: window['minimized'] as bool,
+      );
+    }
+    final result = <RtcScreenShareSource>[];
+    for (final raw in sources) {
+      final source = _screenShareSourceFromWebRtc(raw);
+      final candidate = source.kind == RtcScreenShareSourceKind.window
+          ? candidates.remove(source.id)
+          : null;
+      result.add(
+        candidate == null
+            ? source
+            : RtcScreenShareSource(
+                id: source.id,
+                name: source.name,
+                kind: source.kind,
+                thumbnail: source.thumbnail,
+                windowTarget: candidate.windowTarget,
+                minimized: candidate.minimized,
+              ),
+      );
+    }
+    // Candidatos não são fontes RTC: só o resolver pode fornecer sourceId.
+    result.addAll(candidates.values);
+    return result;
+  }
+
+  @override
+  Future<NativeShareWindowState> readWindowState(
+    NativeShareWindowTarget target,
+  ) async {
+    final value = await _channel.invokeMapMethod<String, dynamic>(
+      'fourfunGetShareWindowState',
+      {'id': target.windowId, 'processId': target.processId},
+    );
+    return NativeShareWindowState(
+      valid: value?['valid'] == true,
+      visible: value?['visible'] == true,
+      minimized: value?['minimized'] == true,
+      foreground: value?['foreground'] == true,
+    );
+  }
+
+  @override
+  Future<String?> resolveWindowSource(NativeShareWindowTarget target) async {
+    final sources = await rtc.desktopCapturer.getSources(
+      types: const [rtc.SourceType.Window, rtc.SourceType.Screen],
+    );
+    for (final source in sources) {
+      if (source.type == rtc.SourceType.Window &&
+          source.id == target.windowId) {
+        return source.id;
+      }
+    }
+    return null;
   }
 }
 

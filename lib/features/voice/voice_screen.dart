@@ -183,16 +183,23 @@ class VoiceScreen extends ConsumerWidget {
     final arg = (serverId: serverId, channelId: channelId);
     final notifier = ref.read(voiceControllerProvider(arg).notifier);
     final current = ref.read(voiceControllerProvider(arg));
+    if (current.isScreenSharePending) {
+      notifier.cancelPendingScreenShare();
+      return;
+    }
     if (current.isScreenSharing) {
       await notifier.stopScreenShare();
       return;
     }
     // Modal Go Live (áudio + qualidade) → seletor de fonte → start. Cancelar em
     // qualquer etapa retorna null e nada inicia.
+    final telemetry = ref.read(telemetryServiceProvider);
     final goLive = await showGoLiveModal(
       context,
       backend: ref.read(nativeMediaServicesProvider).screenShare,
       pendingQuality: ref.read(rtcServiceProvider).screenShareQuality,
+      onDiagnosticEvent: (name, attributes) =>
+          telemetry.logEvent(name, attributes: attributes),
     );
     if (goLive == null) return;
     await notifier.startScreenShare(
@@ -200,6 +207,8 @@ class VoiceScreen extends ConsumerWidget {
       includeSystemAudio: goLive.includeAudio,
       quality: goLiveQualityFor(goLive.quality),
       kind: goLive.kind,
+      windowTarget: goLive.windowTarget,
+      attemptId: goLive.attemptId,
     );
   }
 }
@@ -276,6 +285,13 @@ class _ConnectedStageState extends ConsumerState<_ConnectedStage> {
       child: Column(
         children: [
           if (state.isReconnecting) const _ReconnectingBanner(),
+          if (state.isScreenSharePending)
+            ScreenSharePendingNotice(
+              waiting:
+                  state.screenShareStartStage ==
+                  ScreenShareStartStage.waitingForWindow,
+              onCancel: notifier.cancelPendingScreenShare,
+            ),
           if (state.isAudioBlocked)
             _AudioBlockedBanner(onTap: notifier.resumeAudio),
           Expanded(
