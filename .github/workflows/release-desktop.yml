@@ -175,7 +175,7 @@ jobs:
           [ "$MISSING" = 0 ] || exit 1
           echo "tray deps OK:"; ls "$BUNDLE/lib" | grep -E 'ayatana|appindicator|indicator|ido|dbusmenu'
 
-      - name: Bundle updater identity (marker + portable policy)
+      - name: Bundle portable policy (antes do updater package)
         shell: bash
         run: |
           set -euo pipefail
@@ -189,34 +189,18 @@ jobs:
             if [ -f "$cand" ]; then HELPER="$cand"; break; fi
           done
           [ -n "$HELPER" ] || { echo "helper ausente no bundle"; ls -l "$BUNDLE/lib" | head -30; exit 1; }
-          printf '{"packageId":"%s","schemaVersion":1}' "$PKG_ID" > "$BUNDLE/.desktop_updater_install_identity.json"
-          chmod 644 "$BUNDLE/.desktop_updater_install_identity.json"
+          # So policy aqui: o package REJEITA input com marker (ele mesmo injeta).
           python3 tooling-woodpecker/generate_portable_policy.py \
             --exe "$EXE" --helper "$HELPER" \
             --package-id "$PKG_ID" --key-id "$KEY_ID" --pubkey "$PUBKEY" \
             --platform linux --output "$(dirname "$HELPER")/desktop-updater-helper.policy.json"
           chmod 600 "$(dirname "$HELPER")/desktop-updater-helper.policy.json"
           chmod 755 "$HELPER"
-          ls -l "$BUNDLE/.desktop_updater_install_identity.json" "$(dirname "$HELPER")/desktop-updater-helper.policy.json"
+          ls -l "$(dirname "$HELPER")/desktop-updater-helper.policy.json"
 
-      - name: Create Linux package
-        shell: bash
+      - name: Show Linux bundle
         run: |
-          mkdir -p "package/$APP_SLUG"
-          mkdir -p dist/linux
-
-          cp -a \
-            build/linux/x64/release/bundle/. \
-            "package/$APP_SLUG/"
-
-          tar \
-            -C package \
-            -czf "dist/linux/${APP_SLUG}-linux-x64-${APP_VERSION}.tar.gz" \
-            "$APP_SLUG"
-
-      - name: Show Linux package
-        run: |
-          ls -lh dist/linux
+          ls -lh build/linux/x64/release/bundle | head -30
 
       - name: Restore updater signing key
         env:
@@ -249,6 +233,34 @@ jobs:
             --artifact-url "https://github.com/rodsilvavieira2/_4fun_cod_client/releases/download/${{ github.ref_name }}/$APP_NAME-$APP_VERSION-linux.zip"
           dart run desktop_updater:release sign \
             --release "dist/updater/linux/release.json"
+
+      - name: Bundle Linux marker (depois do package, antes do tar.gz/AppImage)
+        shell: bash
+        run: |
+          set -euo pipefail
+          BUNDLE="build/linux/x64/release/bundle"
+          printf '{"packageId":"io.github.rodsilvavieira2.fourfun","schemaVersion":1}' > "$BUNDLE/.desktop_updater_install_identity.json"
+          chmod 644 "$BUNDLE/.desktop_updater_install_identity.json"
+          ls -l "$BUNDLE/.desktop_updater_install_identity.json"
+
+      - name: Create Linux package
+        shell: bash
+        run: |
+          mkdir -p "package/$APP_SLUG"
+          mkdir -p dist/linux
+
+          cp -a \
+            build/linux/x64/release/bundle/. \
+            "package/$APP_SLUG/"
+
+          tar \
+            -C package \
+            -czf "dist/linux/${APP_SLUG}-linux-x64-${APP_VERSION}.tar.gz" \
+            "$APP_SLUG"
+
+      - name: Show Linux package
+        run: |
+          ls -lh dist/linux
 
       - name: Build AppImage
         shell: bash
@@ -508,9 +520,11 @@ jobs:
           $HELPER = Join-Path $BUNDLE 'desktop_updater_install_helper.exe'
           if (-not (Test-Path $EXE)) { Write-Error "exe ausente: $EXE"; exit 1 }
           if (-not (Test-Path $HELPER)) { Write-Error "helper ausente: $HELPER"; exit 1 }
+          $exeSha = (Get-FileHash -Algorithm SHA256 -Path $EXE).Hash.ToLower()
+          $helperSha = (Get-FileHash -Algorithm SHA256 -Path $HELPER).Hash.ToLower()
+          $JSON = '{"allowedApplicationSigner":{"kind":"sha256","value":"' + $exeSha + '"},"allowedHelperSigner":{"kind":"sha256","value":"' + $helperSha + '"},"allowedInstallRoots":[],"allowedStrategies":[{"provider":"platformDirectory","strategy":"directoryReplace"},{"provider":"platformFile","strategy":"singleFileReplace"}],"allowedTargetClasses":["sameUserWritable"],"applicationPackageId":"' + $PKG_ID + '","helperServiceId":"com.example.desktop-updater.helper","minimumHelperProtocolVersion":1,"policyId":"com.example.desktop-updater.portable","policyVersion":1,"releaseRootPublicKeys":[{"algorithm":"ed25519","keyId":"' + $KEY_ID + '","publicKeyBase64":"' + $PUBKEY + '"}]}'
           $POLICY = Join-Path $BUNDLE 'desktop_updater_helper_policy.json'
-          & python tooling-woodpecker/generate_portable_policy.py --exe $EXE --helper $HELPER --package-id $PKG_ID --key-id $KEY_ID --pubkey $PUBKEY --platform windows --output $POLICY
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          [System.IO.File]::WriteAllText($POLICY, $JSON, (New-Object System.Text.UTF8Encoding $false))
           Get-ChildItem $BUNDLE -Filter 'desktop_updater*' | Out-String | Write-Host
 
       # --------------------------------------------------------

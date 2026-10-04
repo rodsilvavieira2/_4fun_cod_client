@@ -59,6 +59,7 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 # --- updater portable policy (ANTES do portable.zip/installer/updater) ---
 # Sem desktop_updater_helper_policy.json ao lado do exe, o nativo falha com
 # "Windows helper preparation failed: Required install metadata file is unavailable".
+# Geracao 100% PowerShell (a VM nao tem `python` no PATH — exit 9009).
 $BUNDLE = 'build\windows\x64\runner\Release'
 $WIN_PKG_ID = 'fourfun_cod_client'
 $WIN_KEY_ID = 'release-de4dba08820a7c59511f86ce'
@@ -67,9 +68,12 @@ $WIN_EXE = Join-Path $BUNDLE '_4fun_cod_client.exe'
 $WIN_HELPER = Join-Path $BUNDLE 'desktop_updater_install_helper.exe'
 if (-not (Test-Path $WIN_EXE)) { Write-Error "exe ausente: $WIN_EXE"; exit 1 }
 if (-not (Test-Path $WIN_HELPER)) { Write-Error "helper ausente: $WIN_HELPER (plugin desktop_updater nao bundlou?)"; exit 1 }
+$exeSha = (Get-FileHash -Algorithm SHA256 -Path $WIN_EXE).Hash.ToLower()
+$helperSha = (Get-FileHash -Algorithm SHA256 -Path $WIN_HELPER).Hash.ToLower()
+# JSON canonico: chaves ordenadas, sem espacos, sem newline final (validacao nativa e byte-exata).
+$WIN_POLICY_JSON = '{"allowedApplicationSigner":{"kind":"sha256","value":"' + $exeSha + '"},"allowedHelperSigner":{"kind":"sha256","value":"' + $helperSha + '"},"allowedInstallRoots":[],"allowedStrategies":[{"provider":"platformDirectory","strategy":"directoryReplace"},{"provider":"platformFile","strategy":"singleFileReplace"}],"allowedTargetClasses":["sameUserWritable"],"applicationPackageId":"' + $WIN_PKG_ID + '","helperServiceId":"com.example.desktop-updater.helper","minimumHelperProtocolVersion":1,"policyId":"com.example.desktop-updater.portable","policyVersion":1,"releaseRootPublicKeys":[{"algorithm":"ed25519","keyId":"' + $WIN_KEY_ID + '","publicKeyBase64":"' + $WIN_PUBKEY + '"}]}'
 $WIN_POLICY = Join-Path $BUNDLE 'desktop_updater_helper_policy.json'
-& python tooling-woodpecker/generate_portable_policy.py --exe $WIN_EXE --helper $WIN_HELPER --package-id $WIN_PKG_ID --key-id $WIN_KEY_ID --pubkey $WIN_PUBKEY --platform windows --output $WIN_POLICY
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+[System.IO.File]::WriteAllText($WIN_POLICY, $WIN_POLICY_JSON, (New-Object System.Text.UTF8Encoding $false))
 if (-not (Test-Path $WIN_POLICY)) { Write-Error "policy nao gerada: $WIN_POLICY"; exit 1 }
 Get-ChildItem $BUNDLE -Filter 'desktop_updater*' | Out-String | Write-Host
 
