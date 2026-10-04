@@ -17,6 +17,7 @@ import 'ds_tokens.dart';
 import 'inputs/app_color_picker.dart';
 import 'inputs/app_select.dart';
 import 'profile_card.dart';
+import 'profile_crop.dart';
 
 /// Editor com um único draft por escopo e preview persistente.
 class ProfileEditorDialog extends ConsumerStatefulWidget {
@@ -1206,22 +1207,9 @@ class _ProfileEditorDialogState extends ConsumerState<ProfileEditorDialog> {
   }
 
   Widget _cropControls(String field, String title) {
-    final crop = (_value(field) as Map?)?.cast<String, dynamic>();
-    final width = (crop?['width'] as num?)?.toDouble() ?? 1;
-    final zoom = (1 / width).clamp(1.0, 3.0);
-    final x = (crop?['x'] as num?)?.toDouble() ?? 0;
-    final y = (crop?['y'] as num?)?.toDouble() ?? 0;
-    final horizontal = width >= 1 ? .5 : (x / (1 - width)).clamp(0.0, 1.0);
-    final vertical = width >= 1 ? .5 : (y / (1 - width)).clamp(0.0, 1.0);
-    void update(double nextZoom, double nextX, double nextY) {
-      final fraction = 1 / nextZoom;
-      _set(field, {
-        'x': (1 - fraction) * nextX,
-        'y': (1 - fraction) * nextY,
-        'width': fraction,
-        'height': fraction,
-      });
-    }
+    final crop = ProfileCrop.fromJson(
+      (_value(field) as Map?)?.cast<String, dynamic>(),
+    );
 
     return _property(
       title,
@@ -1237,10 +1225,10 @@ class _ProfileEditorDialogState extends ConsumerState<ProfileEditorDialog> {
             ),
           ),
           Slider(
-            value: zoom,
+            value: crop.zoom,
             min: 1,
             max: 3,
-            onChanged: (value) => update(value, horizontal, vertical),
+            onChanged: (value) => _set(field, crop.withZoom(value).toJson()),
           ),
           Text(
             'Horizontal',
@@ -1250,8 +1238,9 @@ class _ProfileEditorDialogState extends ConsumerState<ProfileEditorDialog> {
             ),
           ),
           Slider(
-            value: horizontal,
-            onChanged: (value) => update(zoom, value, vertical),
+            value: crop.horizontal,
+            onChanged: (value) =>
+                _set(field, crop.withHorizontal(value).toJson()),
           ),
           Text(
             'Vertical',
@@ -1261,9 +1250,18 @@ class _ProfileEditorDialogState extends ConsumerState<ProfileEditorDialog> {
             ),
           ),
           Slider(
-            value: vertical,
-            onChanged: (value) => update(zoom, horizontal, value),
+            value: crop.vertical,
+            onChanged: (value) =>
+                _set(field, crop.withVertical(value).toJson()),
           ),
+          if (crop.zoom == 1)
+            Text(
+              'Mover o recorte aplica zoom de 1,5× para permitir o deslocamento.',
+              style: TextStyle(
+                color: context.appColors.textSecondary,
+                fontSize: 12,
+              ),
+            ),
         ],
       ),
     );

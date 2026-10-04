@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../shared/models/profile.dart';
 import '../theme/appearance_theme.dart';
 import 'app_file_image.dart';
+import 'profile_crop.dart';
 
 Color? profileHexColor(String? value) {
   if (value == null || !RegExp(r'^#[0-9a-fA-F]{6}$').hasMatch(value)) {
@@ -512,18 +513,11 @@ class _ProfileCardState extends State<ProfileCard>
     required Widget fallback,
   }) {
     if (bytes == null && path == null) return fallback;
-    final widthFraction = (crop?['width'] as num?)?.toDouble() ?? 1;
-    final x = (crop?['x'] as num?)?.toDouble() ?? 0;
-    final y = (crop?['y'] as num?)?.toDouble() ?? 0;
-    final heightFraction = (crop?['height'] as num?)?.toDouble() ?? 1;
-    final alignment = Alignment(
-      (x + widthFraction / 2) * 2 - 1,
-      (y + heightFraction / 2) * 2 - 1,
-    );
-    final zoom = 1 / widthFraction.clamp(.33, 1);
+    final selection = ProfileCrop.fromJson(crop);
+    final alignment = selection.alignment;
     return ClipRect(
       child: Transform.scale(
-        scale: zoom,
+        scale: selection.zoom,
         alignment: alignment,
         child: bytes != null
             ? Image.memory(
