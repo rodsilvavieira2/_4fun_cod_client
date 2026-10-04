@@ -1,9 +1,11 @@
 name: Desktop Release
 
+# DESATIVADO: deployment oficial e pelo Woodpecker local (.woodpecker/ -> VPS).
+# Este workflow falhava em toda tag (key profile feed aponta p/ VPS, nao p/
+# GitHub Releases) e corrompia o feed com buildNumbers fora de ordem.
+# Mantido apenas para disparo manual de diagnostico via workflow_dispatch.
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -172,6 +174,30 @@ jobs:
           done
           [ "$MISSING" = 0 ] || exit 1
           echo "tray deps OK:"; ls "$BUNDLE/lib" | grep -E 'ayatana|appindicator|indicator|ido|dbusmenu'
+
+      - name: Bundle updater identity (marker + portable policy)
+        shell: bash
+        run: |
+          set -euo pipefail
+          BUNDLE="build/linux/x64/release/bundle"
+          PKG_ID="io.github.rodsilvavieira2.fourfun"
+          KEY_ID="release-de4dba08820a7c59511f86ce"
+          PUBKEY="MUceP/D/eQGYTiNhtcu3B6p0czGJW+LVWsHyhUjkJgE="
+          EXE="$BUNDLE/_4fun_cod_client"
+          HELPER=""
+          for cand in "$BUNDLE/lib/desktop-updater-helper" "$BUNDLE/desktop-updater-helper"; do
+            if [ -f "$cand" ]; then HELPER="$cand"; break; fi
+          done
+          [ -n "$HELPER" ] || { echo "helper ausente no bundle"; ls -l "$BUNDLE/lib" | head -30; exit 1; }
+          printf '{"packageId":"%s","schemaVersion":1}' "$PKG_ID" > "$BUNDLE/.desktop_updater_install_identity.json"
+          chmod 644 "$BUNDLE/.desktop_updater_install_identity.json"
+          python3 tooling-woodpecker/generate_portable_policy.py \
+            --exe "$EXE" --helper "$HELPER" \
+            --package-id "$PKG_ID" --key-id "$KEY_ID" --pubkey "$PUBKEY" \
+            --platform linux --output "$(dirname "$HELPER")/desktop-updater-helper.policy.json"
+          chmod 600 "$(dirname "$HELPER")/desktop-updater-helper.policy.json"
+          chmod 755 "$HELPER"
+          ls -l "$BUNDLE/.desktop_updater_install_identity.json" "$(dirname "$HELPER")/desktop-updater-helper.policy.json"
 
       - name: Create Linux package
         shell: bash
@@ -471,6 +497,22 @@ jobs:
             -OutFile "installer\vendor\vc_redist.x64.exe"
           Get-ChildItem installer\vendor
 
+      - name: Bundle Windows portable policy
+        shell: pwsh
+        run: |
+          $BUNDLE = 'build\windows\x64\runner\Release'
+          $PKG_ID = 'fourfun_cod_client'
+          $KEY_ID = 'release-de4dba08820a7c59511f86ce'
+          $PUBKEY = 'MUceP/D/eQGYTiNhtcu3B6p0czGJW+LVWsHyhUjkJgE='
+          $EXE = Join-Path $BUNDLE '_4fun_cod_client.exe'
+          $HELPER = Join-Path $BUNDLE 'desktop_updater_install_helper.exe'
+          if (-not (Test-Path $EXE)) { Write-Error "exe ausente: $EXE"; exit 1 }
+          if (-not (Test-Path $HELPER)) { Write-Error "helper ausente: $HELPER"; exit 1 }
+          $POLICY = Join-Path $BUNDLE 'desktop_updater_helper_policy.json'
+          & python tooling-woodpecker/generate_portable_policy.py --exe $EXE --helper $HELPER --package-id $PKG_ID --key-id $KEY_ID --pubkey $PUBKEY --platform windows --output $POLICY
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-ChildItem $BUNDLE -Filter 'desktop_updater*' | Out-String | Write-Host
+
       # --------------------------------------------------------
       # Portable ZIP
       # --------------------------------------------------------
@@ -663,12 +705,15 @@ jobs:
           if curl -sfL "https://github.com/rodsilvavieira2/_4fun_cod_client/releases/latest/download/app-archive.json" \
               -o dist/updater/feed/app-archive.json; then
             echo "extending published feed"
-            # upsert só aceita archive NÃO assinado; o sign final re-assina.
-            python3 -c "import json; p='dist/updater/feed/app-archive.json'; d=json.load(open(p)); d.pop('signature', None); json.dump(d, open(p, 'w'), indent=2)"
           else
             echo "first feed release"
             rm -f dist/updater/feed/app-archive.json
           fi
+          # Higiene fail-closed: dedup + exige VERSION/BUILD monotonicos.
+          # O updater compara SO buildNumber: publish fora de ordem vira downgrade.
+          python3 tooling-woodpecker/feed_hygiene.py \
+            --archive dist/updater/feed/app-archive.json \
+            --version "$VERSION" --build-number "${{ github.run_number }}"
           for platform in linux windows; do
             dart run desktop_updater:app_archive upsert \
               --archive dist/updater/feed/app-archive.json \

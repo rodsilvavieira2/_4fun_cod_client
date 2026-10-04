@@ -91,12 +91,12 @@ class IoAppUpdateBackend extends AppUpdateBackend {
       _downloadProgress = null;
       _set(AppUpdateStatus.checking);
     } else if (state is UpdateAvailable) {
-      _latestVersion = state.descriptor.version;
+      _latestVersion = _label(state.descriptor.version, state.descriptor.buildNumber);
       _downloadProgress = null;
       _manualUpToDate = false;
       _set(AppUpdateStatus.available);
     } else if (state is UpdateFreshInstallRequired) {
-      _latestVersion = state.descriptor.version;
+      _latestVersion = _label(state.descriptor.version, state.descriptor.buildNumber);
       _downloadProgress = null;
       _manualUpToDate = false;
       // Sem install in-place: o banner vira aviso + link manual.
@@ -104,7 +104,7 @@ class IoAppUpdateBackend extends AppUpdateBackend {
           'Essa versão exige instalação manual ($updateReleasesPageUrl).';
       _set(AppUpdateStatus.available);
     } else if (state is UpdateBlockedBySupportPolicy) {
-      _latestVersion = state.descriptor.version;
+      _latestVersion = _label(state.descriptor.version, state.descriptor.buildNumber);
       _manualUpToDate = false;
       _set(AppUpdateStatus.available);
     } else if (state is UpdateDownloading) {
@@ -126,6 +126,11 @@ class IoAppUpdateBackend extends AppUpdateBackend {
     // a checagem manual resolve via ManualUpdateCheckResult).
   }
 
+  static String _label(String version, int? buildNumber) {
+    if (buildNumber == null || buildNumber <= 0) return version;
+    return '$version+$buildNumber';
+  }
+
   static String _friendly(Object error) {
     if (error is SocketException) {
       return 'Sem conexão com o servidor de updates.';
@@ -134,7 +139,22 @@ class IoAppUpdateBackend extends AppUpdateBackend {
       return 'Tempo esgotado ao verificar updates.';
     }
     final text = error.toString();
-    return text.length > 160 ? '${text.substring(0, 160)}…' : text;
+    if (text.contains('Required install metadata file is unavailable') ||
+        text.contains('Windows helper preparation failed')) {
+      return 'Instalação atual sem arquivos do updater (helper/policy). '
+          'Reinstale pelo portable.zip ou setup mais recente.';
+    }
+    if (text.contains('installed identity marker') ||
+        text.contains('Linux explicit install root requires')) {
+      return 'Instalação Linux sem marker de identidade. '
+          'Reinstale pelo tar.gz mais recente (AppImage não tem auto-update).';
+    }
+    if (text.contains('protected shared/system root') ||
+        text.contains('must not be in a temporary tree')) {
+      return 'Pasta de instalação não suportada pelo auto-update '
+          '(sistema, rede ou temporária). Use pasta do usuário.';
+    }
+    return text.length > 220 ? '${text.substring(0, 220)}…' : text;
   }
 
   @override

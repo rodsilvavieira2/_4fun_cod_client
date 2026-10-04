@@ -55,17 +55,22 @@ dart run desktop_updater:release sign --release dist/updater/feed/release-linux.
 dart run desktop_updater:release sign --release dist/updater/feed/release-windows.json
 
 # --- feed (linux + windows): estende o publicado (VPS, fallback GitHub, ou novo) ---
+# Higiene fail-closed: o desktop_updater compara SO buildNumber quando ambos
+# existem. Sem isso, um publish fora de ordem (ex. 0.1.21+54 depois de 0.2.1+53)
+# vira "downgrade oferecido como update".
 if curl -sfL "$UPDATES_LATEST/app-archive.json" -o dist/updater/feed/app-archive.json; then
   echo "extending VPS feed"
-  python3 -c "import json; p='dist/updater/feed/app-archive.json'; d=json.load(open(p)); d.pop('signature', None); json.dump(d, open(p, 'w'), indent=2)"
 elif curl -sfL "https://github.com/rodsilvavieira2/_4fun_cod_client/releases/latest/download/app-archive.json" \
     -o dist/updater/feed/app-archive.json; then
   echo "seeding VPS feed from GitHub"
-  python3 -c "import json; p='dist/updater/feed/app-archive.json'; d=json.load(open(p)); d.pop('signature', None); json.dump(d, open(p, 'w'), indent=2)"
 else
   echo "first feed release"
   rm -f dist/updater/feed/app-archive.json
 fi
+# Dedup + validacao monotonica (falha antes do upsert se fora de ordem).
+python3 tooling-woodpecker/feed_hygiene.py \
+  --archive dist/updater/feed/app-archive.json \
+  --version "$VERSION" --build-number "$BUILD_NUMBER"
 for platform in linux windows; do
   dart run desktop_updater:app_archive upsert \
     --archive dist/updater/feed/app-archive.json \

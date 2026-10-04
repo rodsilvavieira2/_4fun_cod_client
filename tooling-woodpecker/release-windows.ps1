@@ -56,12 +56,28 @@ flutter build windows --release --build-name $APP_VERSION --build-number $BN `
   --dart-define=OTEL_ENDPOINT=$env:OTEL_ENDPOINT --dart-define=OTEL_ORG=$env:OTEL_ORG
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+# --- updater portable policy (ANTES do portable.zip/installer/updater) ---
+# Sem desktop_updater_helper_policy.json ao lado do exe, o nativo falha com
+# "Windows helper preparation failed: Required install metadata file is unavailable".
+$BUNDLE = 'build\windows\x64\runner\Release'
+$WIN_PKG_ID = 'fourfun_cod_client'
+$WIN_KEY_ID = 'release-de4dba08820a7c59511f86ce'
+$WIN_PUBKEY = 'MUceP/D/eQGYTiNhtcu3B6p0czGJW+LVWsHyhUjkJgE='
+$WIN_EXE = Join-Path $BUNDLE '_4fun_cod_client.exe'
+$WIN_HELPER = Join-Path $BUNDLE 'desktop_updater_install_helper.exe'
+if (-not (Test-Path $WIN_EXE)) { Write-Error "exe ausente: $WIN_EXE"; exit 1 }
+if (-not (Test-Path $WIN_HELPER)) { Write-Error "helper ausente: $WIN_HELPER (plugin desktop_updater nao bundlou?)"; exit 1 }
+$WIN_POLICY = Join-Path $BUNDLE 'desktop_updater_helper_policy.json'
+& python tooling-woodpecker/generate_portable_policy.py --exe $WIN_EXE --helper $WIN_HELPER --package-id $WIN_PKG_ID --key-id $WIN_KEY_ID --pubkey $WIN_PUBKEY --platform windows --output $WIN_POLICY
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+if (-not (Test-Path $WIN_POLICY)) { Write-Error "policy nao gerada: $WIN_POLICY"; exit 1 }
+Get-ChildItem $BUNDLE -Filter 'desktop_updater*' | Out-String | Write-Host
+
 # --- assert DirectML resolveu (o BRIDGE DLL linka ORT estatico + DirectML;
 # nao o plugin: o plugin carrega o bridge via import lib e nao referencia
 # simbolo DirectML direto, entao o linker descarta o import do plugin por
 # /OPT:REF. Desde a0ed009 (bridge via DLL p/ fugir do LNK2038 /MDd) checar o
 # plugin sempre falha — o binario certo e fourfun_deepfilter_bridge.dll) ---
-$BUNDLE = 'build\windows\x64\runner\Release'
 & (Join-Path $PSScriptRoot 'verify-windows-webrtc.ps1') -Bundle $BUNDLE
 & $dumpbin /DEPENDENTS "$BUNDLE\_4fun_cod_client.exe" | Out-String | Write-Host
 $bridgeDll = "$BUNDLE\fourfun_deepfilter_bridge.dll"
@@ -72,8 +88,12 @@ if (-not (Test-Path "$BUNDLE\DirectML.dll")) { Write-Error 'DirectML.dll ausente
 Write-Host 'DirectML OK: bridge referencia e DLL esta no bundle'
 
 # --- portable + installer ---
+# vc_redist vai no portable.zip e no setup via installer/vendor, NUNCA no
+# zip do updater (o updater nao deve versionar o instalador MSVC).
 $redistUrl = 'https://aka.ms/vs/17/release/vc_redist.x64.exe'
+New-Item -ItemType Directory -Force -Path 'installer\vendor' | Out-Null
 Invoke-WebRequest -Uri $redistUrl -OutFile "$BUNDLE\vc_redist.x64.exe"
+Copy-Item "$BUNDLE\vc_redist.x64.exe" 'installer\vendor\vc_redist.x64.exe' -Force
 $portable = "dist\${APP_SLUG}-windows-x64-${APP_VERSION}-portable.zip"
 New-Item -ItemType Directory -Force -Path 'dist' | Out-Null
 Compress-Archive -Path "$BUNDLE\*" -DestinationPath $portable -Force
@@ -82,6 +102,8 @@ if (-not (Test-Path $iscc)) { $iscc = 'C:\Program Files (x86)\Inno Setup 6\ISCC.
 & $iscc "/DAppVersion=$APP_VERSION" 'installer\windows.iss'
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 Get-ChildItem 'dist\windows' | Out-String | Write-Host
+# Remove vc_redist do bundle antes do updater package (nao versionar MSVC).
+Remove-Item "$BUNDLE\vc_redist.x64.exe" -Force -ErrorAction SilentlyContinue
 
 # --- updater package (SEM sign: publish assina tudo de uma vez no host) ---
 dart run desktop_updater:package --input $BUNDLE --output 'dist\updater\windows' `

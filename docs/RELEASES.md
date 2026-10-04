@@ -105,6 +105,20 @@ app-archive.json            (sempre por último)
 - Modo zip direto (`wholeDirectoryReplace`): no Windows preserva `unins*.exe` do
   Inno; no Linux cobre instalação por extração (tar.gz). Sem Authenticode
   (sem certificado) e sem modo instalador Inno — ver `doctor` no CI.
+- Portable authority (obrigatório): cada bundle precisa conter, além do helper
+  (`desktop_updater_install_helper.exe` / `desktop-updater-helper`),
+  a policy portable gerada por `tooling-woodpecker/generate_portable_policy.py`
+  (sha256 do exe+helper + chave `release-de4dba...`, JSON canônico sem newline)
+  e, no Linux, o marker raiz `.desktop_updater_install_identity.json`
+  (byte-exato, sem newline). Sem eles o install falha com
+  `Required install metadata file is unavailable` (Win) ou
+  `requires a matching root-level installed identity marker` (Linux).
+  AppImage monta em `/tmp` e não tem auto-update (só download manual).
+- `buildNumber` é monotônico por plataforma (o updater compara SÓ buildNumber):
+  `feed_hygiene.py` faz dedup por `(platform, version)` e falha fail-closed em
+  publish fora de ordem (`VERSION` menor que max publicado ou `BUILD` <= max).
+  Nunca republicar `0.1.x` depois de `0.2.x/1.x`; a cura de feed corrompido é
+  publicar versão nova com `BUILD_NUMBER` maior que o max global.
 
 ## Checklist pré-tag
 

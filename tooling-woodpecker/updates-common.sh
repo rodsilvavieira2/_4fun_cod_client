@@ -3,6 +3,11 @@
 # Sourced por release-linux.sh e publish.sh (mesmo repo, qualquer workflow).
 # Nao executa nada sozinho: so define variaveis + helpers de sftp.
 # Entradas: CI_COMMIT_TAG=vX.Y.Z, CI_PIPELINE_NUMBER.
+# ATENCAO buildNumber: o desktop_updater compara SO buildNumber quando ambos
+# existem (version_info.dart:compareDesktopVersions). BUILD_NUMBER precisa ser
+# estritamente crescente com o semver por plataforma, senao um publish fora de
+# ordem vira downgrade oferecido como update (ex. 0.1.21+54 > 0.2.1+53).
+# publish.sh/feed_hygiene.py falham fail-closed se violar.
 
 TAG="$CI_COMMIT_TAG"
 VERSION="${TAG#v}"

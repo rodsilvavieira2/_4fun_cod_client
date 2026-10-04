@@ -97,6 +97,32 @@ for so in "$BUNDLE"/lib/*.so; do
 done
 [ "$MISSING" = 0 ] || exit 1
 
+# --- updater identity + portable policy (ANTES do tar.gz/updater/AppImage) ---
+# Sem o marker na raiz, o updater Linux reprova com
+# "requires a matching root-level installed identity marker".
+# Sem a policy ao lado do helper, o handoff nativo falha.
+# Ambos entram no tar.gz, no AppDir e no zip do updater (staging tambem precisa).
+LINUX_PKG_ID="io.github.rodsilvavieira2.fourfun"
+LINUX_KEY_ID="release-de4dba08820a7c59511f86ce"
+LINUX_PUBKEY="MUceP/D/eQGYTiNhtcu3B6p0czGJW+LVWsHyhUjkJgE="
+LINUX_EXE="$BUNDLE/_4fun_cod_client"
+LINUX_HELPER=""
+for cand in "$BUNDLE/lib/desktop-updater-helper" "$BUNDLE/desktop-updater-helper"; do
+  if [ -f "$cand" ]; then LINUX_HELPER="$cand"; break; fi
+done
+[ -n "$LINUX_HELPER" ] || { echo "FALTANDO helper desktop-updater-helper no bundle"; ls -l "$BUNDLE/lib" | head -30; exit 1; }
+[ -f "$LINUX_EXE" ] || { echo "FALTANDO exe no bundle: $LINUX_EXE"; exit 1; }
+# Marker byte-exato, SEM newline (comparacao exata no nativo).
+printf '{"packageId":"%s","schemaVersion":1}' "$LINUX_PKG_ID" > "$BUNDLE/.desktop_updater_install_identity.json"
+chmod 644 "$BUNDLE/.desktop_updater_install_identity.json"
+python3 tooling-woodpecker/generate_portable_policy.py \
+  --exe "$LINUX_EXE" --helper "$LINUX_HELPER" \
+  --package-id "$LINUX_PKG_ID" --key-id "$LINUX_KEY_ID" --pubkey "$LINUX_PUBKEY" \
+  --platform linux --output "$(dirname "$LINUX_HELPER")/desktop-updater-helper.policy.json"
+chmod 600 "$(dirname "$LINUX_HELPER")/desktop-updater-helper.policy.json"
+chmod 755 "$LINUX_HELPER"
+ls -l "$BUNDLE/.desktop_updater_install_identity.json" "$(dirname "$LINUX_HELPER")/desktop-updater-helper.policy.json" "$LINUX_HELPER"
+
 # --- tar.gz ---
 mkdir -p "package/$APP_SLUG" dist/linux
 cp -a build/linux/x64/release/bundle/. "package/$APP_SLUG/"
