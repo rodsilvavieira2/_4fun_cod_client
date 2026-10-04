@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:file_selector/file_selector.dart';
@@ -8,9 +9,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../features/profile/profile_repository.dart';
 import '../../features/servers/servers_providers.dart';
 import '../../shared/models/profile.dart';
+import '../../shared/models/servers.dart';
 import '../auth/auth_controller.dart';
 import '../auth/auth_state.dart';
 import '../theme/appearance_theme.dart';
+import 'ds_tokens.dart';
+import 'inputs/app_color_picker.dart';
+import 'inputs/app_select.dart';
 import 'profile_card.dart';
 
 /// Editor com um único draft por escopo e preview persistente.
@@ -45,6 +50,8 @@ class _ProfileEditorDialogState extends ConsumerState<ProfileEditorDialog> {
   bool _preparing = false;
   bool _allowClose = false;
   bool _compactPreview = false;
+  bool _avatarCropExpanded = false;
+  bool _bannerCropExpanded = false;
   int _effectReplay = 0;
   String? _error;
   String? _usernameHint;
@@ -448,70 +455,68 @@ class _ProfileEditorDialogState extends ConsumerState<ProfileEditorDialog> {
   Widget build(BuildContext context) {
     final colors = context.appColors;
     final servers = ref.watch(serversProvider).valueOrNull ?? const [];
+    final size = MediaQuery.sizeOf(context);
     return PopScope(
       canPop: !_dirty || _allowClose,
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) _close();
       },
       child: Dialog(
-        backgroundColor: colors.surface1,
+        insetPadding: const EdgeInsets.all(16),
+        backgroundColor: colors.surface2,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadius.xl),
+          side: BorderSide(color: colors.borderSubtle),
+        ),
         child: SizedBox(
-          width: 1060,
-          height: 760,
+          width: 960,
+          height: math.min(720, size.height - 32),
           child: Column(
             children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 16, 16, 12),
-                child: Row(
-                  children: [
-                    Text(
-                      'Editar perfil',
-                      style: TextStyle(
-                        fontSize: 21,
-                        fontWeight: FontWeight.bold,
-                        color: colors.textPrimary,
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final narrow = constraints.maxWidth < 720;
+                  return Container(
+                    padding: EdgeInsets.fromLTRB(narrow ? 16 : 24, 12, 12, 12),
+                    decoration: BoxDecoration(
+                      border: Border(
+                        bottom: BorderSide(color: colors.borderHairline),
                       ),
                     ),
-                    const Spacer(),
-                    SizedBox(
-                      width: 270,
-                      child: DropdownButtonFormField<String>(
-                        key: ValueKey('scope-${_serverId ?? 'main'}'),
-                        initialValue: _serverId ?? '',
-                        decoration: const InputDecoration(labelText: 'Escopo'),
-                        items: [
-                          const DropdownMenuItem(
-                            value: '',
-                            child: Text('Main Profile'),
-                          ),
-                          for (final server in servers)
-                            DropdownMenuItem(
-                              value: server.id,
-                              child: Text(
-                                'Perfil em ${server.name}',
-                                overflow: TextOverflow.ellipsis,
+                    child: narrow
+                        ? Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(child: _dialogTitle()),
+                                  _closeButton(),
+                                ],
                               ),
-                            ),
-                        ],
-                        onChanged: _saving || _preparing
-                            ? null
-                            : (value) => _scope(value == '' ? null : value),
-                      ),
-                    ),
-                    IconButton(
-                      onPressed: _close,
-                      icon: const Icon(Icons.close),
-                      tooltip: 'Fechar',
-                    ),
-                  ],
-                ),
+                              const SizedBox(height: 8),
+                              _scopePicker(servers),
+                            ],
+                          )
+                        : Row(
+                            children: [
+                              Expanded(child: _dialogTitle()),
+                              SizedBox(
+                                width: 248,
+                                child: _scopePicker(servers),
+                              ),
+                              const SizedBox(width: 8),
+                              _closeButton(),
+                            ],
+                          ),
+                  );
+                },
               ),
               if (_error != null)
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  padding: const EdgeInsets.fromLTRB(24, 8, 24, 0),
                   child: Text(
                     _error!,
-                    style: const TextStyle(color: Colors.redAccent),
+                    style: const TextStyle(color: AppTokens.accentPurple),
                   ),
                 ),
               Expanded(
@@ -524,109 +529,93 @@ class _ProfileEditorDialogState extends ConsumerState<ProfileEditorDialog> {
                           child: const Text('Tentar novamente'),
                         ),
                       )
-                    : Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            flex: 3,
-                            child: SingleChildScrollView(
-                              padding: const EdgeInsets.fromLTRB(24, 8, 16, 24),
-                              child: _form(),
-                            ),
-                          ),
-                          Expanded(
-                            flex: 2,
-                            child: Container(
+                    : LayoutBuilder(
+                        builder: (context, constraints) {
+                          if (constraints.maxWidth < 720) {
+                            return SingleChildScrollView(
                               padding: const EdgeInsets.fromLTRB(
                                 16,
-                                12,
+                                20,
+                                16,
                                 24,
-                                24,
-                              ),
-                              decoration: BoxDecoration(
-                                border: Border(
-                                  left: BorderSide(color: colors.borderSubtle),
-                                ),
                               ),
                               child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
-                                  Text(
-                                    'Prévia ${_isServer ? 'neste servidor' : 'global'}',
-                                    style: TextStyle(
-                                      color: colors.textPrimary,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  Row(
-                                    children: [
-                                      ChoiceChip(
-                                        label: const Text('Completo'),
-                                        selected: !_compactPreview,
-                                        onSelected: (_) => setState(
-                                          () => _compactPreview = false,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 6),
-                                      ChoiceChip(
-                                        label: const Text('Compacto'),
-                                        selected: _compactPreview,
-                                        onSelected: (_) => setState(
-                                          () => _compactPreview = true,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 12),
-                                  ProfileCard(
-                                    profile: _preview(),
-                                    catalog: _catalog,
-                                    fonts: _fonts,
-                                    avatarBytes: _avatarBytes,
-                                    bannerBytes: _bannerBytes,
-                                    compact: _compactPreview,
-                                    replayToken: _effectReplay,
-                                  ),
-                                  TextButton(
-                                    onPressed:
-                                        _preview().profileEffectId == null
-                                        ? null
-                                        : () => setState(() => _effectReplay++),
-                                    child: const Text('Reproduzir efeito'),
-                                  ),
-                                  const SizedBox(height: 10),
-                                  Text(
-                                    'As alterações aparecem aqui antes de salvar.',
-                                    style: TextStyle(
-                                      color: colors.textSecondary,
-                                      fontSize: 12,
-                                    ),
-                                  ),
+                                  _previewPanel(),
+                                  const SizedBox(height: 24),
+                                  _form(),
                                 ],
                               ),
-                            ),
-                          ),
-                        ],
+                            );
+                          }
+                          return Row(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Expanded(
+                                child: SingleChildScrollView(
+                                  padding: const EdgeInsets.fromLTRB(
+                                    24,
+                                    8,
+                                    24,
+                                    32,
+                                  ),
+                                  child: _form(),
+                                ),
+                              ),
+                              SizedBox(
+                                width: 360,
+                                child: Container(
+                                  padding: const EdgeInsets.all(20),
+                                  decoration: BoxDecoration(
+                                    color: colors.surface1,
+                                    border: Border(
+                                      left: BorderSide(
+                                        color: colors.borderHairline,
+                                      ),
+                                    ),
+                                  ),
+                                  child: SingleChildScrollView(
+                                    child: _previewPanel(),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          );
+                        },
                       ),
               ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 10, 24, 16),
+              Container(
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+                decoration: BoxDecoration(
+                  border: Border(top: BorderSide(color: colors.borderHairline)),
+                ),
                 child: Row(
                   children: [
                     if (_isServer)
                       TextButton(
                         onPressed: _saving ? null : _resetServer,
-                        child: const Text('Reset Server Profile'),
+                        child: const Text('Restaurar perfil'),
                       ),
                     const Spacer(),
                     if (_dirty)
-                      Text(
-                        'Alterações não salvas',
-                        style: TextStyle(color: colors.textSecondary),
+                      Flexible(
+                        child: Text(
+                          'Alterações não salvas',
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: colors.textSecondary,
+                            fontSize: 12,
+                          ),
+                        ),
                       ),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 8),
                     TextButton(
-                      onPressed: _dirty ? () => _load(_serverId) : _close,
+                      onPressed: _saving || _preparing
+                          ? null
+                          : _dirty
+                          ? () => _load(_serverId)
+                          : _close,
                       child: Text(_dirty ? 'Descartar' : 'Cancelar'),
                     ),
                     const SizedBox(width: 8),
@@ -652,6 +641,167 @@ class _ProfileEditorDialogState extends ConsumerState<ProfileEditorDialog> {
     );
   }
 
+  Widget _dialogTitle() => Text(
+    'Editar perfil',
+    style: TextStyle(
+      fontFamily: 'Geist',
+      fontSize: 18,
+      fontWeight: FontWeight.w600,
+      color: context.appColors.textPrimary,
+    ),
+  );
+
+  Widget _closeButton() => IconButton(
+    onPressed: _close,
+    icon: const Icon(Icons.close, size: 20),
+    tooltip: 'Fechar',
+  );
+
+  Widget _scopePicker(List<Server> servers) => AppSelect<String>(
+    label: 'Perfil',
+    value: _serverId ?? '',
+    options: [
+      const AppSelectOption(value: '', label: 'Perfil principal'),
+      for (final server in servers)
+        AppSelectOption(value: server.id, label: server.name),
+    ],
+    onChanged: _saving || _preparing
+        ? null
+        : (value) => _scope(value == '' ? null : value),
+  );
+
+  Widget _fieldLabel(String label) => Text(
+    label,
+    style: TextStyle(
+      color: context.appColors.textPrimary,
+      fontSize: 13,
+      fontWeight: FontWeight.w600,
+    ),
+  );
+
+  Widget _identityField({
+    required String label,
+    required TextEditingController controller,
+    required int maxLength,
+    required ValueChanged<String> onChanged,
+    String? helper,
+    String? status,
+    Color? statusColor,
+    bool enabled = true,
+  }) => Padding(
+    padding: const EdgeInsets.only(bottom: 18),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _fieldLabel(label),
+        const SizedBox(height: 8),
+        TextField(
+          controller: controller,
+          maxLength: maxLength,
+          enabled: enabled,
+          decoration: InputDecoration(
+            hintText: label,
+            counterText: '',
+            isDense: true,
+          ),
+          onChanged: onChanged,
+        ),
+        const SizedBox(height: 6),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (status != null || helper != null)
+              Expanded(
+                child: Text(
+                  status ?? helper!,
+                  style: TextStyle(
+                    color: statusColor ?? context.appColors.textSecondary,
+                    fontSize: 11,
+                    height: 1.35,
+                  ),
+                ),
+              )
+            else
+              const Spacer(),
+            const SizedBox(width: 8),
+            Text(
+              '${controller.text.characters.length}/$maxLength',
+              style: TextStyle(
+                color: context.appColors.textMuted,
+                fontFamily: 'Geist Mono',
+                fontSize: 11,
+              ),
+            ),
+          ],
+        ),
+      ],
+    ),
+  );
+
+  Widget _previewPanel() {
+    final colors = context.appColors;
+    final preview = _preview();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          _isServer ? 'Prévia neste servidor' : 'Prévia do perfil',
+          style: TextStyle(
+            color: colors.textPrimary,
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Veja como seu perfil aparece para outras pessoas.',
+          style: TextStyle(color: colors.textSecondary, fontSize: 12),
+        ),
+        const SizedBox(height: 16),
+        ProfileCard(
+          profile: preview,
+          catalog: _catalog,
+          fonts: _fonts,
+          avatarBytes: _avatarBytes,
+          bannerBytes: _bannerBytes,
+          compact: _compactPreview,
+          replayToken: _effectReplay,
+        ),
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 8,
+          runSpacing: 4,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            SegmentedButton<bool>(
+              segments: const [
+                ButtonSegment(value: false, label: Text('Completo')),
+                ButtonSegment(value: true, label: Text('Compacto')),
+              ],
+              selected: {_compactPreview},
+              onSelectionChanged: (value) =>
+                  setState(() => _compactPreview = value.first),
+              showSelectedIcon: false,
+              style: const ButtonStyle(
+                visualDensity: VisualDensity.compact,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+            ),
+            IconButton(
+              onPressed: preview.profileEffectId == null
+                  ? null
+                  : () => setState(() => _effectReplay++),
+              icon: const Icon(Icons.replay_outlined, size: 19),
+              tooltip: 'Reproduzir efeito',
+              constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+              padding: EdgeInsets.zero,
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
   Widget _form() {
     final auth = ref.watch(authControllerProvider).valueOrNull;
     final manualStatus = auth is Authenticated
@@ -663,118 +813,66 @@ class _ProfileEditorDialogState extends ConsumerState<ProfileEditorDialog> {
       children: [
         _heading('Identidade'),
         if (!_isServer) ...[
-          TextField(
+          _identityField(
+            label: 'Nome de usuário',
             controller: _username,
             maxLength: 20,
-            decoration: const InputDecoration(
-              labelText: 'Username',
-              helperText: 'Identificador único: 3–20 letras, números ou _',
-            ),
+            helper: 'Identificador único: 3–20 letras, números ou _',
+            status: _usernameHint,
+            statusColor: _usernameAvailable == false
+                ? AppTokens.accentPurple
+                : null,
             onChanged: (value) {
               _set('username', value.trim());
               _checkUsername(value.trim());
             },
           ),
-          if (_usernameHint != null)
-            Text(
-              _usernameHint!,
-              style: TextStyle(
-                color: _usernameAvailable == false
-                    ? Colors.redAccent
-                    : context.appColors.textSecondary,
-                fontSize: 12,
-              ),
-            ),
-          TextField(
+          _identityField(
+            label: 'Nome de exibição',
             controller: _displayName,
             maxLength: 50,
-            decoration: const InputDecoration(labelText: 'Display Name'),
             onChanged: (value) => _set('displayName', value),
           ),
         ] else ...[
-          TextField(
+          _identityField(
+            label: 'Apelido no servidor',
             controller: _nickname,
             maxLength: 50,
             enabled: _data?.server?['allowSelfNickname'] == true,
-            decoration: const InputDecoration(
-              labelText: 'Server Nickname',
-              helperText: 'Em branco usa o Display Name',
-            ),
+            helper: 'Em branco usa o nome de exibição',
             onChanged: (value) =>
                 _set('nickname', value.trim().isEmpty ? null : value.trim()),
           ),
         ],
         _heading('Avatar e banner'),
-        _property(
-          'Avatar',
-          'avatarUrl',
-          Row(
-            children: [
-              OutlinedButton(
-                onPressed: _preparing ? null : () => _selectImage(false),
-                child: const Text('Escolher avatar'),
-              ),
-              const SizedBox(width: 8),
-              TextButton(
-                onPressed: () {
-                  _avatarBytes = null;
-                  _set('avatarUploadId', null, inheritKey: 'avatarUrl');
-                },
-                child: const Text('Remover'),
-              ),
-            ],
-          ),
-        ),
-        _cropControls('avatarCrop', 'Crop do avatar'),
-        _property(
-          'Banner',
-          'bannerUrl',
-          Row(
-            children: [
-              OutlinedButton(
-                onPressed: _preparing ? null : () => _selectImage(true),
-                child: const Text('Escolher banner'),
-              ),
-              const SizedBox(width: 8),
-              TextButton(
-                onPressed: () {
-                  _bannerBytes = null;
-                  _set('bannerUploadId', null, inheritKey: 'bannerUrl');
-                },
-                child: const Text('Remover'),
-              ),
-            ],
-          ),
-        ),
-        _cropControls('bannerCrop', 'Crop do banner'),
+        _mediaControls(false),
+        _mediaControls(true),
         _heading('Nome e cores'),
-        if (!_isServer) _cosmetic('Nameplate', 'NAMEPLATE', 'nameplateId'),
+        if (!_isServer) _cosmetic('Placa de nome', 'NAMEPLATE', 'nameplateId'),
         _property(
-          'Display Name Style',
+          'Estilo do nome',
           'style',
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              DropdownButtonFormField<String>(
-                key: ValueKey('font-${_serverId ?? 'main'}-${_value('style')}'),
-                initialValue: _currentFontId(),
-                decoration: const InputDecoration(labelText: 'Fonte'),
-                items: [
+              AppSelect<String>(
+                label: 'Fonte',
+                value: _currentFontId(),
+                options: [
                   for (final font in _fonts)
-                    DropdownMenuItem(value: font.id, child: Text(font.name)),
+                    AppSelectOption(value: font.id, label: font.name),
                 ],
-                onChanged: (value) => _changeStyle(font: value),
+                onChanged: _fonts.isEmpty
+                    ? null
+                    : (value) => _changeStyle(font: value),
               ),
-              const SizedBox(height: 8),
-              DropdownButtonFormField<String>(
-                key: ValueKey(
-                  'effect-${_serverId ?? 'main'}-${_value('style')}',
-                ),
-                initialValue:
+              const SizedBox(height: 14),
+              AppSelect<String>(
+                label: 'Efeito',
+                value:
                     (_value('style') as Map?)?['effectId'] as String? ??
                     'solid',
-                decoration: const InputDecoration(labelText: 'Efeito'),
-                items:
+                options:
                     const [
                           'solid',
                           'gradient',
@@ -785,9 +883,17 @@ class _ProfileEditorDialogState extends ConsumerState<ProfileEditorDialog> {
                           'prism',
                         ]
                         .map(
-                          (value) => DropdownMenuItem(
+                          (value) => AppSelectOption(
                             value: value,
-                            child: Text(value),
+                            label: switch (value) {
+                              'solid' => 'Sólido',
+                              'gradient' => 'Gradiente',
+                              'neon' => 'Neon',
+                              'toon' => 'Cartoon',
+                              'pop' => 'Pop',
+                              'gummy' => 'Goma',
+                              _ => 'Prisma',
+                            },
                           ),
                         )
                         .toList(),
@@ -808,7 +914,7 @@ class _ProfileEditorDialogState extends ConsumerState<ProfileEditorDialog> {
           ),
         ),
         _property(
-          'Profile Theme',
+          'Cores do perfil',
           'theme',
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -819,7 +925,7 @@ class _ProfileEditorDialogState extends ConsumerState<ProfileEditorDialog> {
                 (value) => _changeTheme(primary: value),
               ),
               _colorChoices(
-                'Accent',
+                'Cor de destaque',
                 (_value('theme') as Map?)?['accent'] as String?,
                 (value) => _changeTheme(accent: value),
               ),
@@ -830,27 +936,28 @@ class _ProfileEditorDialogState extends ConsumerState<ProfileEditorDialog> {
             ],
           ),
         ),
-        _heading('Cosméticos'),
+        _heading('Decorações'),
         OutlinedButton.icon(
           onPressed: _openCatalog,
           icon: const Icon(Icons.auto_awesome_outlined),
           label: const Text('Catálogo e biblioteca'),
         ),
         _cosmetic(
-          'Avatar Decoration',
+          'Decoração do avatar',
           'AVATAR_DECORATION',
           'avatarDecorationId',
         ),
-        _cosmetic('Profile Effect', 'PROFILE_EFFECT', 'profileEffectId'),
-        _cosmetic('Profile Frame', 'PROFILE_FRAME', 'profileFrameId'),
-        _heading('Bio'),
+        _cosmetic('Efeito do perfil', 'PROFILE_EFFECT', 'profileEffectId'),
+        _cosmetic('Moldura do perfil', 'PROFILE_FRAME', 'profileFrameId'),
+        _heading('Sobre você'),
         _property(
-          'About Me',
+          'Biografia',
           'bio',
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
+              Wrap(
+                spacing: 4,
                 children: [
                   TextButton(
                     onPressed: () => _insertMarkdown('**', '**'),
@@ -874,38 +981,45 @@ class _ProfileEditorDialogState extends ConsumerState<ProfileEditorDialog> {
                 controller: _bio,
                 maxLines: 5,
                 minLines: 3,
-                decoration: InputDecoration(
-                  labelText: 'Bio',
-                  helperText:
-                      '${_visibleBioCount(_bio.text)}/${_isServer ? 190 : 300} caracteres visíveis',
+                decoration: const InputDecoration(
+                  hintText: 'Escreva sobre você',
                 ),
                 onChanged: (value) => _set('bio', value),
+              ),
+              const SizedBox(height: 6),
+              Align(
+                alignment: Alignment.centerRight,
+                child: Text(
+                  '${_visibleBioCount(_bio.text)}/${_isServer ? 190 : 300} caracteres visíveis',
+                  style: TextStyle(
+                    color: colors.textMuted,
+                    fontFamily: 'Geist Mono',
+                    fontSize: 11,
+                  ),
+                ),
               ),
             ],
           ),
         ),
         if (!_isServer) ...[
           _heading('Presença'),
-          DropdownButtonFormField<String>(
-            key: ValueKey('manual-status-$manualStatus'),
-            initialValue: manualStatus,
-            decoration: const InputDecoration(labelText: 'Online Status'),
-            items: const [
-              DropdownMenuItem(value: 'ONLINE', child: Text('Online')),
-              DropdownMenuItem(value: 'IDLE', child: Text('Ausente')),
-              DropdownMenuItem(value: 'DND', child: Text('Não perturbe')),
-              DropdownMenuItem(value: 'INVISIBLE', child: Text('Invisível')),
+          AppSelect<String>(
+            label: 'Status',
+            value: manualStatus,
+            options: const [
+              AppSelectOption(value: 'ONLINE', label: 'Online'),
+              AppSelectOption(value: 'IDLE', label: 'Ausente'),
+              AppSelectOption(value: 'DND', label: 'Não perturbe'),
+              AppSelectOption(value: 'INVISIBLE', label: 'Invisível'),
             ],
             onChanged: (status) async {
-              if (status != null) {
-                try {
-                  await ref.read(profileRepositoryProvider).setStatus(status);
-                  await ref
-                      .read(authControllerProvider.notifier)
-                      .refreshCurrentUser();
-                } catch (error) {
-                  if (mounted) setState(() => _error = '$error');
-                }
+              try {
+                await ref.read(profileRepositoryProvider).setStatus(status);
+                await ref
+                    .read(authControllerProvider.notifier)
+                    .refreshCurrentUser();
+              } catch (error) {
+                if (mounted) setState(() => _error = '$error');
               }
             },
           ),
@@ -919,15 +1033,86 @@ class _ProfileEditorDialogState extends ConsumerState<ProfileEditorDialog> {
     );
   }
 
+  Widget _mediaControls(bool banner) {
+    final expanded = banner ? _bannerCropExpanded : _avatarCropExpanded;
+    final field = banner ? 'bannerUrl' : 'avatarUrl';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _property(
+          banner ? 'Banner' : 'Avatar',
+          field,
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              OutlinedButton.icon(
+                onPressed: _preparing ? null : () => _selectImage(banner),
+                icon: const Icon(Icons.upload_outlined, size: 18),
+                label: Text(banner ? 'Escolher banner' : 'Escolher avatar'),
+              ),
+              TextButton(
+                onPressed: _preparing
+                    ? null
+                    : () {
+                        if (banner) {
+                          _bannerBytes = null;
+                        } else {
+                          _avatarBytes = null;
+                        }
+                        _set(
+                          banner ? 'bannerUploadId' : 'avatarUploadId',
+                          null,
+                          inheritKey: field,
+                        );
+                      },
+                child: const Text('Remover'),
+              ),
+              TextButton.icon(
+                onPressed: () => setState(() {
+                  if (banner) {
+                    _bannerCropExpanded = !expanded;
+                  } else {
+                    _avatarCropExpanded = !expanded;
+                  }
+                }),
+                icon: Icon(expanded ? Icons.expand_less : Icons.tune, size: 18),
+                label: Text(expanded ? 'Ocultar ajuste' : 'Ajustar recorte'),
+              ),
+            ],
+          ),
+        ),
+        if (expanded)
+          Padding(
+            padding: const EdgeInsets.only(left: 12, bottom: 8),
+            child: _cropControls(
+              banner ? 'bannerCrop' : 'avatarCrop',
+              banner ? 'Recorte do banner' : 'Recorte do avatar',
+            ),
+          ),
+      ],
+    );
+  }
+
   Widget _heading(String title) => Padding(
-    padding: const EdgeInsets.fromLTRB(0, 18, 0, 10),
-    child: Text(
-      title,
-      style: TextStyle(
-        color: context.appColors.textPrimary,
-        fontSize: 17,
-        fontWeight: FontWeight.w700,
-      ),
+    padding: const EdgeInsets.fromLTRB(0, 18, 0, 12),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (title != 'Identidade') ...[
+          Divider(height: 1, color: context.appColors.borderHairline),
+          const SizedBox(height: 14),
+        ],
+        Text(
+          title,
+          style: TextStyle(
+            color: context.appColors.textPrimary,
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
     ),
   );
 
@@ -943,11 +1128,14 @@ class _ProfileEditorDialogState extends ConsumerState<ProfileEditorDialog> {
                 !((_data?.server?['overrides'] as Map?)?.containsKey(key) ??
                     false)));
     return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.only(bottom: 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               Text(
                 label,
@@ -956,12 +1144,13 @@ class _ProfileEditorDialogState extends ConsumerState<ProfileEditorDialog> {
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              const Spacer(),
               if (_isServer)
                 TextButton(
                   onPressed: inherited ? null : () => _resetField(key),
                   child: Text(
-                    inherited ? 'Herdado do Main Profile' : 'Voltar a herdar',
+                    inherited
+                        ? 'Herdado do perfil principal'
+                        : 'Voltar a herdar',
                   ),
                 ),
             ],
@@ -975,6 +1164,25 @@ class _ProfileEditorDialogState extends ConsumerState<ProfileEditorDialog> {
 
   Widget _cosmetic(String label, String category, String key) {
     final items = _catalog.where((item) => item.category == category).toList();
+    final colors = context.appColors;
+    Widget choice(
+      String title,
+      bool selected,
+      VoidCallback onSelected, {
+      Color? swatch,
+    }) => ChoiceChip(
+      label: Text(title),
+      selected: selected,
+      onSelected: (_) => onSelected(),
+      avatar: swatch == null
+          ? null
+          : CircleAvatar(backgroundColor: swatch, radius: 9),
+      labelStyle: TextStyle(color: colors.textPrimary, fontSize: 12),
+      selectedColor: colors.surface3,
+      backgroundColor: colors.surface2,
+      checkmarkColor: colors.textPrimary,
+      side: BorderSide(color: selected ? colors.accent : colors.borderSubtle),
+    );
     return _property(
       label,
       key,
@@ -982,24 +1190,15 @@ class _ProfileEditorDialogState extends ConsumerState<ProfileEditorDialog> {
         spacing: 8,
         runSpacing: 8,
         children: [
-          ChoiceChip(
-            label: const Text('Nenhum'),
-            selected: _value(key) == null,
-            onSelected: (_) => _set(key, null),
-          ),
+          choice('Nenhum', _value(key) == null, () => _set(key, null)),
           for (final item in items)
-            ChoiceChip(
-              label: Text(
-                '${item.name}${item.owned ? ' · possuído' : ''}${item.equippedServers.isNotEmpty ? ' · outro perfil' : ''}',
-              ),
-              selected: _value(key) == item.id,
-              avatar: CircleAvatar(
-                backgroundColor:
-                    profileHexColor(item.visual['color'] as String?) ??
-                    context.appColors.accent,
-                radius: 9,
-              ),
-              onSelected: (_) => _set(key, item.id),
+            choice(
+              '${item.name}${item.owned ? ' · possuído' : ''}${item.equippedServers.isNotEmpty ? ' · outro perfil' : ''}',
+              _value(key) == item.id,
+              () => _set(key, item.id),
+              swatch:
+                  profileHexColor(item.visual['color'] as String?) ??
+                  colors.accent,
             ),
         ],
       ),
@@ -1074,52 +1273,11 @@ class _ProfileEditorDialogState extends ConsumerState<ProfileEditorDialog> {
     String label,
     String? current,
     ValueChanged<String> onSelect,
-  ) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Text(
-        label,
-        style: TextStyle(color: context.appColors.textSecondary, fontSize: 12),
-      ),
-      const SizedBox(height: 5),
-      Wrap(
-        spacing: 8,
-        children: [
-          for (final value in _swatches)
-            InkWell(
-              onTap: () => onSelect(value),
-              child: Container(
-                width: 27,
-                height: 27,
-                decoration: BoxDecoration(
-                  color: profileHexColor(value),
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: current == value ? Colors.white : Colors.transparent,
-                    width: 2,
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
-      SizedBox(
-        width: 150,
-        child: TextFormField(
-          key: ValueKey('hex-$label-${_serverId ?? 'main'}-$current'),
-          initialValue: current ?? '',
-          decoration: const InputDecoration(hintText: '#RRGGBB', isDense: true),
-          onFieldSubmitted: (value) {
-            if (RegExp(r'^#[0-9a-fA-F]{6}$').hasMatch(value)) {
-              onSelect(value.toUpperCase());
-            } else {
-              setState(() => _error = 'Use uma cor no formato #RRGGBB.');
-            }
-          },
-        ),
-      ),
-      const SizedBox(height: 9),
-    ],
+  ) => AppColorPicker(
+    label: label,
+    value: current,
+    swatches: _swatches,
+    onChanged: onSelect,
   );
 
   void _changeTheme({String? primary, String? accent}) {

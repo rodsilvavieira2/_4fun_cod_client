@@ -160,32 +160,20 @@ class _AudioDeviceField extends StatelessWidget {
       icon: icon,
       label: label,
       unavailable: unavailable,
-      child: DropdownButtonFormField<String>(
-        key: ValueKey(value),
-        initialValue: value,
-        isExpanded: true,
-        menuMaxHeight: 280,
-        style: TextStyle(
-          fontFamily: 'Geist',
-          fontSize: 12.5,
-          color: context.appColors.textPrimary,
-        ),
-        decoration: _compactFieldDecoration(context),
+      child: AppSelect<String>(
+        value: value,
         onChanged: loading
             ? null
             : (value) => onChanged(value == _systemDefault ? null : value),
-        items: [
-          const DropdownMenuItem(
+        options: [
+          const AppSelectOption(
             value: _systemDefault,
-            child: Text('Padrão do sistema', overflow: TextOverflow.ellipsis),
+            label: 'Padrão do sistema',
           ),
           for (var index = 0; index < devices.length; index++)
-            DropdownMenuItem(
+            AppSelectOption(
               value: devices[index].id,
-              child: Text(
-                _deviceLabel(devices[index], label, index),
-                overflow: TextOverflow.ellipsis,
-              ),
+              label: _deviceLabel(devices[index], label, index),
             ),
         ],
       ),
@@ -217,31 +205,15 @@ class _CameraField extends StatelessWidget {
       icon: AppIcons.video,
       label: 'Câmera',
       unavailable: unavailable,
-      child: DropdownButtonFormField<String>(
-        key: ValueKey(value),
-        initialValue: value,
-        isExpanded: true,
-        menuMaxHeight: 280,
-        style: TextStyle(
-          fontFamily: 'Geist',
-          fontSize: 12.5,
-          color: context.appColors.textPrimary,
-        ),
-        decoration: _compactFieldDecoration(context),
-        hint: const Text('Padrão do sistema', overflow: TextOverflow.ellipsis),
-        onChanged: loading || devices.isEmpty
-            ? null
-            : (id) {
-                if (id != null) onChanged(id);
-              },
-        items: [
+      child: AppSelect<String>(
+        value: value,
+        placeholder: 'Padrão do sistema',
+        onChanged: loading || devices.isEmpty ? null : onChanged,
+        options: [
           for (var index = 0; index < devices.length; index++)
-            DropdownMenuItem(
+            AppSelectOption(
               value: devices[index].id,
-              child: Text(
-                _deviceLabel(devices[index], 'Câmera', index),
-                overflow: TextOverflow.ellipsis,
-              ),
+              label: _deviceLabel(devices[index], 'Câmera', index),
             ),
         ],
       ),
@@ -382,26 +354,6 @@ class _DeviceFieldShell extends StatelessWidget {
       trailing: SizedBox(width: 330, child: child),
     );
   }
-}
-
-InputDecoration _compactFieldDecoration(BuildContext context) {
-  final colors = context.appColors;
-  final border = OutlineInputBorder(
-    borderRadius: AppRadius.brSm,
-    borderSide: BorderSide(color: colors.borderStrong, width: 1),
-  );
-  return InputDecoration(
-    isDense: true,
-    filled: true,
-    fillColor: colors.surface2,
-    contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-    border: border,
-    enabledBorder: border,
-    focusedBorder: OutlineInputBorder(
-      borderRadius: AppRadius.brSm,
-      borderSide: BorderSide(color: colors.borderFocus, width: 1.2),
-    ),
-  );
 }
 
 const _systemDefault = '__system_default__';

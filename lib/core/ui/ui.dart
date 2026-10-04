@@ -9,6 +9,8 @@ export 'ds_tokens.dart';
 export '../theme/appearance_theme.dart';
 export 'feedback/app_badge.dart';
 export 'inputs/app_chat_input.dart';
+export 'inputs/app_color_picker.dart';
+export 'inputs/app_select.dart';
 export 'inputs/app_slider.dart';
 export 'inputs/app_text_field.dart';
 export 'invite_dialog.dart';
