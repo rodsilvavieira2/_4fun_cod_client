@@ -56,12 +56,20 @@ flutter build windows --release --build-name $APP_VERSION --build-number $BN `
   --dart-define=OTEL_ENDPOINT=$env:OTEL_ENDPOINT --dart-define=OTEL_ORG=$env:OTEL_ORG
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-# --- assert dumpbin resolveu (mesma checagem da GHA) ---
+# --- assert DirectML resolveu (o BRIDGE DLL linka ORT estatico + DirectML;
+# nao o plugin: o plugin carrega o bridge via import lib e nao referencia
+# simbolo DirectML direto, entao o linker descarta o import do plugin por
+# /OPT:REF. Desde a0ed009 (bridge via DLL p/ fugir do LNK2038 /MDd) checar o
+# plugin sempre falha — o binario certo e fourfun_deepfilter_bridge.dll) ---
 $BUNDLE = 'build\windows\x64\runner\Release'
 & (Join-Path $PSScriptRoot 'verify-windows-webrtc.ps1') -Bundle $BUNDLE
 & $dumpbin /DEPENDENTS "$BUNDLE\_4fun_cod_client.exe" | Out-String | Write-Host
-$dllDeps = & $dumpbin /DEPENDENTS "$BUNDLE\flutter_webrtc_plugin.dll" 2>$null | Out-String
-if ($dllDeps -notmatch 'DirectML\.dll') { Write-Error 'flutter_webrtc_plugin.dll nao referencia DirectML.dll'; exit 1 }
+$bridgeDll = "$BUNDLE\fourfun_deepfilter_bridge.dll"
+if (-not (Test-Path $bridgeDll)) { Write-Error 'fourfun_deepfilter_bridge.dll ausente no bundle'; exit 1 }
+$bridgeDeps = & $dumpbin /DEPENDENTS $bridgeDll 2>$null | Out-String
+if ($bridgeDeps -notmatch 'DirectML\.dll') { Write-Error 'fourfun_deepfilter_bridge.dll nao referencia DirectML.dll'; exit 1 }
+if (-not (Test-Path "$BUNDLE\DirectML.dll")) { Write-Error 'DirectML.dll ausente no bundle'; exit 1 }
+Write-Host 'DirectML OK: bridge referencia e DLL esta no bundle'
 
 # --- portable + installer ---
 $redistUrl = 'https://aka.ms/vs/17/release/vc_redist.x64.exe'
