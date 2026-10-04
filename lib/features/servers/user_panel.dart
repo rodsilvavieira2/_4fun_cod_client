@@ -11,11 +11,12 @@ import '../../core/rtc/rtc_service.dart';
 import '../voice/go_live_modal.dart';
 import '../../core/ui/settings_modal.dart';
 import '../../core/ui/settings_modal_sidebar.dart';
+import '../../core/ui/own_profile_popover.dart';
+import '../../core/ui/profile_status_menu.dart';
 import '../../core/ui/ui.dart';
 import '../voice/voice_controls_provider.dart';
 import '../voice/voice_providers.dart';
 import '../voice/voice_volume_controller.dart';
-import '../profile/profile_repository.dart';
 
 /// Rodapé da sidebar no padrão Discord: sessão de voz no topo, ações de mídia
 /// agrupadas e identidade/controles pessoais na base.
@@ -45,7 +46,7 @@ class UserPanel extends ConsumerWidget {
     final colors = context.appColors;
     final authState = ref.watch(authControllerProvider).valueOrNull;
     final user = authState is Authenticated ? authState.user : null;
-    final name = user?.name ?? '…';
+    final name = user?.username ?? '…';
     final manualStatus = user?.manualStatus ?? 'ONLINE';
     final avatarUrl = user?.avatarUrl;
     final devices = ref.watch(audioDevicesProvider);
@@ -102,45 +103,66 @@ class UserPanel extends ConsumerWidget {
               ),
             Row(
               children: [
-                Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    Container(
-                      width: 34,
-                      height: 34,
-                      decoration: BoxDecoration(
-                        color: colors.surface2,
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: colors.borderHairline,
-                          width: 1,
-                        ),
+                Tooltip(
+                  message: 'Abrir meu perfil',
+                  child: Builder(
+                    builder: (avatarContext) => InkWell(
+                      key: const Key('own-profile-avatar'),
+                      borderRadius: BorderRadius.circular(AppRadius.full),
+                      onTap: user == null
+                          ? null
+                          : () {
+                              final box =
+                                  avatarContext.findRenderObject() as RenderBox;
+                              showOwnProfilePopover(
+                                context,
+                                userId: user.id,
+                                anchor:
+                                    box.localToGlobal(Offset.zero) & box.size,
+                              );
+                            },
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          Container(
+                            width: 34,
+                            height: 34,
+                            decoration: BoxDecoration(
+                              color: colors.surface2,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: colors.borderHairline,
+                                width: 1,
+                              ),
+                            ),
+                            alignment: Alignment.center,
+                            clipBehavior: Clip.antiAlias,
+                            child: avatarUrl != null
+                                ? AppFileImage(
+                                    path: avatarUrl,
+                                    width: 34,
+                                    height: 34,
+                                    fallback: _initial(name),
+                                  )
+                                : _initial(name),
+                          ),
+                          Positioned(
+                            right: -2,
+                            bottom: -2,
+                            child: PresenceDot(
+                              status: switch (manualStatus) {
+                                'IDLE' => PresenceStatus.idle,
+                                'DND' => PresenceStatus.dnd,
+                                'INVISIBLE' => PresenceStatus.offline,
+                                _ => PresenceStatus.online,
+                              },
+                              size: 10,
+                            ),
+                          ),
+                        ],
                       ),
-                      alignment: Alignment.center,
-                      clipBehavior: Clip.antiAlias,
-                      child: avatarUrl != null
-                          ? AppFileImage(
-                              path: avatarUrl,
-                              width: 34,
-                              height: 34,
-                              fallback: _initial(name),
-                            )
-                          : _initial(name),
                     ),
-                    Positioned(
-                      right: -2,
-                      bottom: -2,
-                      child: PresenceDot(
-                        status: switch (manualStatus) {
-                          'IDLE' => PresenceStatus.idle,
-                          'DND' => PresenceStatus.dnd,
-                          'INVISIBLE' => PresenceStatus.offline,
-                          _ => PresenceStatus.online,
-                        },
-                        size: 10,
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
                 const SizedBox(width: 9),
                 Expanded(
@@ -158,35 +180,10 @@ class UserPanel extends ConsumerWidget {
                           color: colors.textPrimary,
                         ),
                       ),
-                      PopupMenuButton<String>(
-                        tooltip: 'Alterar status',
-                        onSelected: (status) async {
-                          await ref
-                              .read(profileRepositoryProvider)
-                              .setStatus(status);
-                          await ref
-                              .read(authControllerProvider.notifier)
-                              .refreshCurrentUser();
-                        },
-                        itemBuilder: (_) => const [
-                          PopupMenuItem(value: 'ONLINE', child: Text('Online')),
-                          PopupMenuItem(value: 'IDLE', child: Text('Ausente')),
-                          PopupMenuItem(
-                            value: 'DND',
-                            child: Text('Não perturbe'),
-                          ),
-                          PopupMenuItem(
-                            value: 'INVISIBLE',
-                            child: Text('Invisível'),
-                          ),
-                        ],
+                      ProfileStatusMenu(
+                        status: manualStatus,
                         child: Text(
-                          switch (manualStatus) {
-                            'IDLE' => 'Ausente',
-                            'DND' => 'Não perturbe',
-                            'INVISIBLE' => 'Invisível',
-                            _ => 'Online',
-                          },
+                          profileStatusLabel(manualStatus),
                           style: TextStyle(
                             fontFamily: 'Geist',
                             fontSize: 11,

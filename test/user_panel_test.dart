@@ -11,13 +11,16 @@ import 'package:fourfun_cod_client/core/auth/auth_controller.dart';
 import 'package:fourfun_cod_client/core/auth/auth_state.dart';
 import 'package:fourfun_cod_client/core/rtc/rtc_providers.dart';
 import 'package:fourfun_cod_client/core/rtc/rtc_service.dart';
+import 'package:fourfun_cod_client/core/ui/profile_card.dart';
 import 'package:fourfun_cod_client/core/ui/settings_sections/voice_video_section.dart';
+import 'package:fourfun_cod_client/features/profile/profile_repository.dart';
 import 'package:fourfun_cod_client/features/servers/user_panel.dart';
 import 'package:fourfun_cod_client/features/voice/voice_audio_processing_provider.dart';
 import 'package:fourfun_cod_client/features/voice/voice_controls_provider.dart';
 import 'package:fourfun_cod_client/features/voice/voice_providers.dart';
 import 'package:fourfun_cod_client/features/voice/voice_volume_controller.dart';
 import 'package:fourfun_cod_client/shared/models/user.dart';
+import 'package:fourfun_cod_client/shared/models/profile.dart';
 
 /// Fake do AuthController: nunca toca em backend/storage/dio.
 class _FakeAuthController extends AuthController {
@@ -139,6 +142,80 @@ void main() {
       expect(find.byWidgetPredicate((w) => w is AppIcon && w.icon == AppIcons.settings), findsOneWidget);
     },
   );
+
+  testWidgets('avatar abre o perfil real e fecha ao clicar fora', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    await tester.binding.setSurfaceSize(const Size(600, 640));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    const user = User(
+      id: 'user-1',
+      name: 'Rodrigo Silva',
+      username: 'rodrigo',
+      manualStatus: 'IDLE',
+    );
+    const profile = ProfileData(
+      userId: 'user-1',
+      username: 'rodrigo',
+      displayName: 'Rodrigo Silva',
+      name: 'Rodrigo Silva',
+      status: 'IDLE',
+      bio: 'Criando comunidades e conversas.',
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          authControllerProvider.overrideWith(
+            () => _FakeAuthController(const Authenticated(user: user)),
+          ),
+          rtcServiceProvider.overrideWithValue(_FakeRtcService()),
+          profileProvider((
+            userId: 'user-1',
+            serverId: null,
+          )).overrideWith((ref) async => profile),
+          visualCatalogProvider.overrideWith((ref) async => []),
+          profileFontsProvider.overrideWith((ref) async => []),
+        ],
+        child: const MaterialApp(
+          home: Scaffold(
+            body: Align(
+              alignment: Alignment.bottomLeft,
+              child: SizedBox(width: 310, child: UserPanel()),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('own-profile-avatar')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Rodrigo Silva'), findsOneWidget);
+    expect(find.text('@rodrigo'), findsOneWidget);
+    expect(find.text('Criando comunidades e conversas.'), findsOneWidget);
+    expect(find.text('Editar perfil'), findsOneWidget);
+    expect(find.text('Ausente'), findsNWidgets(2));
+    expect(
+      tester.getSize(find.byKey(const Key('own-profile-popover'))).height,
+      520,
+    );
+    expect(tester.getSize(find.byType(ProfileCard)).height, greaterThan(400));
+    expect(
+      tester.getTopLeft(find.byType(ProfileCard)).dy,
+      lessThan(
+        tester.getTopLeft(find.byKey(const Key('own-profile-avatar'))).dy,
+      ),
+    );
+    expect(
+      tester.getBottomLeft(find.byKey(const Key('own-profile-edit'))).dy,
+      lessThan(tester.getTopLeft(find.byKey(const Key('own-profile-avatar'))).dy),
+    );
+
+    await tester.tapAt(const Offset(550, 300));
+    await tester.pumpAndSettle();
+    expect(find.text('Editar perfil'), findsNothing);
+  });
 
   testWidgets('UserPanel tolera usuário ausente (estado de bootstrap)', (
     WidgetTester tester,
