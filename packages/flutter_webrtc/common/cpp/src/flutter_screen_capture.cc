@@ -5,12 +5,64 @@
 #include <cstdlib>
 #include <stdexcept>
 
+#ifdef _WIN32
+#include <chrono>
+#include <condition_variable>
+#include <mutex>
+#include <thread>
+#include <vector>
+#include "rtc_video_frame.h"
+#include "rtc_video_source.h"
+#endif
+
 #ifdef __linux__
 #include "portal_video_capturer.h"
 #include "task_runner.h"
 #endif
 
 namespace flutter_webrtc_plugin {
+
+#ifdef _WIN32
+class BlackFrameEmitter {
+ public:
+  explicit BlackFrameEmitter(scoped_refptr<RTCVideoSource> source)
+      : source_(std::move(source)), worker_([this] { Run(); }) {}
+
+  ~BlackFrameEmitter() {
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      stopped_ = true;
+    }
+    wake_.notify_one();
+    worker_.join();
+  }
+
+ private:
+  void Run() {
+    constexpr int width = 640;
+    constexpr int height = 360;
+    const std::vector<uint8_t> y(width * height, 16);
+    const std::vector<uint8_t> uv(width * height / 4, 128);
+    std::unique_lock<std::mutex> lock(mutex_);
+    while (!stopped_) {
+      lock.unlock();
+      auto frame = RTCVideoFrame::Create(width, height, y.data(), width,
+                                         uv.data(), width / 2, uv.data(),
+                                         width / 2);
+      if (frame) source_->OnCapturedFrame(frame);
+      lock.lock();
+      wake_.wait_for(lock, std::chrono::milliseconds(500),
+                     [this] { return stopped_; });
+    }
+  }
+
+  scoped_refptr<RTCVideoSource> source_;
+  std::mutex mutex_;
+  std::condition_variable wake_;
+  bool stopped_ = false;
+  std::thread worker_;
+};
+#endif
 namespace {
 
 #ifdef __linux__
@@ -70,6 +122,23 @@ scoped_refptr<MediaSource> CreatePortalMediaSource(
 
 FlutterScreenCapture::FlutterScreenCapture(FlutterWebRTCBase* base)
     : base_(base) {}
+
+FlutterScreenCapture::~FlutterScreenCapture() {
+#ifdef _WIN32
+  black_frame_emitter_.reset();
+#endif
+}
+
+void FlutterScreenCapture::StopBlackStream(const std::string& id) {
+#ifdef _WIN32
+  if (id == black_stream_id_) {
+    black_frame_emitter_.reset();
+    black_stream_id_.clear();
+  }
+#else
+  (void)id;
+#endif
+}
 
 bool FlutterScreenCapture::BuildDesktopSourcesList(const EncodableList& types,
                                                    bool force_reload) {
@@ -355,6 +424,63 @@ void FlutterScreenCapture::GetDisplayMedia(
     video_constraints = GetValue<EncodableMap>(it->second);
   }
 
+#ifdef _WIN32
+  const auto cleanup_failed_capture = [&]() {
+    if (loopback_capturer_) {
+      loopback_capturer_->Stop();
+      loopback_capturer_.reset();
+      loopback_audio_source_ = nullptr;
+    }
+    for (auto audio_track : stream->audio_tracks().std_vector()) {
+      stream->RemoveTrack(audio_track);
+      base_->local_tracks_.erase(audio_track->id().std_string());
+    }
+  };
+#endif
+
+  if (source_id == "fourfun:black") {
+#ifdef _WIN32
+    black_frame_emitter_.reset();
+    black_stream_id_.clear();
+    auto video_source = base_->factory_->CreateCustomVideoSource(
+        "fourfun_black_window_placeholder",
+        base_->ParseMediaConstraints(video_constraints));
+    if (!video_source) {
+      cleanup_failed_capture();
+      result->Error("GetDisplayMedia", "Black video source unavailable");
+      return;
+    }
+    auto track = base_->factory_->CreateVideoTrack(video_source, uuid.c_str());
+    if (!track) {
+      cleanup_failed_capture();
+      result->Error("GetDisplayMedia", "Black video track unavailable");
+      return;
+    }
+    EncodableMap info;
+    info[EncodableValue("id")] = EncodableValue(track->id().std_string());
+    info[EncodableValue("label")] = EncodableValue(track->id().std_string());
+    info[EncodableValue("kind")] = EncodableValue(track->kind().std_string());
+    info[EncodableValue("enabled")] = EncodableValue(track->enabled());
+    params[EncodableValue("videoTracks")] = EncodableList{EncodableValue(info)};
+    stream->AddTrack(track);
+    base_->local_tracks_[track->id().std_string()] = track;
+    base_->local_streams_[uuid] = stream;
+    black_stream_id_ = uuid;
+    black_frame_emitter_ = std::make_unique<BlackFrameEmitter>(video_source);
+    result->Success(EncodableValue(params));
+    return;
+#else
+    result->Error("GetDisplayMedia", "Black placeholder is Windows-only");
+    return;
+#endif
+  }
+
+#ifdef _WIN32
+  // A restored window replaces the placeholder; do not keep its frame loop.
+  black_frame_emitter_.reset();
+  black_stream_id_.clear();
+#endif
+
 #ifdef __linux__
   // On Linux, use xdg-desktop-portal as the platform source picker. Bypass
   // RTCDesktopMediaList enumeration so the request opens exactly one portal
@@ -450,19 +576,6 @@ void FlutterScreenCapture::GetDisplayMedia(
   if (IsWaylandSession() && IsPortalSourceId(source_id)) {
     source = CreatePortalMediaSource(source_id);
   }
-#endif
-#ifdef _WIN32
-  const auto cleanup_failed_capture = [&]() {
-    if (loopback_capturer_) {
-      loopback_capturer_->Stop();
-      loopback_capturer_.reset();
-      loopback_audio_source_ = nullptr;
-    }
-    for (auto audio_track : stream->audio_tracks().std_vector()) {
-      stream->RemoveTrack(audio_track);
-      base_->local_tracks_.erase(audio_track->id().std_string());
-    }
-  };
 #endif
   for (auto src : sources_) {
     if (src->id().std_string() == source_id) {

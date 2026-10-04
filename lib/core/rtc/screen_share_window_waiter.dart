@@ -9,8 +9,8 @@ class WindowShareWaitException implements Exception {
   final WindowShareWaitFailure reason;
 }
 
-/// Uma tentativa tem um prazo único, inclusive nas corridas de restauração.
-/// A espera não cria tracks nem áudio e não depende da vida do modal.
+/// Revalida a identidade da janela antes de devolver uma fonte WebRTC.
+/// Prazo nulo mantém a espera até restauração, fechamento ou cancelamento.
 class ScreenShareWindowWaiter {
   ScreenShareWindowWaiter({
     required this.backend,
@@ -21,7 +21,7 @@ class ScreenShareWindowWaiter {
 
   final NativeWindowShareBackend backend;
   final NativeShareWindowTarget target;
-  final Duration timeout;
+  final Duration? timeout;
   final Duration interval;
   final Stopwatch _elapsed;
   final _cancelled = Completer<void>();
@@ -35,7 +35,7 @@ class ScreenShareWindowWaiter {
     if (_cancelled.isCompleted) {
       throw const WindowShareWaitException(WindowShareWaitFailure.cancelled);
     }
-    if (_elapsed.elapsed >= timeout) {
+    if (timeout != null && _elapsed.elapsed >= timeout!) {
       throw const WindowShareWaitException(WindowShareWaitFailure.timeout);
     }
   }
@@ -43,12 +43,14 @@ class ScreenShareWindowWaiter {
   Future<T> _query<T>(Future<T> query) async {
     _check();
     final result = await Future.any<T>([
-      query.timeout(
-        timeout - _elapsed.elapsed,
-        onTimeout: () => throw const WindowShareWaitException(
-          WindowShareWaitFailure.timeout,
-        ),
-      ),
+      timeout == null
+          ? query
+          : query.timeout(
+              timeout! - _elapsed.elapsed,
+              onTimeout: () => throw const WindowShareWaitException(
+                WindowShareWaitFailure.timeout,
+              ),
+            ),
       _cancelled.future.then<T>(
         (_) => throw const WindowShareWaitException(
           WindowShareWaitFailure.cancelled,
@@ -60,7 +62,7 @@ class ScreenShareWindowWaiter {
   }
 
   Future<String> resolve({
-    required void Function() onWaiting,
+    required FutureOr<void> Function() onWaiting,
     bool requireFocus = false,
   }) async {
     _hasWaited = _hasWaited || requireFocus;
@@ -83,7 +85,7 @@ class ScreenShareWindowWaiter {
         }
       }
       _hasWaited = true;
-      onWaiting();
+      await onWaiting();
       final timerDone = Completer<void>();
       final timer = Timer(interval, timerDone.complete);
       try {

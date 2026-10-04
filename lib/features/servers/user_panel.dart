@@ -104,9 +104,6 @@ class UserPanel extends ConsumerWidget {
               ),
             if (showVoiceActions && voiceState!.isScreenSharePending)
               ScreenSharePendingNotice(
-                waiting:
-                    voiceState!.screenShareStartStage ==
-                    ScreenShareStartStage.waitingForWindow,
                 onCancel: ref
                     .read(voiceControllerProvider(voiceArg!).notifier)
                     .cancelPendingScreenShare,

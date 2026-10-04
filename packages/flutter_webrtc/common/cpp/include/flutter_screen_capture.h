@@ -14,10 +14,16 @@
 
 namespace flutter_webrtc_plugin {
 
+class BlackFrameEmitter;
+
 class FlutterScreenCapture : public MediaListObserver,
                              public DesktopCapturerObserver {
  public:
   FlutterScreenCapture(FlutterWebRTCBase* base);
+  ~FlutterScreenCapture();
+
+  // The placeholder is a real video track, never a desktop capture.
+  void StopBlackStream(const std::string& id);
 
   void GetDisplayMedia(const EncodableMap& constraints,
                        std::unique_ptr<MethodResultProxy> result);
@@ -64,6 +70,10 @@ class FlutterScreenCapture : public MediaListObserver,
   std::unique_ptr<LoopbackCapturer> loopback_capturer_;
   // The custom audio source fed by the loopback capturer.
   scoped_refptr<RTCAudioSource> loopback_audio_source_;
+#ifdef _WIN32
+  std::unique_ptr<BlackFrameEmitter> black_frame_emitter_;
+  std::string black_stream_id_;
+#endif
 };
 
 }  // namespace flutter_webrtc_plugin

@@ -13,9 +13,11 @@ import 'screen_share_window_waiter_test.dart'
     show FakeWindowBackend, target, readyWindow, minimizedWindow;
 import 'voice_controller_test.dart' show FakeRtcService, FakeServersRepository;
 
-class _DelayedRtc extends FakeRtcService {
+class _DelayedRtc extends FakeRtcService
+    implements RtcScreenShareSourceSwitcher {
   Completer<void>? releaseStart;
   void Function()? beforeStart;
+  final replacementSources = <String>[];
   @override
   Future<void> startScreenShare(
     String? sourceId, {
@@ -29,6 +31,11 @@ class _DelayedRtc extends FakeRtcService {
       includeSystemAudio: includeSystemAudio,
       quality: quality,
     );
+  }
+
+  @override
+  Future<void> replaceScreenShareSource(String sourceId) async {
+    replacementSources.add(sourceId);
   }
 }
 
@@ -82,7 +89,7 @@ void main() {
   tearDown(() => container.dispose());
 
   test(
-    'minimizada não publica áudio/vídeo; restauração inicia uma vez',
+    'minimizada publica preto imediatamente e troca na primeira restauração',
     () async {
       final pending = voice.startScreenShare(
         null,
@@ -92,23 +99,21 @@ void main() {
         quality: RtcScreenShareQuality.q1080p60,
       );
       await pumpEventQueue();
-      expect(
-        state().screenShareStartStage,
-        ScreenShareStartStage.waitingForWindow,
-      );
-      expect(rtc.startScreenShareCalls, 0);
+      expect(state().isScreenSharing, isTrue);
+      expect(state().isScreenSharePending, isFalse);
+      expect(rtc.startScreenShareSources, [windowsBlackScreenShareSourceId]);
       await voice.startScreenShare(null, windowTarget: target);
       backend.window = readyWindow;
       await pending;
-      expect(rtc.startScreenShareSources, ['123']);
+      expect(rtc.replacementSources, ['123']);
       expect(rtc.startScreenShareSystemAudioFlags, [false]);
       expect(rtc.startScreenShareQualities, [RtcScreenShareQuality.q1080p60]);
       expect(state().isScreenSharing, isTrue);
       expect(state().isScreenSharePending, isFalse);
       expect(telemetry.events.map((e) => e.name), [
-        'screen_share.start.waiting',
-        'screen_share.start.ready',
         'screen_share.start.started',
+        'screen_share.start.ready',
+        'screen_share.start.restored',
       ]);
       for (final event in telemetry.events) {
         expect(event.attributes['attempt_id'], 'attempt-minimized');
@@ -117,6 +122,7 @@ void main() {
             'attempt_id',
             'duration_ms',
             'audio_failed',
+            'placeholder',
           }),
           isEmpty,
         );
@@ -124,16 +130,50 @@ void main() {
     },
   );
 
-  test('cancelamento e resposta tardia não iniciam transmissão', () async {
+  test('cancelamento encerra o preto e não restaura depois', () async {
     final pending = voice.startScreenShare(null, windowTarget: target);
     await pumpEventQueue();
     voice.cancelPendingScreenShare();
     backend.window = readyWindow;
     await pending;
-    expect(rtc.startScreenShareCalls, 0);
-    expect(rtc.stopScreenShareCalls, 0);
+    expect(rtc.startScreenShareSources, [windowsBlackScreenShareSourceId]);
+    expect(rtc.replacementSources, isEmpty);
+    expect(rtc.stopScreenShareCalls, 1);
     expect(state().isScreenSharePending, isFalse);
     expect(state().errorMessage, isNull);
+  });
+
+  test('botão de parar encerra transmissão preta', () async {
+    final pending = voice.startScreenShare(null, windowTarget: target);
+    await pumpEventQueue();
+    expect(state().isScreenSharing, isTrue);
+    await voice.stopScreenShare();
+    await pending;
+    expect(rtc.stopScreenShareCalls, 1);
+    expect(state().isScreenSharing, isFalse);
+  });
+
+  test('janela fechada após o início encerra o preto', () async {
+    final pending = voice.startScreenShare(null, windowTarget: target);
+    await pumpEventQueue();
+    backend.window = const NativeShareWindowState(
+      valid: false,
+      visible: false,
+      minimized: false,
+      foreground: false,
+    );
+    await pending;
+    expect(rtc.stopScreenShareCalls, 1);
+    expect(state().isScreenSharing, isFalse);
+    expect(state().errorMessage, contains('fechada'));
+  });
+
+  test('janela pronta inicia sem placeholder', () async {
+    backend.window = readyWindow;
+    await voice.startScreenShare(null, windowTarget: target);
+    expect(rtc.startScreenShareSources, ['123']);
+    expect(rtc.replacementSources, isEmpty);
+    expect(state().isScreenSharing, isTrue);
   });
 
   test('leave cancela e não muda a sessão depois de restaurar', () async {
@@ -143,7 +183,7 @@ void main() {
     backend.window = readyWindow;
     await pending;
     expect(state().status, VoiceSessionStatus.idle);
-    expect(rtc.startScreenShareCalls, 0);
+    expect(rtc.replacementSources, isEmpty);
   });
 
   test('descarte do controller cancela consulta nativa em voo', () async {
@@ -169,7 +209,7 @@ void main() {
       await pumpEventQueue();
       backend.window = readyWindow;
       await pending;
-      expect(rtc.startScreenShareCalls, 0);
+      expect(rtc.replacementSources, isEmpty);
       expect(state().isScreenSharePending, isFalse);
     });
   }
@@ -202,7 +242,7 @@ void main() {
     expect(rtc.publishedSounds, isNot(contains(RtcVoiceSound.streamStart)));
   });
 
-  test('Alt+Tab na criação volta a esperar e preserva opções', () async {
+  test('Alt+Tab na criação publica preto e preserva opções', () async {
     backend.window = readyWindow;
     rtc.failStartScreenShareTimes = 1;
     var attempts = 0;
@@ -215,14 +255,13 @@ void main() {
       includeSystemAudio: false,
     );
     await pumpEventQueue();
-    expect(
-      state().screenShareStartStage,
-      ScreenShareStartStage.waitingForWindow,
-    );
+    expect(state().isScreenSharing, isTrue);
+    expect(state().isScreenSharePending, isFalse);
     backend.window = readyWindow;
     await pending;
     expect(attempts, 2);
-    expect(rtc.startScreenShareSources, ['123']);
+    expect(rtc.startScreenShareSources, [windowsBlackScreenShareSourceId]);
+    expect(rtc.replacementSources, ['123']);
     expect(rtc.startScreenShareSystemAudioFlags, [false]);
   });
 }

@@ -54,7 +54,7 @@ import 'screen_share_adaptive.dart';
 /// - `ScreenShareCaptureOptions.sourceId` é opcional; sem sourceId, o SDK
 ///   delega a seleção de janela/display ao portal nativo do SO via
 ///   `navigator.mediaDevices.getDisplayMedia`;
-class LiveKitRtcService implements RtcService {
+class LiveKitRtcService implements RtcService, RtcScreenShareSourceSwitcher {
   LiveKitRtcService({
     RoomOptions? roomOptions,
     NativeMediaServices? nativeMediaServices,
@@ -853,6 +853,18 @@ class LiveKitRtcService implements RtcService {
     _screenShareEffective = _screenShareQuality;
     _adaptiveController.setTarget(_screenShareQuality);
     _bumpScreenShareEpoch();
+  }
+
+  @override
+  Future<void> replaceScreenShareSource(String sourceId) async {
+    final publication = _room?.localParticipant?.getTrackPublicationBySource(
+      TrackSource.screenShareVideo,
+    );
+    final track = publication?.track;
+    if (track is! LocalVideoTrack) {
+      throw StateError('Screen share track unavailable');
+    }
+    await track.restartTrack(screenShareCaptureOptionsFor(sourceId));
   }
 
   /// Publica o ÁUDIO DE SISTEMA (track de screenShareAudio) capturando o

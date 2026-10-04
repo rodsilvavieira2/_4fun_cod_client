@@ -20,7 +20,7 @@ import 'voice_controls_provider.dart';
 /// Estado da sessão de voz de um canal.
 enum VoiceSessionStatus { idle, connecting, connected, error }
 
-enum ScreenShareStartStage { idle, waitingForWindow, starting }
+enum ScreenShareStartStage { idle, starting }
 
 /// Fonte visual destacada quando uma pessoa publica câmera e tela ao mesmo
 /// tempo. O grid trata as duas publicações como tiles irmãos.
@@ -654,26 +654,46 @@ class VoiceController
         joinGeneration == _joinGeneration &&
         state.status == VoiceSessionStatus.connected &&
         !state.isReconnecting;
-    void waiting() {
-      if (!active() ||
-          state.screenShareStartStage ==
-              ScreenShareStartStage.waitingForWindow) {
-        return;
-      }
-      state = state.copyWith(
-        screenShareStartStage: ScreenShareStartStage.waitingForWindow,
-      );
-      _shareDiagnostic('waiting', {
-        'duration_ms': '${elapsed.elapsedMilliseconds}',
-      });
-    }
-
     state = state.copyWith(
       screenShareStartStage: ScreenShareStartStage.starting,
       errorMessage: null,
     );
     bool audioFailed = false;
     bool publishAttempted = false;
+    bool blackPublished = false;
+    Future<void> publishBlack() async {
+      if (!active() || blackPublished) return;
+      publishAttempted = true;
+      try {
+        await rtc.startScreenShare(
+          windowsBlackScreenShareSourceId,
+          includeSystemAudio: includeSystemAudio,
+          quality: quality,
+        );
+      } on SystemAudioPublishException {
+        // O vídeo preto já foi publicado; o áudio é opcional.
+        audioFailed = true;
+      }
+      if (!active()) return;
+      blackPublished = true;
+      state = state.copyWith(
+        isScreenSharing: true,
+        screenShareStartStage: ScreenShareStartStage.idle,
+        screenShareQuality: quality ?? rtc.screenShareQuality,
+        screenShareEffectiveQuality: null,
+        errorMessage: audioFailed
+            ? 'Compartilhamento iniciado sem áudio de sistema.'
+            : null,
+      );
+      _shareDiagnostic('started', {
+        'placeholder': 'true',
+        'audio_failed': '$audioFailed',
+        'duration_ms': '${elapsed.elapsedMilliseconds}',
+      });
+      unawaited(_playSound(VoiceSound.streamStart));
+      unawaited(_publishSound(RtcVoiceSound.streamStart));
+    }
+
     try {
       if (windowTarget != null) {
         if (backend is! NativeWindowShareBackend) {
@@ -682,6 +702,7 @@ class VoiceController
         _windowWaiter = ScreenShareWindowWaiter(
           backend: backend as NativeWindowShareBackend,
           target: windowTarget,
+          timeout: null,
         );
       }
       var retry = false;
@@ -689,13 +710,53 @@ class VoiceController
         final waiter = _windowWaiter;
         if (waiter != null) {
           sourceId = await waiter.resolve(
-            onWaiting: waiting,
+            onWaiting: publishBlack,
             requireFocus: retry,
           );
           if (!active()) return;
           _shareDiagnostic('ready', {
             'duration_ms': '${elapsed.elapsedMilliseconds}',
           });
+        }
+        if (blackPublished) {
+          try {
+            if (rtc is RtcScreenShareSourceSwitcher) {
+              await (rtc as RtcScreenShareSourceSwitcher)
+                  .replaceScreenShareSource(sourceId!);
+            } else {
+              await rtc.stopScreenShare();
+              await rtc.startScreenShare(
+                sourceId,
+                includeSystemAudio: includeSystemAudio,
+                quality: quality,
+              );
+            }
+            break;
+          } catch (_) {
+            if (!active()) return;
+            final window = await (backend as NativeWindowShareBackend)
+                .readWindowState(windowTarget!)
+                .timeout(const Duration(seconds: 3));
+            if (!window.valid) {
+              throw const WindowShareWaitException(
+                WindowShareWaitFailure.closed,
+              );
+            }
+            if (window.capturable) rethrow;
+            // A janela minimizou durante a troca: restaura o preto e aguarda.
+            if (rtc is RtcScreenShareSourceSwitcher) {
+              await (rtc as RtcScreenShareSourceSwitcher)
+                  .replaceScreenShareSource(windowsBlackScreenShareSourceId);
+            } else {
+              await rtc.startScreenShare(
+                windowsBlackScreenShareSourceId,
+                includeSystemAudio: includeSystemAudio,
+                quality: quality,
+              );
+            }
+            retry = true;
+            continue;
+          }
         }
         state = state.copyWith(
           screenShareStartStage: ScreenShareStartStage.starting,
@@ -724,10 +785,15 @@ class VoiceController
           // Alt+Tab entre validação e captura: descarta tracks parciais.
           await rtc.stopScreenShare();
           retry = true;
-          waiting();
         }
       }
       if (!active()) return;
+      if (blackPublished) {
+        _shareDiagnostic('restored', {
+          'duration_ms': '${elapsed.elapsedMilliseconds}',
+        });
+        return;
+      }
       if (audioFailed) {
         // O VÍDEO saiu; só o áudio de sistema falhou (sem device monitor no
         // SO, permissão negada...). Mensagem específica — a sessão fica
@@ -782,7 +848,15 @@ class VoiceController
       _shareDiagnostic(error.reason.name, {
         'duration_ms': '${elapsed.elapsedMilliseconds}',
       });
+      if (blackPublished) {
+        try {
+          await rtc.stopScreenShare();
+        } catch (_) {
+          // A janela já foi perdida; mantém a sessão de voz intacta.
+        }
+      }
       state = state.copyWith(
+        isScreenSharing: false,
         errorMessage: switch (error.reason) {
           WindowShareWaitFailure.closed =>
             'A janela escolhida foi fechada. Selecione outra janela.',
@@ -800,9 +874,16 @@ class VoiceController
         'error_type': '${error.runtimeType}',
         'duration_ms': '${elapsed.elapsedMilliseconds}',
       });
+      if (blackPublished) {
+        try {
+          await rtc.stopScreenShare();
+        } catch (_) {
+          // Falha secundária de limpeza não substitui o erro original.
+        }
+      }
       state = state.copyWith(
         status: VoiceSessionStatus.connected,
-        isScreenSharing: current.isScreenSharing,
+        isScreenSharing: false,
         errorMessage: 'Não foi possível iniciar o compartilhamento.',
       );
     } finally {

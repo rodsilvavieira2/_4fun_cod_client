@@ -482,6 +482,7 @@ void FlutterWebRTC::HandleMethodCall(
     const EncodableMap params =
         GetValue<EncodableMap>(*method_call.arguments());
     const std::string stream_id = findString(params, "streamId");
+    StopBlackStream(stream_id);
     MediaStreamDispose(stream_id, std::move(result));
   } else if (method_call.method_name().compare("mediaStreamTrackSetEnable") ==
              0) {
@@ -506,6 +507,7 @@ void FlutterWebRTC::HandleMethodCall(
     const EncodableMap params =
         GetValue<EncodableMap>(*method_call.arguments());
     const std::string track_id = findString(params, "trackId");
+    StopBlackStream(track_id);
     MediaStreamTrackDispose(track_id, std::move(result));
   } else if (method_call.method_name().compare("restartIce") == 0) {
     if (!method_call.arguments()) {

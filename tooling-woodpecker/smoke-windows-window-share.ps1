@@ -11,6 +11,8 @@ using System.Runtime.InteropServices;
 public static class FourfunSmokeWindow {
   [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int command);
   [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr h);
 }
 '@
 $form = New-Object Windows.Forms.Form
@@ -64,6 +66,12 @@ $timer.Add_Tick({
         'passed' { $form.Close() }
         'failed' { $form.Close() }
       }
+    }
+    if ($status.stage -eq 'waiting') {
+      $form.Activate()
+      [FourfunSmokeWindow]::SetForegroundWindow($form.Handle) | Out-Null
+      [IO.File]::WriteAllText((Join-Path $SmokeDirectory 'focus-state.txt'),
+        "window=$($form.Handle) foreground=$([FourfunSmokeWindow]::GetForegroundWindow()) minimized=$([FourfunSmokeWindow]::IsIconic($form.Handle))")
     }
   }
   if ($script:elapsed.Elapsed.TotalSeconds -gt 90) {

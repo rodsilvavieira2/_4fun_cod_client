@@ -358,6 +358,14 @@ class SystemAudioPublishException implements Exception {
 /// Escopo voz: mic (Fase 4), câmera (Fase 5) e screen share (Fase 6). A UI
 /// conversa só com esta interface; a implementação concreta fica em
 /// `livekit_rtc_service.dart`.
+/// Fonte nativa que publica quadros pretos sem capturar outra janela/display.
+const windowsBlackScreenShareSourceId = 'fourfun:black';
+
+/// Troca a mídia da publicação existente sem anunciar uma nova transmissão.
+abstract interface class RtcScreenShareSourceSwitcher {
+  Future<void> replaceScreenShareSource(String sourceId);
+}
+
 abstract class RtcService {
   /// Conecta a uma sala de voz.
   ///

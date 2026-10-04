@@ -9,6 +9,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart' as rtc;
 import 'package:fourfun_cod_client/core/native/native_media_backend.dart';
+import 'package:fourfun_cod_client/core/rtc/rtc_service.dart';
 import 'package:fourfun_cod_client/core/rtc/screen_share_window_waiter.dart';
 import 'package:fourfun_cod_client/core/ui/screen_share_pending_notice.dart';
 
@@ -58,6 +59,30 @@ Future<Uint8List> _frame(rtc.MediaStreamTrack track, String name) async {
   return bytes;
 }
 
+Future<void> _blackFrame(rtc.MediaStreamTrack track) async {
+  final bytes = (await track.captureFrame().timeout(
+    const Duration(seconds: 10),
+  )).asUint8List();
+  await File('$_directory/placeholder.png').writeAsBytes(bytes);
+  final codec = await ui.instantiateImageCodec(bytes);
+  final image = (await codec.getNextFrame()).image;
+  final pixels = (await image.toByteData(
+    format: ui.ImageByteFormat.rawRgba,
+  ))!.buffer.asUint8List();
+  final isBlack =
+      image.width >= 320 &&
+      image.height >= 180 &&
+      Iterable<int>.generate(pixels.length ~/ 4).every((i) {
+        final offset = i * 4;
+        return pixels[offset] < 10 &&
+            pixels[offset + 1] < 10 &&
+            pixels[offset + 2] < 10;
+      });
+  image.dispose();
+  codec.dispose();
+  if (!isBlack) throw StateError('Placeholder is not black');
+}
+
 Future<void> _gather(rtc.RTCPeerConnection peer) async {
   final deadline = Stopwatch()..start();
   while (await peer.getIceGatheringState() !=
@@ -83,6 +108,7 @@ Future<void> _smoke() async {
   rtc.MediaStream? stream;
   rtc.RTCPeerConnection? sender;
   rtc.RTCPeerConnection? receiver;
+  NativeShareWindowTarget? selectedWindow;
   final renderer = rtc.RTCVideoRenderer();
   try {
     const backend = WindowsScreenShareBackend();
@@ -94,24 +120,16 @@ Future<void> _smoke() async {
       throw StateError('Minimized candidate missing');
     }
     final target = source.windowTarget!;
+    selectedWindow = target;
     final wrongPid = await backend.readWindowState(
       NativeShareWindowTarget(target.windowId, target.processId + 1),
     );
     if (wrongPid.valid) throw StateError('PID mismatch accepted');
     final waiter = ScreenShareWindowWaiter(backend: backend, target: target);
-    final id = await waiter.resolve(
-      onWaiting: () {
-        if (_stage.value != 'waiting') unawaited(_status('waiting'));
-      },
-    );
-    final ready = await backend.readWindowState(target);
-    if (!ready.capturable || !ready.foreground) {
-      throw StateError('Started before target focus');
-    }
     stream = await rtc.navigator.mediaDevices.getDisplayMedia({
       'audio': false,
       'video': {
-        'deviceId': {'exact': id},
+        'deviceId': {'exact': windowsBlackScreenShareSourceId},
         'mandatory': {'frameRate': 15.0},
       },
     });
@@ -124,7 +142,10 @@ Future<void> _smoke() async {
         received.complete(event);
       }
     };
-    await sender.addTrack(stream.getVideoTracks().single, stream);
+    final videoSender = await sender.addTrack(
+      stream.getVideoTracks().single,
+      stream,
+    );
     await sender.setLocalDescription(await sender.createOffer());
     await _gather(sender);
     await receiver.setRemoteDescription((await sender.getLocalDescription())!);
@@ -144,10 +165,35 @@ Future<void> _smoke() async {
     await firstRendered.future.timeout(const Duration(seconds: 10));
     final track = stream.getVideoTracks().single;
     await Future<void>.delayed(const Duration(seconds: 1));
+    await _blackFrame(track);
+    final placeholderDecoded = await _decodedFrames(receiver);
+    if (placeholderDecoded == 0) {
+      throw StateError('Receiver did not decode the black placeholder');
+    }
+    await _status('waiting');
+    final id = await waiter.resolve(onWaiting: () {}, requireFocus: true);
+    final ready = await backend.readWindowState(target);
+    if (!ready.capturable || !ready.foreground) {
+      throw StateError('Started before target focus');
+    }
+    final realStream = await rtc.navigator.mediaDevices.getDisplayMedia({
+      'audio': false,
+      'video': {
+        'deviceId': {'exact': id},
+        'mandatory': {'frameRate': 15.0},
+      },
+    });
+    await videoSender.replaceTrack(realStream.getVideoTracks().single);
+    for (final oldTrack in stream.getTracks()) {
+      await oldTrack.stop();
+    }
+    await stream.dispose();
+    stream = realStream;
+    await Future<void>.delayed(const Duration(seconds: 1));
     // captureFrame's native lookup uses trackId, which can shadow a local
     // track in an in-process loopback. Receiver stats independently prove
     // decoding; snapshots validate that the native source is not black.
-    final first = await _frame(track, 'before');
+    final first = await _frame(realStream.getVideoTracks().single, 'before');
     final decodeDeadline = Stopwatch()..start();
     var framesBefore = await _decodedFrames(receiver);
     while (framesBefore == 0 &&
@@ -169,7 +215,7 @@ Future<void> _smoke() async {
     await _waitForMarker('restored.marker');
     final framesAtRestore = await _decodedFrames(receiver);
     await Future<void>.delayed(const Duration(seconds: 1));
-    final second = await _frame(track, 'after');
+    final second = await _frame(realStream.getVideoTracks().single, 'after');
     final framesAfter = await _decodedFrames(receiver);
     if (framesAfter <= framesAtRestore) {
       throw StateError('Receiver stopped decoding after restoration');
@@ -188,6 +234,8 @@ Future<void> _smoke() async {
     await _status('passed', {
       'minimized_listed': true,
       'identity_checked': true,
+      'placeholder_black': true,
+      'placeholder_received': placeholderDecoded,
       'waited_for_focus': true,
       'frames_resumed_same_track': true,
       'received_via_peer_loopback': true,
@@ -196,10 +244,26 @@ Future<void> _smoke() async {
     });
     exit(0);
   } catch (error) {
-    await _status('failed', {
+    final details = <String, Object?>{
       'error_type': '${error.runtimeType}',
       'detail': '$error',
-    });
+      if (error is WindowShareWaitException) 'reason': error.reason.name,
+    };
+    if (selectedWindow != null) {
+      try {
+        final current = await const WindowsScreenShareBackend().readWindowState(
+          selectedWindow,
+        );
+        details.addAll({
+          'window_valid': current.valid,
+          'window_minimized': current.minimized,
+          'window_foreground': current.foreground,
+        });
+      } catch (_) {
+        // Diagnostic lookup is best-effort.
+      }
+    }
+    await _status('failed', details);
     exit(1);
   }
 }
@@ -216,10 +280,7 @@ void main() {
           child: ValueListenableBuilder<String>(
             valueListenable: _stage,
             builder: (context, value, child) => value == 'waiting'
-                ? ScreenSharePendingNotice(
-                    waiting: true,
-                    onCancel: () => exit(2),
-                  )
+                ? ScreenSharePendingNotice(onCancel: () => exit(2))
                 : Text('Window share smoke: $value'),
           ),
         ),

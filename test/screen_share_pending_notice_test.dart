@@ -12,15 +12,12 @@ void main() {
         home: Scaffold(
           body: SizedBox(
             width: 180,
-            child: ScreenSharePendingNotice(
-              waiting: true,
-              onCancel: () => cancelled = true,
-            ),
+            child: ScreenSharePendingNotice(onCancel: () => cancelled = true),
           ),
         ),
       ),
     );
-    expect(find.text('guardando voltar a janela'), findsOneWidget);
+    expect(find.text('Iniciando transmissão…'), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.tap(find.text('Cancelar'));
     expect(cancelled, isTrue);

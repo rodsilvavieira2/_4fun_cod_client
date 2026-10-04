@@ -4,12 +4,7 @@ import '../theme/appearance_theme.dart';
 
 /// Wrap mantém o cancelamento acessível até no rodapé estreito da sidebar.
 class ScreenSharePendingNotice extends StatelessWidget {
-  const ScreenSharePendingNotice({
-    super.key,
-    required this.waiting,
-    required this.onCancel,
-  });
-  final bool waiting;
+  const ScreenSharePendingNotice({super.key, required this.onCancel});
   final VoidCallback onCancel;
 
   @override
@@ -24,9 +19,7 @@ class ScreenSharePendingNotice extends StatelessWidget {
         children: [
           Semantics(
             liveRegion: true,
-            child: Text(
-              waiting ? 'guardando voltar a janela' : 'Iniciando transmissão…',
-            ),
+            child: const Text('Iniciando transmissão…'),
           ),
           TextButton(onPressed: onCancel, child: const Text('Cancelar')),
         ],

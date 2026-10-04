@@ -219,9 +219,6 @@ class _TheaterScreenState extends ConsumerState<TheaterScreen> {
             ),
             if (voice.isScreenSharePending)
               ScreenSharePendingNotice(
-                waiting:
-                    voice.screenShareStartStage ==
-                    ScreenShareStartStage.waitingForWindow,
                 onCancel: ref
                     .read(voiceControllerProvider(arg).notifier)
                     .cancelPendingScreenShare,

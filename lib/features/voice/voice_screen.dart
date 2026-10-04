@@ -287,9 +287,6 @@ class _ConnectedStageState extends ConsumerState<_ConnectedStage> {
           if (state.isReconnecting) const _ReconnectingBanner(),
           if (state.isScreenSharePending)
             ScreenSharePendingNotice(
-              waiting:
-                  state.screenShareStartStage ==
-                  ScreenShareStartStage.waitingForWindow,
               onCancel: notifier.cancelPendingScreenShare,
             ),
           if (state.isAudioBlocked)
@@ -849,11 +846,7 @@ class _EmptyVoiceStage extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            AppIcon(
-              AppIcons.videoOff,
-              size: 30,
-              color: colors.textSecondary,
-            ),
+            AppIcon(AppIcons.videoOff, size: 30, color: colors.textSecondary),
             const SizedBox(height: 10),
             Text(
               'Nenhuma transmissão disponível',
@@ -1138,9 +1131,7 @@ class _Controls extends StatelessWidget {
             if (isSpotlight)
               _mediaToggleButton(
                 colors: colors,
-                icon: state.filmstripVisible
-                    ? AppIcons.viewOff
-                    : AppIcons.view,
+                icon: state.filmstripVisible ? AppIcons.viewOff : AppIcons.view,
                 active: false,
                 activeColor: AppTokens.accentDanger,
                 tooltip: state.filmstripVisible
