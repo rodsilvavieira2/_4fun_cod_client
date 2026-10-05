@@ -63,6 +63,7 @@ dependencies:
   package_info_plus: ^10.2.1
   pasteboard: ^0.5.0
   url_launcher: ^6.3.2
+  desktop_drop: ^0.8.4
 
 dev_dependencies:
   flutter_test:

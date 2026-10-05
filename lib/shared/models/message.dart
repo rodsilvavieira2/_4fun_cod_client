@@ -4,12 +4,14 @@ import 'user.dart';
 enum ChatMessageKind {
   text,
   gif,
-  image;
+  image,
+  file;
 
   static ChatMessageKind fromApi(Object? value) {
     return switch (value) {
       'GIF' => ChatMessageKind.gif,
       'IMAGE' => ChatMessageKind.image,
+      'FILE' => ChatMessageKind.file,
       _ => ChatMessageKind.text,
     };
   }
@@ -18,14 +20,50 @@ enum ChatMessageKind {
     ChatMessageKind.text => 'TEXT',
     ChatMessageKind.gif => 'GIF',
     ChatMessageKind.image => 'IMAGE',
+    ChatMessageKind.file => 'FILE',
   };
 }
 
-/// Anexo de imagem de uma mensagem (`MessageAttachment` do Prisma).
+/// Extensões genéricas conhecidas (não-imagem): viram card de arquivo.
+/// Qualquer outra sem mime image/* e sem extensão de imagem cai no legado
+/// (assume imagem — todos os anexos antigos são do pipeline sharp→WebP).
+const _fileExtensions = {
+  'pdf',
+  'zip',
+  'rar',
+  '7z',
+  'tar',
+  'gz',
+  'txt',
+  'md',
+  'json',
+  'csv',
+  'doc',
+  'docx',
+  'xls',
+  'xlsx',
+  'ppt',
+  'pptx',
+  'mp3',
+  'wav',
+  'ogg',
+  'mp4',
+  'mkv',
+  'avi',
+  'mov',
+  'exe',
+  'apk',
+  'bin',
+};
+
+/// Anexo de mensagem (`MessageAttachment` do Prisma).
 ///
-/// `url` é nulo enquanto o upload está PENDING/PROCESSING; `status` resolve
-/// do `upload` aninhado (READY/FAILED) para o retry parcial por anexo.
-/// `isSpoiler` borra a imagem até o usuário revelar (estilo Discord).
+/// Imagens têm `url` + `width/height` e preview inline; arquivos genéricos
+/// têm `fileName`/`mimeType`/`size` e viram card de download. `url` é nulo
+/// enquanto o upload está PENDING/PROCESSING; `status` resolve do `upload`
+/// aninhado (READY/FAILED) para o retry parcial por anexo.
+/// `isSpoiler` borra a imagem até o usuário revelar (estilo Discord; só
+/// imagens).
 class MessageAttachment {
   const MessageAttachment({
     required this.id,
@@ -36,6 +74,9 @@ class MessageAttachment {
     required this.status,
     required this.createdAt,
     this.isSpoiler = false,
+    this.fileName,
+    this.mimeType,
+    this.size,
   });
 
   final String id;
@@ -43,6 +84,16 @@ class MessageAttachment {
   final String? url;
   final int? width;
   final int? height;
+
+  /// Nome original (servidor novo); nulo em mensagens antigas — a UI cai
+  /// p/ `arquivo-<id>.<ext>` derivado da url.
+  final String? fileName;
+
+  /// Mime real armazenado (servidor novo); nulo em mensagens antigas.
+  final String? mimeType;
+
+  /// Tamanho em bytes (servidor novo); nulo em mensagens antigas.
+  final int? size;
 
   /// `READY` | `PENDING` | `PROCESSING` | `FAILED` (default PENDING).
   final String status;
@@ -67,7 +118,44 @@ class MessageAttachment {
       status: status,
       createdAt: createdAt,
       isSpoiler: isSpoiler ?? this.isSpoiler,
+      fileName: fileName,
+      mimeType: mimeType,
+      size: size,
     );
+  }
+
+  /// `true` p/ preview inline (imagem com dimensões ou mime image/*).
+  /// Legado (sem `fileName/mimeType`, url sem extensão): assume imagem —
+  /// todos os anexos antigos são imagens do pipeline sharp→WebP.
+  bool get isImage {
+    final mime = mimeType?.toLowerCase() ?? '';
+    if (mime.isNotEmpty) return mime.startsWith('image/');
+    final name = (fileName ?? url ?? '').toLowerCase();
+    if (name.endsWith('.jpg') ||
+        name.endsWith('.jpeg') ||
+        name.endsWith('.png') ||
+        name.endsWith('.webp') ||
+        name.endsWith('.gif')) {
+      return true;
+    }
+    // Extensão genérica conhecida (pdf/zip/mp4/...) → arquivo.
+    final dot = name.lastIndexOf('.');
+    final ext = dot >= 0 && dot > name.lastIndexOf('/') ? name.substring(dot + 1) : '';
+    if (ext.isNotEmpty && _fileExtensions.contains(ext)) return false;
+    // Sem sinal de arquivo genérico: imagem legada.
+    return true;
+  }
+
+  /// Nome p/ exibição: original do servidor ou fallback da url.
+  String displayName(String fallbackPrefix) {
+    final name = fileName?.trim();
+    if (name != null && name.isNotEmpty) return name;
+    final url = this.url ?? '';
+    final dot = url.lastIndexOf('.');
+    final ext = dot >= 0 && dot > url.lastIndexOf('/')
+        ? url.substring(dot)
+        : '';
+    return '$fallbackPrefix-$id$ext';
   }
 
   static bool _parseSpoiler(Map<String, dynamic> json) {
@@ -102,6 +190,18 @@ class MessageAttachment {
           DateTime.tryParse(json['createdAt'] as String? ?? '') ??
           DateTime.fromMillisecondsSinceEpoch(0),
       isSpoiler: _parseSpoiler(json),
+      fileName:
+          (json['fileName'] as String?) ??
+          (json['file_name'] as String?) ??
+          (upload?['fileName'] as String?),
+      mimeType:
+          (json['mimeType'] as String?) ??
+          (json['mime_type'] as String?) ??
+          (json['contentType'] as String?) ??
+          (upload?['mimeType'] as String?),
+      size:
+          (json['size'] as num?)?.toInt() ??
+          (upload?['size'] as num?)?.toInt(),
     );
   }
 }

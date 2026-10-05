@@ -11,7 +11,7 @@ import '../../core/auth/auth_controller.dart';
 import '../../core/auth/auth_state.dart';
 import '../../core/links/external_link.dart';
 import '../../core/logging/app_logger.dart';
-import '../../core/storage/image_selection.dart';
+import '../../core/storage/chat_attachments.dart';
 import '../../core/ui/ui.dart';
 import '../../shared/models/message.dart';
 import '../../shared/models/servers.dart';
@@ -780,6 +780,7 @@ class _MessageTileState extends State<_MessageTile> {
     for (final attachment in message.attachments) {
       final url = attachment.url;
       if (url == null || attachment.status == 'FAILED') continue;
+      if (!attachment.isImage) continue;
       items.add(MediaItem(url: url, label: 'imagem-${attachment.id}'));
     }
     return items;
@@ -1085,10 +1086,14 @@ class _MessageTileState extends State<_MessageTile> {
       return message.content.isEmpty ? 'GIF' : '${message.content} GIF';
     }
     if (message.kind == ChatMessageKind.image ||
+        message.kind == ChatMessageKind.file ||
         message.attachments.isNotEmpty) {
       final count = message.attachments.length;
-      final images = count == 1 ? '1 imagem' : '$count imagens';
-      return message.content.isEmpty ? images : '${message.content} ($images)';
+      final files = message.attachments.any((a) => !a.isImage);
+      final label = files
+          ? (count == 1 ? '1 arquivo' : '$count arquivos')
+          : (count == 1 ? '1 imagem' : '$count imagens');
+      return message.content.isEmpty ? label : '${message.content} ($label)';
     }
     return message.content;
   }
@@ -2169,6 +2174,7 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
   static const _mentionLimit = 8;
 
   final TextEditingController _controller = TextEditingController();
+  final _dropzoneKey = GlobalKey<ChatAttachmentDropzoneState>();
   bool _sending = false;
   String? _gifUrl;
   ActiveMention? _activeMention;
@@ -2396,7 +2402,7 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
           setState(() => _attachments = slots);
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Falha ao enviar as imagens. Tente de novo.'),
+              content: Text('Falha ao enviar os arquivos. Tente de novo.'),
             ),
           );
         }
@@ -2422,31 +2428,65 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
     }
   }
 
-  /// Pick multiplo (file_selector, linux/windows): só bytes locais + preview.
-  /// Nenhum `POST /uploads` aqui — o upload roda ao apertar enviar.
-  Future<void> _pickImages() async {
+  /// Pick múltiplo (file_selector, linux/windows): qualquer arquivo até
+  /// 61 MB, só bytes locais + preview. Nenhum `POST /uploads` aqui — o
+  /// upload roda ao apertar enviar.
+  Future<void> _pickFiles() async {
     if (_sending || _gifUrl != null) return;
-    final files = await openFiles(acceptedTypeGroups: const [imageTypeGroup]);
+    final files = await openFiles();
     if (files.isEmpty || !mounted) return;
     final slots = [..._attachments];
     for (final file in files) {
-      if (slots.length >= kMaxChatAttachments) break;
-      final contentType = contentTypeForFileName(file.name);
-      if (contentType == null) {
-        _showPickError('Formato não suportado: ${file.name}');
-        continue;
+      final error = validateAttachmentFile(
+        fileName: file.name,
+        sizeBytes: 1, // conta p/ teto de 10 antes de ler bytes
+        currentCount: slots.length,
+      );
+      // validateAttachmentFile com size 1 só checa nome + teto; o tamanho
+      // real é validado após a leitura (evita ler 61MB+ à toa? não — lê
+      // e valida; file.length() do XFile exigiria stat extra).
+      if (error != null && error.contains('Limite de')) {
+        _showPickError(error);
+        break;
       }
       final bytes = await file.readAsBytes();
       if (!mounted) return;
-      if (bytes.length > maxImageBytes) {
-        _showPickError('${file.name}: máximo de 5 MB.');
+      final sized = validateAttachmentFile(
+        fileName: file.name,
+        sizeBytes: bytes.length,
+        currentCount: slots.length,
+      );
+      if (sized != null) {
+        _showPickError(sized);
         continue;
       }
       slots.add(
         ChatImageSlot(
           bytes: bytes,
           fileName: file.name,
-          contentType: contentType,
+          contentType: contentTypeForAnyFile(file.name),
+        ),
+      );
+      if (slots.length >= kMaxChatAttachments) break;
+    }
+    setState(() => _attachments = slots);
+  }
+
+  /// Arquivos vindos do dropzone (drag-and-drop ou Ctrl+V): já validados
+  /// por tamanho, só checa o teto de 10 aqui.
+  void _addDroppedFiles(List<PendingAttachment> files) {
+    if (_sending || _gifUrl != null || files.isEmpty) return;
+    final slots = [..._attachments];
+    for (final f in files) {
+      if (slots.length >= kMaxChatAttachments) {
+        _showPickError('Limite de $kMaxChatAttachments anexos por mensagem.');
+        break;
+      }
+      slots.add(
+        ChatImageSlot(
+          bytes: f.bytes,
+          fileName: f.fileName,
+          contentType: f.contentType,
         ),
       );
     }
@@ -2495,19 +2535,27 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
       onlineUserIds: onlineUserIds,
       presenceStatuses: presenceStatuses,
     );
-    return AppChatInput(
+    return ChatAttachmentDropzone(
+      key: _dropzoneKey,
       controller: _controller,
+      currentCount: _attachments.length,
       enabled: !_sending,
-      hintText: 'Mensagem em #${widget.channelName}',
-      canSendEmpty: _gifUrl != null || _attachments.isNotEmpty,
-      trailingActions: [
-        AppIconButton(
-          icon: AppIcons.image,
-          tooltip: 'Anexar imagens',
-          minSize: 30,
-          iconSize: 18,
-          onPressed: _sending || _gifUrl != null ? null : _pickImages,
-        ),
+      onFiles: _addDroppedFiles,
+      onError: _showPickError,
+      child: AppChatInput(
+        controller: _controller,
+        enabled: !_sending,
+        hintText: 'Mensagem em #${widget.channelName}',
+        canSendEmpty: _gifUrl != null || _attachments.isNotEmpty,
+        onPasteKey: () => _dropzoneKey.currentState?.triggerPaste(),
+        trailingActions: [
+          AppIconButton(
+            icon: AppIcons.image,
+            tooltip: 'Anexar arquivos (até 61 MB)',
+            minSize: 30,
+            iconSize: 18,
+            onPressed: _sending || _gifUrl != null ? null : _pickFiles,
+          ),
         const SizedBox(width: 2),
         Builder(
           builder: (anchorContext) => AppIconButton(
@@ -2534,6 +2582,7 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
       topPanel: _composerPanel(mentionOptions),
       onKeyEvent: _handleComposerKey,
       onSend: _handleSend,
+      ),
     );
   }
 
@@ -2758,7 +2807,8 @@ class _ComposerAttachmentsPanel extends StatelessWidget {
   }
 }
 
-/// Card Discord-like de um anexo: imagem 240x150 + toolbar + filename.
+/// Card Discord-like de um anexo: imagem 240x150 + toolbar + filename;
+/// arquivo genérico vira linha ícone + nome + tamanho (spoiler só imagens).
 class _AttachmentCard extends StatelessWidget {
   const _AttachmentCard({
     required this.slot,
@@ -2774,6 +2824,7 @@ class _AttachmentCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (!slot.isImage) return _FileSlotCard(slot: slot, onRemove: onRemove, onEdit: onEdit);
     return SizedBox(
       width: 240,
       child: Column(
@@ -2923,10 +2974,107 @@ class _AttachmentCard extends StatelessWidget {
   }
 }
 
+/// Linha de arquivo genérico no composer: ícone + nome + tamanho +
+/// ações renomear/remover (sem spoiler — só imagens borram).
+class _FileSlotCard extends StatelessWidget {
+  const _FileSlotCard({
+    required this.slot,
+    required this.onRemove,
+    required this.onEdit,
+  });
+
+  final ChatImageSlot slot;
+  final VoidCallback onRemove;
+  final VoidCallback onEdit;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 280,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: AppTokens.surface2,
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          border: Border.all(color: AppTokens.borderSubtle, width: 1),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          child: Row(
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: AppTokens.surface3,
+                  borderRadius: BorderRadius.circular(AppRadius.sm),
+                  border: Border.all(
+                    color: AppTokens.borderHairline,
+                    width: 1,
+                  ),
+                ),
+                child: AppIcon(
+                  AppIcons.fileDownload,
+                  size: 16,
+                  color: AppTokens.textSecondary,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      slot.fileName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontFamily: 'Geist',
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                        color: AppTokens.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      formatFileSize(slot.sizeBytes),
+                      style: const TextStyle(
+                        fontFamily: 'Geist',
+                        fontSize: 11.5,
+                        color: AppTokens.textMuted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              AppIconButton(
+                icon: AppIcons.edit,
+                tooltip: 'Renomear',
+                minSize: 28,
+                iconSize: 15,
+                onPressed: onEdit,
+              ),
+              AppIconButton(
+                icon: AppIcons.trash,
+                tooltip: 'Remover',
+                minSize: 28,
+                iconSize: 15,
+                color: const Color(0xFFF87171),
+                onPressed: onRemove,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Resultado do diálogo de edição simples do anexo (lápis).
 typedef EditAttachmentResult = ({String fileName, bool isSpoiler});
 
-/// Diálogo simples do lápis: renomear arquivo + switch spoiler.
+/// Diálogo simples do lápis: renomear arquivo + switch spoiler (só imagens).
 ///
 /// Preserva a extensão original se o usuário removê-la.
 Future<EditAttachmentResult?> showEditAttachmentDialog(
@@ -2935,6 +3083,7 @@ Future<EditAttachmentResult?> showEditAttachmentDialog(
 ) {
   final controller = TextEditingController(text: slot.fileName);
   var isSpoiler = slot.isSpoiler;
+  final isImage = slot.isImage;
   return showDialog<EditAttachmentResult>(
     context: context,
     builder: (dialogContext) => StatefulBuilder(
@@ -2991,28 +3140,29 @@ Future<EditAttachmentResult?> showEditAttachmentDialog(
                 )),
               ),
               const SizedBox(height: 8),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                dense: true,
-                title: const Text(
-                  'Marcar como spoiler',
-                  style: TextStyle(
-                    fontFamily: 'Geist',
-                    fontSize: 13,
-                    color: AppTokens.textSecondary,
+              if (isImage)
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                  title: const Text(
+                    'Marcar como spoiler',
+                    style: TextStyle(
+                      fontFamily: 'Geist',
+                      fontSize: 13,
+                      color: AppTokens.textSecondary,
+                    ),
                   ),
-                ),
-                subtitle: const Text(
-                  'A imagem fica borrada até alguém revelar.',
-                  style: TextStyle(
-                    fontFamily: 'Geist',
-                    fontSize: 11.5,
-                    color: AppTokens.textMuted,
+                  subtitle: const Text(
+                    'A imagem fica borrada até alguém revelar.',
+                    style: TextStyle(
+                      fontFamily: 'Geist',
+                      fontSize: 11.5,
+                      color: AppTokens.textMuted,
+                    ),
                   ),
+                  value: isSpoiler,
+                  onChanged: (v) => setDialogState(() => isSpoiler = v),
                 ),
-                value: isSpoiler,
-                onChanged: (v) => setDialogState(() => isSpoiler = v),
-              ),
             ],
           ),
         ),

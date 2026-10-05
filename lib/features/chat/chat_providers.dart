@@ -14,9 +14,15 @@ import '../servers/servers_providers.dart';
 import 'chat_grouping.dart';
 import 'link_utils.dart';
 
-/// Slot de imagem a enviar (upload-no-enviar): os bytes vivem SÓ no composer
+import '../../core/storage/chat_attachments.dart';
+
+/// Slot de anexo a enviar (upload-no-enviar): os bytes vivem SÓ no composer
 /// até o usuário apertar enviar. O `POST /uploads` roda dentro de
 /// [ChatController.sendImageMessage], nunca no pick.
+///
+/// Aceita qualquer arquivo até 61 MB (`maxMessageFileBytes`); imagens têm
+/// preview inline, o resto vira card de arquivo. `isSpoiler` só tem efeito
+/// visual em imagens (igual ao Discord).
 class ChatImageSlot {
   ChatImageSlot({
     required this.bytes,
@@ -31,6 +37,11 @@ class ChatImageSlot {
 
   /// Blur estilo Discord até o destinatário revelar.
   final bool isSpoiler;
+
+  /// `true` p/ jpg/jpeg/png/webp/gif (preview inline).
+  bool get isImage => isImageFileName(fileName);
+
+  int get sizeBytes => bytes.length;
 
   ChatImageSlot copyWith({
     Uint8List? bytes,
@@ -205,12 +216,14 @@ class ChatController
     );
   }
 
-  /// Envio de imagens (upload-no-enviar): insere a bolha otimista
+  /// Envio de anexos (upload-no-enviar): insere a bolha otimista
   /// (anexos `UPLOADING` com spinner), sobe os `POST /uploads` em paralelo
   /// e então `POST /messages`. Tudo-ou-nada: qualquer falha remove a bolha
   /// e relança — a screen restaura os slots no composer para reenvio.
   /// A confirmação é idempotente nos dois sentidos da corrida
   /// (resposta REST × evento `message.created` do WS).
+  /// Imagens puras usam kind IMAGE (compat); com qualquer arquivo genérico
+  /// usa FILE (servidor novo; clientes antigos mostram card de download).
   Future<void> sendImageMessage({
     required String content,
     required List<ChatImageSlot> slots,
@@ -219,11 +232,14 @@ class ChatController
   }) async {
     final now = DateTime.now();
     final tempId = 'local-${now.microsecondsSinceEpoch}';
+    final hasFile = slots.any((s) => !s.isImage);
+    final kind =
+        hasFile ? ChatMessageKind.file : ChatMessageKind.image;
     final optimistic = ChatMessage(
       id: tempId,
       channelId: arg.channelId,
       content: content,
-      kind: ChatMessageKind.image,
+      kind: kind,
       author: author,
       createdAt: now,
       attachments: [
@@ -237,6 +253,9 @@ class ChatController
             status: 'UPLOADING',
             createdAt: now,
             isSpoiler: slots[i].isSpoiler,
+            fileName: slots[i].fileName,
+            mimeType: slots[i].contentType,
+            size: slots[i].sizeBytes,
           ),
       ],
     );
@@ -267,7 +286,7 @@ class ChatController
           .sendMessage(
             arg.channelId,
             content,
-            kind: ChatMessageKind.image,
+            kind: kind,
             replyToId: replyToId,
             uploadIds: uploadIds,
             attachments: metas,

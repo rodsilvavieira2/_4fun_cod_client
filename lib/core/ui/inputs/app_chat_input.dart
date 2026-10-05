@@ -31,6 +31,7 @@ class AppChatInput extends StatefulWidget {
     this.topPanel,
     this.canSendEmpty = false,
     this.onKeyEvent,
+    this.onPasteKey,
   });
 
   /// Dono do texto continua sendo o chamador (ele lê via [onSend] e decide
@@ -51,6 +52,11 @@ class AppChatInput extends StatefulWidget {
   final Widget? topPanel;
   final bool canSendEmpty;
   final FocusOnKeyEventCallback? onKeyEvent;
+
+  /// Disparado em Ctrl+V (sem consumir: o paste de texto nativo segue).
+  /// O dropzone de anexos usa p/ colar arquivos/imagens mesmo quando o
+  /// `Focus` ancestral não vê a tecla.
+  final VoidCallback? onPasteKey;
 
   @override
   State<AppChatInput> createState() => _AppChatInputState();
@@ -83,6 +89,17 @@ class _AppChatInputState extends State<AppChatInput> {
     }
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
     final key = event.logicalKey;
+    // Ctrl+V: avisa o dono (anexos) sem consumir — o paste de texto
+    // nativo precisa acontecer (fallback de paths é limpo depois).
+    if (key == LogicalKeyboardKey.keyV) {
+      final mods = HardwareKeyboard.instance;
+      if (mods.isControlPressed &&
+          !mods.isAltPressed &&
+          !mods.isMetaPressed) {
+        widget.onPasteKey?.call();
+      }
+      return KeyEventResult.ignored;
+    }
     if (key != LogicalKeyboardKey.enter &&
         key != LogicalKeyboardKey.numpadEnter) {
       return KeyEventResult.ignored;

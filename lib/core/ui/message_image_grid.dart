@@ -1,27 +1,27 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/links/external_link.dart';
+import '../../core/storage/chat_attachments.dart'
+    show formatFileSize, kMaxChatAttachments;
 import '../../shared/models/message.dart';
 import 'app_file_image.dart';
 import 'app_icon.dart';
+import 'app_icon_button.dart';
 import 'chat_image_actions.dart';
 import 'ds_tokens.dart';
 import 'media_lightbox.dart';
 import 'spoiler_overlay.dart';
 
-/// Tamanho máximo de cada anexo (mesmo teto do avatar/ícone do servidor).
-const kMaxChatAttachments = 10;
-
-/// Lista vertical de imagens de uma mensagem.
+/// Lista vertical de anexos de uma mensagem (imagens + arquivos).
 ///
-/// - Cada imagem usa o mesmo tamanho do caso de imagem única (até 360 de
-///   altura, respeita aspect ratio real com clamp 0.5–2.5).
-/// - Uma embaixo da outra com espaçamento de 4px (sem grade estilo Discord).
+/// - Imagem: mesmo tamanho do caso único (até 360 de altura, aspect real).
+/// - Arquivo genérico: card de download (ícone + nome + tamanho + abrir).
 /// - Anexo ainda PENDING/PROCESSING (url nula): spinner sobre o placeholder.
 /// - FAILED: card de erro inline com botão Tentar de novo ([onRetry] recebe
 ///   o `uploadId` — o server re-enfileira o staging, sem bytes no client).
-/// - Spoiler (`isSpoiler`): blur + badge até o 1º clique revelar (sessão
-///   apenas); o 2º clique abre o lightbox ([onOpen], `url`).
+/// - Spoiler (`isSpoiler`, só imagens): blur + badge até o 1º clique
+///   revelar (sessão apenas); o 2º clique abre o lightbox ([onOpen], `url`).
 /// - Toque numa imagem READY não-spoiler abre o lightbox direto.
 class MessageImageGrid extends StatelessWidget {
   const MessageImageGrid({
@@ -44,23 +44,167 @@ class MessageImageGrid extends StatelessWidget {
     final items = attachments.take(kMaxChatAttachments).toList();
     if (items.isEmpty) return const SizedBox.shrink();
     if (items.length == 1) {
-      return _SingleImage(
+      return _SingleAttachment(
         attachment: items.first,
         onRetry: onRetry,
         onOpen: onOpen,
       );
     }
-    // Múltiplas imagens: uma embaixo da outra, cada uma com o mesmo
-    // tamanho do caso de imagem única (sem grade, sem overlay `+N`).
+    // Múltiplos anexos: um embaixo do outro, cada um com o mesmo
+    // tamanho do caso único (sem grade, sem overlay `+N`).
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
         for (var i = 0; i < items.length; i++) ...[
           if (i > 0) const SizedBox(height: 4),
-          _SingleImage(attachment: items[i], onRetry: onRetry, onOpen: onOpen),
+          _SingleAttachment(
+            attachment: items[i],
+            onRetry: onRetry,
+            onOpen: onOpen,
+          ),
         ],
       ],
+    );
+  }
+}
+
+/// Roteia imagem → thumbnail; arquivo → card de download.
+class _SingleAttachment extends StatelessWidget {
+  const _SingleAttachment({required this.attachment, this.onRetry, this.onOpen});
+
+  final MessageAttachment attachment;
+  final ValueChanged<String>? onRetry;
+  final ValueChanged<String>? onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!attachment.isImage) {
+      return _FileCard(attachment: attachment, onRetry: onRetry);
+    }
+    return _SingleImage(
+      attachment: attachment,
+      onRetry: onRetry,
+      onOpen: onOpen,
+    );
+  }
+}
+
+/// Card de arquivo genérico: ícone + nome + tamanho + ação abrir/baixar.
+///
+/// Usa a url assinada do proxy (`/api/v1/files/...`); abre no navegador
+/// externo (download). PENDING/PROCESSING mostra spinner; FAILED mostra
+/// retry (mesmo contrato das imagens).
+class _FileCard extends StatelessWidget {
+  const _FileCard({required this.attachment, this.onRetry});
+
+  final MessageAttachment attachment;
+  final ValueChanged<String>? onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final failed = attachment.status == 'FAILED';
+    final ready = attachment.url != null && !failed;
+    final name = attachment.displayName('arquivo');
+    final sizeLabel = attachment.size != null
+        ? formatFileSize(attachment.size!)
+        : (attachment.mimeType ?? 'arquivo');
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 360),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: AppTokens.surface2,
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          border: Border.all(color: AppTokens.borderSubtle, width: 1),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: AppTokens.surface3,
+                  borderRadius: BorderRadius.circular(AppRadius.sm),
+                  border: Border.all(
+                    color: AppTokens.borderHairline,
+                    width: 1,
+                  ),
+                ),
+                child: failed
+                    ? AppIcon(
+                        AppIcons.imageMissing,
+                        size: 18,
+                        color: AppTokens.textMuted,
+                      )
+                    : ready
+                    ? AppIcon(
+                        AppIcons.fileDownload,
+                        size: 18,
+                        color: AppTokens.textSecondary,
+                      )
+                    : const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontFamily: 'Geist',
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: AppTokens.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      failed
+                          ? 'Falha ao processar'
+                          : ready
+                          ? sizeLabel
+                          : 'Enviando…',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontFamily: 'Geist',
+                        fontSize: 11.5,
+                        color: AppTokens.textMuted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              if (failed && onRetry != null)
+                TextButton(
+                  onPressed: () => onRetry!(attachment.uploadId),
+                  child: const Text('Tentar de novo'),
+                )
+              else if (ready)
+                AppIconButton(
+                  icon: AppIcons.download,
+                  tooltip: 'Baixar arquivo',
+                  minSize: 30,
+                  iconSize: 16,
+                  onPressed: () => openExternalLink(attachment.url!),
+                ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

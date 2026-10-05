@@ -131,4 +131,41 @@ void main() {
     expect(intercepted, isTrue);
     expect(sent, isEmpty);
   });
+
+  testWidgets('onPasteKey dispara em Ctrl+V sem consumir (texto segue)', (
+    tester,
+  ) async {
+    final controller = TextEditingController();
+    final sent = <String>[];
+    var pasted = 0;
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AppChatInput(
+            controller: controller,
+            onPasteKey: () => pasted++,
+            onSend: sent.add,
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byType(TextField));
+    await tester.pump();
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.control);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyV);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.control);
+    await tester.pump();
+
+    expect(pasted, 1);
+    expect(sent, isEmpty, reason: 'Ctrl+V nunca envia');
+    // Enter continua funcionando após o paste (tecla não consumida).
+    await tester.enterText(find.byType(TextField), 'oi');
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
+    expect(sent, ['oi']);
+  });
 }
