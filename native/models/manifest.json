@@ -1,0 +1,19 @@
+{
+  "models": [
+    {
+      "name": "dpdfnet2_48khz_hr.onnx",
+      "source": "sherpa-onnx release (speech-enhancement-models)",
+      "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/speech-enhancement-models/dpdfnet2_48khz_hr.onnx",
+      "vendored_path": "native/deepfilter_bridge/model/dpdfnet2_48khz_hr.onnx",
+      "min_bytes": 9000000,
+      "sample_rate_hz": 48000,
+      "license": "PENDENTE — verificar licença dos pesos antes do packaging (plano §35/ADR-006). Não inferir a licença do modelo pela licença do runtime.",
+      "sha256": "PENDENTE — registrar após verificação local"
+    }
+  ],
+  "norm_stats": [
+    "native/deepfilter_bridge/model/dpdfnet_spec_norm.f32",
+    "native/deepfilter_bridge/model/dpdfnet_erb_norm.f32"
+  ],
+  "policy": "Modelo versionado como asset com hash + origem; nunca download em callback de áudio; warmup antes do TX."
+}

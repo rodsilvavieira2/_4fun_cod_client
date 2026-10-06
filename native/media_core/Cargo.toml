@@ -1,0 +1,15 @@
+[package]
+name = "fourfun_media_core"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "4FunCode native media engine core (Rust): format, framing, rings, DSP contracts, mixer, session, telemetry. No audio I/O here — backends live behind AudioBackend."
+
+[lib]
+name = "fourfun_media_core"
+crate-type = ["rlib", "staticlib"]
+
+[dependencies]
+# Intencionalmente sem dependências externas no M1: std-only para build
+# offline e determinístico. CPAL/ONNX entram atrás de features quando o
+# spike M0 fechar pins (ver backends/cpal_stub.rs e dsp/enhancer.rs).

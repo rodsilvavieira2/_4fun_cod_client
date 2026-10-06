@@ -1,0 +1,6 @@
+[workspace]
+members = ["media_core"]
+# deepfilter_bridge fica fora até a extração validada (Fase 2): preserva
+# lockfile/pins próprios e não contamina o workspace novo.
+exclude = ["deepfilter_bridge"]
+resolver = "2"
