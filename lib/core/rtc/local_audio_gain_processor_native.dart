@@ -11,6 +11,12 @@ class LocalAudioGainProcessor implements TrackProcessor<AudioProcessorOptions> {
   double _gain;
   rtc.MediaStreamTrack? _track;
 
+  /// Verdade quando este processor está vinculado a [track]. A track
+  /// nativa morre em restart/switch/reconnect mesmo com o wrapper Dart e o
+  /// processor sobrevivendo — aplicar ganho no id morto estoura
+  /// `setVolume() Unable to find provided track` no plugin.
+  bool isBoundTo(rtc.MediaStreamTrack? track) => identical(_track, track);
+
   @override
   String get name => '4fun-input-gain';
 

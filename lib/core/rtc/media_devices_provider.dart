@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../logging/app_logger.dart';
 import 'rtc_providers.dart';
 import 'rtc_service.dart';
 
@@ -255,9 +256,16 @@ class AudioDevicesController extends Notifier<AudioDevicesState> {
       if (_disposed) return false;
       update();
       return true;
-    } catch (_) {
+    } catch (error) {
       if (_disposed) return false;
-      state = state.copyWith(errorMessage: error);
+      // Superfície curta na UI + detalhe no log de arquivo: o motivo real
+      // (device ausente vs. falha do setAudioInputDevice) decide o fix.
+      ref.read(appLoggerProvider).e(
+        'media devices: falha ao trocar dispositivo (id=$deviceId)',
+        error: error,
+        tag: 'voice',
+      );
+      state = state.copyWith(errorMessage: '$error ($deviceId)');
       return false;
     }
   }

@@ -70,8 +70,8 @@ class LiveKitRtcService implements RtcService, RtcScreenShareSourceSwitcher {
 
   /// Configuração de áudio da Fase 4 (default do serviço — a UI nunca
   /// configura isso): echo cancellation + noise suppression + AGC na
-  /// captura e Opus em ABR com teto de 64 kbps na publicação (range do
-  /// plano: 32–64k; o encoder WebRTC opera em ABR entre o piso e o teto).
+  /// captura e Opus em ABR com teto de 96 kbps e DTX desligado na
+  /// publicação do mic (paridade parcial com a live; DTX metalizava a voz).
   ///
   /// Pitfall 2.11.0: [AudioCaptureOptions] NÃO tem campo `enabled` — o
   /// "mic mutado por padrão" era feito no [connect] via `publication.mute()`;
@@ -91,7 +91,11 @@ class LiveKitRtcService implements RtcService, RtcScreenShareSourceSwitcher {
       defaults: const AudioCaptureOptions(),
     ),
     defaultAudioPublishOptions: const AudioPublishOptions(
-      encoding: AudioEncoding(maxBitrate: 64000),
+      // Mic em paridade parcial com a live (system-audio: 128k/stereo/DTX
+      // off): mono com teto de 96 kbps e DTX desligado. O DTX metalizava a
+      // voz nos 3 modos de processamento; mono preservado (fonte é 1 canal).
+      encoding: AudioEncoding(maxBitrate: 96000),
+      dtx: false,
     ),
     adaptiveStream: true,
     dynacast: true,
@@ -136,22 +140,32 @@ class LiveKitRtcService implements RtcService, RtcScreenShareSourceSwitcher {
   }) {
     final useWebRtcSuppression =
         noiseSuppressionMode == RtcNoiseSuppressionMode.webrtc;
+    // `off` é bypass total: desliga NS, AGC, HPF e AEC do WebRTC. Antes o
+    // `off` mantinha AEC+AGC+HPF ligados, o que impedia isolar o APM como
+    // causa de voz ruim (o AGC sozinho já causa pumping). Quem usa
+    // alto-falante e escolhe `off` assume o risco de eco; o default segue
+    // `webrtc`.
+    final isFullBypass = noiseSuppressionMode == RtcNoiseSuppressionMode.off;
     // Studio roda o pipeline próprio (DeepFilterNet + AGC/compressor/limiter
     // nativos, após o AEC): desliga o NS e o AGC do WebRTC para nenhum
     // estágio rodar em duplicidade. O AEC continua no WebRTC em todos os
-    // modos. Diagnóstico do silêncio (2026-09-16): a hipótese de gate do DF
-    // por falta de AGC caiu — inputPeak 30917 provou captura saudável em
-    // escala S16 e o clamp ±1 do pipeline zerava tudo. Com o AutoScale
-    // nativo normalizando a escala, o AGC próprio assume sozinho.
-    final useWebRtcAgc = noiseSuppressionMode != RtcNoiseSuppressionMode.studio;
+    // modos, exceto no bypass total acima. Diagnóstico do silêncio
+    // (2026-09-16): a hipótese de gate do DF por falta de AGC caiu —
+    // inputPeak 30917 provou captura saudável em escala S16 e o clamp ±1 do
+    // pipeline zerava tudo. Com o AutoScale nativo normalizando a escala,
+    // o AGC próprio assume sozinho.
+    final useWebRtcAgc =
+        !isFullBypass && noiseSuppressionMode != RtcNoiseSuppressionMode.studio;
     return AudioCaptureOptions(
       deviceId: deviceId,
-      echoCancellation: true,
+      echoCancellation: !isFullBypass,
       noiseSuppression: useWebRtcSuppression,
       autoGainControl: useWebRtcAgc,
       // Studio usa o HPF RBJ 60 Hz próprio (pré-rede): desliga o HPF do
       // WebRTC no modo studio para não filtrar duas vezes (round 10).
-      highPassFilter: noiseSuppressionMode != RtcNoiseSuppressionMode.studio,
+      highPassFilter:
+          !isFullBypass &&
+          noiseSuppressionMode != RtcNoiseSuppressionMode.studio,
       echoCancellationMode: defaults.echoCancellationMode,
       noiseSuppressionMode: defaults.noiseSuppressionMode,
       autoGainControlMode: defaults.autoGainControlMode,
@@ -1081,6 +1095,10 @@ class LiveKitRtcService implements RtcService, RtcScreenShareSourceSwitcher {
     final device = _resolveAudioDevice(devices, deviceId);
     if (device == null) {
       if (deviceId != null) {
+        _rtcWarn(
+          'rtc select input falhou: id não está na lista '
+          '(requested=$deviceId, disponíveis=${devices.length})',
+        );
         throw StateError('Microfone selecionado não está disponível.');
       }
       _selectedAudioInputId = null;
@@ -1088,12 +1106,32 @@ class LiveKitRtcService implements RtcService, RtcScreenShareSourceSwitcher {
     }
     final room = _room;
     if (room != null) {
-      await room.setAudioInputDevice(device);
+      try {
+        await room.setAudioInputDevice(device);
+      } catch (error, stackTrace) {
+        _rtcError(
+          'rtc select input falhou em setAudioInputDevice '
+          '(deviceId=${device.deviceId}, label=${device.label})',
+          error,
+          stackTrace,
+        );
+        rethrow;
+      }
       _selectedAudioInputId = deviceId;
       _syncRoomAudioCaptureOptions(room);
       await _applyInputVolumeToMicrophone();
     } else if (!kIsWeb) {
-      await _nativeMediaServices.audioDevices.selectInput(device);
+      try {
+        await _nativeMediaServices.audioDevices.selectInput(device);
+      } catch (error, stackTrace) {
+        _rtcError(
+          'rtc select input falhou fora de sala '
+          '(deviceId=${device.deviceId}, label=${device.label})',
+          error,
+          stackTrace,
+        );
+        rethrow;
+      }
     }
     _selectedAudioInputId = deviceId;
   }
@@ -1567,9 +1605,37 @@ class LiveKitRtcService implements RtcService, RtcScreenShareSourceSwitcher {
         ?.track;
     if (track is! LocalAudioTrack || _disposed) return;
 
+    try {
+      await _bindInputGainAndApply(track);
+    } catch (_) {
+      // Track trocada no meio do caminho (restart de modo, switch de
+      // device, reconnect): o processor guardava o id nativo morto.
+      // Revincula do zero e tenta uma vez. Se falhar de novo, não derruba
+      // a troca de dispositivo/modo — o ganho volta no próximo evento
+      // (subscribe/reconnect/device/unmute).
+      _localAudioGainProcessor = null;
+      try {
+        final fresh =
+            _room?.localParticipant
+                ?.getTrackPublicationBySource(TrackSource.microphone)
+                ?.track;
+        if (fresh is LocalAudioTrack && !_disposed) {
+          await _bindInputGainAndApply(fresh, forceRebind: true);
+        }
+      } catch (_) {}
+    }
+  }
+
+  Future<void> _bindInputGainAndApply(
+    LocalAudioTrack track, {
+    bool forceRebind = false,
+  }) async {
     final currentProcessor = _localAudioGainProcessor;
     final LocalAudioGainProcessor processor;
-    if (currentProcessor != null && track.processor == currentProcessor) {
+    if (!forceRebind &&
+        currentProcessor != null &&
+        track.processor == currentProcessor &&
+        currentProcessor.isBoundTo(track.mediaStreamTrack)) {
       processor = currentProcessor;
     } else {
       processor = createLocalAudioGainProcessor(_inputGain);

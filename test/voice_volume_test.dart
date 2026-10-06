@@ -95,7 +95,7 @@ void main() {
       expect(LiveKitRtcService.effectiveVolumeGain(1.0, 1.0), 1.0);
     });
 
-    test('opções do microfone fixam EC/high-pass e alternam ruído/AGC', () {
+    test('opções do microfone: webrtc processa, off é bypass total', () {
       final enabled = LiveKitRtcService.microphoneCaptureOptionsForTesting(
         noiseSuppressionEnabled: true,
         deviceId: 'mic-usb',
@@ -118,10 +118,10 @@ void main() {
       expect(enabled.typingNoiseDetection, isTrue);
 
       expect(disabled.deviceId, 'mic-usb');
-      expect(disabled.echoCancellation, isTrue);
+      expect(disabled.echoCancellation, isFalse);
       expect(disabled.noiseSuppression, isFalse);
-      expect(disabled.autoGainControl, isTrue);
-      expect(disabled.highPassFilter, isTrue);
+      expect(disabled.autoGainControl, isFalse);
+      expect(disabled.highPassFilter, isFalse);
       expect(disabled.voiceIsolation, isFalse);
       expect(disabled.typingNoiseDetection, isFalse);
 
