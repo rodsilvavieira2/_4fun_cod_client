@@ -51,6 +51,9 @@ steps:
 
   # Release (tags v*): build UNICO versionado + deposita no share p/ o publish.
   # Gate v* dentro do script (exit 78 = skipped nas ci-*).
+  # Signing Authenticode self-signed (CN=4FunCode): PFX fica em C:\CI\secrets\
+  # no runner windows-build (icacls restrito); senha/thumbprint via secrets
+  # (events tag+manual, nunca PR). Thumbprint pinning fail-closed.
   - name: release
     image: powershell
     environment:
@@ -66,5 +69,10 @@ steps:
         from_secret: otel_org
       OTEL_VIA_API:
         from_secret: otel_via_api
+      CODE_SIGNING_PASSWORD:
+        from_secret: code_signing_password
+      EXPECTED_THUMBPRINT:
+        from_secret: code_signing_thumbprint
+      CODE_SIGNING_PFX: C:\CI\secrets\4funcode-code-signing.pfx
     commands:
       - 'Set-ExecutionPolicy -Scope Process Bypass -Force; & ./tooling-woodpecker/release-windows.ps1; exit $LASTEXITCODE'

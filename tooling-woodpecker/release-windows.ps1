@@ -56,11 +56,33 @@ flutter build windows --release --build-name $APP_VERSION --build-number $BN `
   --dart-define=OTEL_ENDPOINT=$env:OTEL_ENDPOINT --dart-define=OTEL_ORG=$env:OTEL_ORG
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+# --- Authenticode: assinar binarios proprios ANTES da policy (hash da policy e do feed) ---
+# Gate: em tag v* exige CODE_SIGNING_PFX + CODE_SIGNING_PASSWORD; sem isso falha fechado.
+# Manual/dev sem PFX pula com warning (build continua unsigned).
+$BUNDLE = 'build\windows\x64\runner\Release'
+$signPfx = $env:CODE_SIGNING_PFX
+$signPw = $env:CODE_SIGNING_PASSWORD
+$signThumb = $env:EXPECTED_THUMBPRINT
+if ($signPfx -and $signPw) {
+  Write-Host "Authenticode: signing allowlist in $BUNDLE"
+  & (Join-Path $PSScriptRoot '..\scripts\windows\signing\sign-release.ps1') `
+    -ReleaseDirectory $BUNDLE -PfxPath $signPfx -PfxPassword $signPw
+  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+  & (Join-Path $PSScriptRoot '..\scripts\windows\signing\verify-release.ps1') `
+    -ReleaseDirectory $BUNDLE -ExpectedThumbprint $signThumb
+  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+} elseif ($TAG.StartsWith('v')) {
+  Write-Error 'Authenticode exigido em tag v*: defina CODE_SIGNING_PFX + CODE_SIGNING_PASSWORD no step release'; exit 1
+} else {
+  Write-Host 'Authenticode: PFX ausente, build segue unsigned (manual/dev).' -ForegroundColor Yellow
+}
+
 # --- updater portable policy (ANTES do portable.zip/installer/updater) ---
 # Sem desktop_updater_helper_policy.json ao lado do exe, o nativo falha com
 # "Windows helper preparation failed: Required install metadata file is unavailable".
 # Geracao 100% PowerShell (a VM nao tem `python` no PATH — exit 9009).
-$BUNDLE = 'build\windows\x64\runner\Release'
+# NOTA: policy e gerada DEPOIS da assinatura Authenticode acima, logo os
+# sha256 do exe+helper ja sao dos binarios assinados (feed valido).
 $WIN_PKG_ID = 'fourfun_cod_client'
 $WIN_KEY_ID = 'release-de4dba08820a7c59511f86ce'
 $WIN_PUBKEY = 'MUceP/D/eQGYTiNhtcu3B6p0czGJW+LVWsHyhUjkJgE='
@@ -106,10 +128,37 @@ if (-not (Test-Path $iscc)) { $iscc = 'C:\Program Files (x86)\Inno Setup 6\ISCC.
 & $iscc "/DAppVersion=$APP_VERSION" 'installer\windows.iss'
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 Get-ChildItem 'dist\windows' | Out-String | Write-Host
+
+# --- Authenticode: assinar instalador DEPOIS de finalizado (nada pode modifica-lo depois) ---
+$setups = Get-ChildItem 'dist\windows\*.exe' -ErrorAction SilentlyContinue
+if (-not $setups) { Write-Error 'setup.exe ausente em dist\windows'; exit 1 }
+if ($signPfx -and $signPw) {
+  foreach ($s in $setups) {
+    & (Join-Path $PSScriptRoot '..\scripts\windows\signing\sign-file.ps1') `
+      -File $s.FullName -PfxPath $signPfx -PfxPassword $signPw
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    & (Join-Path $PSScriptRoot '..\scripts\windows\signing\verify-signature.ps1') `
+      -File $s.FullName -ExpectedThumbprint $signThumb
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+  }
+  # Defender gate (fail-closed) + SHA-256 sidecars.
+  foreach ($s in $setups) {
+    & (Join-Path $PSScriptRoot '..\scripts\windows\signing\scan-defender.ps1') -Path $s.FullName
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    $h = Get-FileHash -LiteralPath $s.FullName -Algorithm SHA256
+    "$($h.Hash)  $($s.Name)" | Out-File "$($s.FullName).sha256" -Encoding ascii
+  }
+  $ph = Get-FileHash -LiteralPath $portable -Algorithm SHA256
+  "$($ph.Hash)  $(Split-Path $portable -Leaf)" | Out-File "$portable.sha256" -Encoding ascii
+} elseif ($TAG.StartsWith('v')) {
+  Write-Error 'Authenticode do instalador exigido em tag v*'; exit 1
+} else {
+  Write-Host 'Authenticode instalador: PFX ausente, setup segue unsigned (manual/dev).' -ForegroundColor Yellow
+}
 # Remove vc_redist do bundle antes do updater package (nao versionar MSVC).
 Remove-Item "$BUNDLE\vc_redist.x64.exe" -Force -ErrorAction SilentlyContinue
 
-# --- updater package (SEM sign: publish assina tudo de uma vez no host) ---
+# --- updater package (bundle de entrada ja contem binarios assinados + policy dos hashes assinados) ---
 dart run desktop_updater:package --input $BUNDLE --output 'dist\updater\windows' `
   --package-id 'fourfun_cod_client' --app-name $APP_NAME --version $APP_VERSION --build-number $BN `
   --platform windows --channel stable `
@@ -117,11 +166,15 @@ dart run desktop_updater:package --input $BUNDLE --output 'dist\updater\windows'
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 # --- deposita no share p/ o publish recolher (copia local, segundos) ---
+# Nunca depositar PFX/senha: apenas setup assinado + .sha256 + portable + feed.
 $share = "Z:\$TAG\windows"
 New-Item -ItemType Directory -Force -Path $share | Out-Null
 Copy-Item $portable "$share\" -Force
+if (Test-Path "$portable.sha256") { Copy-Item "$portable.sha256" "$share\" -Force }
 Get-ChildItem 'dist\windows\*.exe' | Copy-Item -Destination $share -Force
+Get-ChildItem 'dist\windows\*.exe.sha256' -ErrorAction SilentlyContinue | Copy-Item -Destination $share -Force
 Get-ChildItem 'dist\updater\windows\*.zip' | Copy-Item -Destination $share -Force
 Copy-Item 'dist\updater\windows\release.json' "$share\release.json" -Force
+if (Get-ChildItem $share -Filter *.pfx -ErrorAction SilentlyContinue) { Write-Error 'PFX detectado no share: ABORT'; exit 1 }
 Get-ChildItem $share | Out-String | Write-Host
 Write-Host "artefatos Windows em $share - publish assume daqui"

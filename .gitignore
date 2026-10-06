@@ -69,3 +69,13 @@ packages/flutter_webrtc/third_party/.libwebrtc_patched_extract/
 packages/flutter_webrtc/third_party/libwebrtc/fourfun-ducking-build.json
 packages/flutter_webrtc/third_party/libwebrtc/lib/libwebrtc.dll
 packages/flutter_webrtc/third_party/libwebrtc/lib/libwebrtc.dll.lib
+
+# Code signing private keys (never commit; public .cer lives in certificates/public/).
+*.pfx
+*.p12
+*.pvk
+*.key
+.signing/
+signing-temp/
+# Keep the public Authenticode cert versioned.
+!certificates/public/*.cer
