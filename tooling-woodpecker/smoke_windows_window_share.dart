@@ -11,7 +11,6 @@ import 'package:flutter_webrtc/flutter_webrtc.dart' as rtc;
 import 'package:fourfun_cod_client/core/native/native_media_backend.dart';
 import 'package:fourfun_cod_client/core/rtc/rtc_service.dart';
 import 'package:fourfun_cod_client/core/rtc/screen_share_window_waiter.dart';
-import 'package:fourfun_cod_client/core/ui/screen_share_pending_notice.dart';
 
 const _directory = String.fromEnvironment('SMOKE_DIR');
 final _stage = ValueNotifier('loading');
@@ -280,7 +279,10 @@ void main() {
           child: ValueListenableBuilder<String>(
             valueListenable: _stage,
             builder: (context, value, child) => value == 'waiting'
-                ? ScreenSharePendingNotice(onCancel: () => exit(2))
+                ? TextButton(
+                    onPressed: () => exit(2),
+                    child: const Text('Cancelar'),
+                  )
                 : Text('Window share smoke: $value'),
           ),
         ),

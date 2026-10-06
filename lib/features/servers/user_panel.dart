@@ -102,12 +102,6 @@ class UserPanel extends ConsumerWidget {
                     unawaited(_toggleScreenShare(context, ref)),
                 onLeave: onLeaveVoice,
               ),
-            if (showVoiceActions && voiceState!.isScreenSharePending)
-              ScreenSharePendingNotice(
-                onCancel: ref
-                    .read(voiceControllerProvider(voiceArg!).notifier)
-                    .cancelPendingScreenShare,
-              ),
             Row(
               children: [
                 Tooltip(

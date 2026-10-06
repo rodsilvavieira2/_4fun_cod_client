@@ -9,7 +9,6 @@ import '../../../core/telemetry/telemetry_service.dart';
 import '../../../core/theme/appearance_theme.dart';
 import '../../../core/ui/app_icon.dart';
 import '../../../core/ui/app_icon_button.dart';
-import '../../../core/ui/screen_share_pending_notice.dart';
 import '../../../core/ui/ds_tokens.dart';
 import '../../../core/ui/settings_modal.dart';
 import '../go_live_modal.dart';
@@ -217,12 +216,6 @@ class _TheaterScreenState extends ConsumerState<TheaterScreen> {
                   .read(theaterUiControllerProvider(arg).notifier)
                   .toggleChat(),
             ),
-            if (voice.isScreenSharePending)
-              ScreenSharePendingNotice(
-                onCancel: ref
-                    .read(voiceControllerProvider(arg).notifier)
-                    .cancelPendingScreenShare,
-              ),
             Expanded(
               child: LayoutBuilder(
                 builder: (context, constraints) {

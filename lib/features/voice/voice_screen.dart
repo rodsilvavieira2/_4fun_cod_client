@@ -285,10 +285,6 @@ class _ConnectedStageState extends ConsumerState<_ConnectedStage> {
       child: Column(
         children: [
           if (state.isReconnecting) const _ReconnectingBanner(),
-          if (state.isScreenSharePending)
-            ScreenSharePendingNotice(
-              onCancel: notifier.cancelPendingScreenShare,
-            ),
           if (state.isAudioBlocked)
             _AudioBlockedBanner(onTap: notifier.resumeAudio),
           Expanded(
