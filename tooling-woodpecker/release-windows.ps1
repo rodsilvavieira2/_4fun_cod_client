@@ -2,7 +2,7 @@
 # Roda no step `release` de .woodpecker/build-windows.yaml (gate v* abaixo).
 # Nao compila duas vezes: o step `build` do yaml so builda em tags nao-v*.
 # Nao assina nem sobe nada: sem DPAPI na VM, sem sftp pelo NAT.
-# O workflow `publish` (depends_on) recolhe do share, assina, monta o feed
+# O pipeline `publish` (depends_on) recolhe do share, assina, monta o feed
 # e faz o upload unico pelo link rapido do host.
 # Destino: Z:\<tag>\windows\ (= <repo>/infra/windows/<tag>/windows no host).
 $ErrorActionPreference = 'Stop'

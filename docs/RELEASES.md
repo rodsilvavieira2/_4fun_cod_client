@@ -1,6 +1,6 @@
 # Releases desktop — 4FunCode (Linux + Windows)
 
-Releases automáticos via GitHub Actions quando uma tag `vX.Y.Z` é enviada
+Releases automáticos via Woodpecker CI quando uma tag `vX.Y.Z` é enviada
 ao repo **do client** (`_4fun_cod_client`):
 
 ```bash
@@ -8,9 +8,10 @@ git tag v1.0.0
 git push origin v1.0.0
 ```
 
-Workflow: `.github/workflows/release-desktop.yml`
-(`Desktop Release`: Linux ubuntu-22.04 + Windows windows-2025 em paralelo
-→ job `release` publica os assets + `SHA256SUMS.txt`).
+Pipelines: `.woodpecker/build-linux.yaml` + `.woodpecker/build-windows.yaml`
+em paralelo → `publish.yaml` (fan-in) publica os assets no servidor de
+updates + `SHA256SUMS.txt`. Windows é assinado via Authenticode self-signed
+(`docs/WINDOWS-SIGNING.md`).
 
 Artefatos de `v1.0.0`:
 
@@ -95,16 +96,17 @@ app-archive.json            (sempre por último)
 ```
 
 - Chave: privada no bundle `DESKTOP_UPDATER_KEY_BUNDLE` + `DESKTOP_UPDATER_KEY_PASSPHRASE`
-  (GitHub secrets + Infisical); pública pinada em `lib/core/updates/update_config.dart`;
+  (Woodpecker secrets + Infisical); pública pinada em `lib/core/updates/update_config.dart`;
   perfil público em `desktop_updater.keys.json` (commitado).
 - IDs do feed (imutáveis após o 1º publish): Linux `io.github.rodsilvavieira2.fourfun`
   (= `APPLICATION_ID`), Windows `fourfun_cod_client` (= `name` do pubspec).
-- Ordem garantida pelo job `release`: zips + descriptors → `verify` hospedado →
+- Ordem garantida pelo step `publish`: zips + descriptors → `verify` hospedado →
   `app-archive.json` → checagem final. Releases seguintes estendem o archive
   publicado (histórico preservado).
 - Modo zip direto (`wholeDirectoryReplace`): no Windows preserva `unins*.exe` do
-  Inno; no Linux cobre instalação por extração (tar.gz). Sem Authenticode
-  (sem certificado) e sem modo instalador Inno — ver `doctor` no CI.
+  Inno; no Linux cobre instalação por extração (tar.gz). Binários Windows e
+  instalador levam Authenticode self-signed (`CN=4FunCode`, ver
+  `docs/WINDOWS-SIGNING.md`) — sem modo instalador Inno no auto-update.
 - Portable authority (obrigatório): cada bundle precisa conter, além do helper
   (`desktop_updater_install_helper.exe` / `desktop-updater-helper`),
   a policy portable gerada por `tooling-woodpecker/generate_portable_policy.py`
@@ -124,7 +126,7 @@ app-archive.json            (sempre por último)
 
 ```text
 [ ] código esperado está na branch principal do CLIENT
-[ ] FLUTTER_VERSION do workflow == SDK de dev
+[ ] FLUTTER_VERSION da imagem Woodpecker (`mobiledevops/flutter-sdk-image`) == SDK de dev
 [ ] pubspec.lock commitado
 [ ] build Linux local funciona (apenas linux/windows são suportados)
 [ ] ícone Windows ok (windows/runner/resources/app_icon.ico)
@@ -132,10 +134,10 @@ app-archive.json            (sempre por último)
 [ ] versão/tag correta (tags são imutáveis — nunca reutilizar vX.Y.Z)
 ```
 
-Pós-pipeline: conferir no GitHub `Releases → vX.Y.Z` os 4 instaladores +
+Pós-pipeline: conferir no servidor de updates (`.../vX.Y.Z/`) os 4 instaladores +
 5 do feed (`4FunCode-*-linux.zip`, `4FunCode-*-windows.zip`,
 `release-linux.json`, `release-windows.json`, `app-archive.json`).
-Se falhar antes do Release existir: `Re-run failed jobs`, sem recriar tag.
+Se falhar: corrigir e republicar em tag nova, sem reutilizar vX.Y.Z.
 Linux deve ser testado ao menos uma vez num Ubuntu 22.04 limpo
 (`ldd ./_4fun_cod_client`, ex. `libgtk-3-0`); `tray_manager`/`window_manager`
 podem exigir libs extras além de `libgtk-3-dev`.
