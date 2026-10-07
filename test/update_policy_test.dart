@@ -63,4 +63,55 @@ void main() {
       );
     });
   });
+
+  group('manual download url (VPS por plataforma)', () {
+    test('windows resolve para o setup.exe versionado', () {
+      expect(
+        manualDownloadUrl(
+          isWindows: true,
+          isLinux: false,
+          latestVersion: '1.2.4+59',
+        ),
+        'https://updates.srv1849611.hstgr.cloud/v1.2.4/4fun-cod-windows-x64-1.2.4-setup.exe',
+      );
+    });
+
+    test('linux resolve para o tar.gz versionado', () {
+      expect(
+        manualDownloadUrl(
+          isWindows: false,
+          isLinux: true,
+          latestVersion: '1.2.4+59',
+        ),
+        'https://updates.srv1849611.hstgr.cloud/v1.2.4/4fun-cod-linux-x64-1.2.4.tar.gz',
+      );
+    });
+
+    test('sem versao cai para o listing /latest/', () {
+      expect(
+        manualDownloadUrl(isWindows: true, isLinux: false),
+        updatesReleasesListingUrl,
+      );
+      expect(
+        manualDownloadUrl(
+          isWindows: false,
+          isLinux: true,
+          latestVersion: 'invalida',
+        ),
+        updatesReleasesListingUrl,
+      );
+      expect(
+        manualDownloadUrl(isWindows: false, isLinux: false, latestVersion: '1.2.4+59'),
+        updatesReleasesListingUrl,
+      );
+    });
+
+    test('extractUpdateVersionCore tolera build metadata', () {
+      expect(extractUpdateVersionCore('1.2.4+59'), '1.2.4');
+      expect(extractUpdateVersionCore('1.2.4'), '1.2.4');
+      expect(extractUpdateVersionCore(null), isNull);
+      expect(extractUpdateVersionCore(''), isNull);
+      expect(extractUpdateVersionCore('abc'), isNull);
+    });
+  });
 }

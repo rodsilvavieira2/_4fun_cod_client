@@ -99,9 +99,13 @@ class IoAppUpdateBackend extends AppUpdateBackend {
       _latestVersion = _label(state.descriptor.version, state.descriptor.buildNumber);
       _downloadProgress = null;
       _manualUpToDate = false;
-      // Sem install in-place: o banner vira aviso + link manual.
-      _errorMessage =
-          'Essa versão exige instalação manual ($updateReleasesPageUrl).';
+      // Sem install in-place: o banner vira aviso + link manual direto da VPS.
+      final manualUrl = manualDownloadUrl(
+        isWindows: Platform.isWindows,
+        isLinux: Platform.isLinux,
+        latestVersion: _latestVersion,
+      );
+      _errorMessage = 'Essa versão exige instalação manual ($manualUrl).';
       _set(AppUpdateStatus.available);
     } else if (state is UpdateBlockedBySupportPolicy) {
       _latestVersion = _label(state.descriptor.version, state.descriptor.buildNumber);
@@ -142,12 +146,12 @@ class IoAppUpdateBackend extends AppUpdateBackend {
     if (text.contains('Required install metadata file is unavailable') ||
         text.contains('Windows helper preparation failed')) {
       return 'Instalação atual sem arquivos do updater (helper/policy). '
-          'Reinstale pelo portable.zip ou setup mais recente.';
+          'Reinstale pelo setup mais recente ($updatesReleasesListingUrl).';
     }
     if (text.contains('installed identity marker') ||
         text.contains('Linux explicit install root requires')) {
       return 'Instalação Linux sem marker de identidade. '
-          'Reinstale pelo tar.gz mais recente (AppImage não tem auto-update).';
+          'Reinstale pelo tar.gz mais recente ($updatesReleasesListingUrl, AppImage não tem auto-update).';
     }
     if (text.contains('protected shared/system root') ||
         text.contains('must not be in a temporary tree')) {

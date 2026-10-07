@@ -54,15 +54,12 @@ cp "$IN/linux/$APP_NAME-$VERSION-linux.zip" "$IN/windows/$APP_NAME-$VERSION-wind
 dart run desktop_updater:release sign --release dist/updater/feed/release-linux.json
 dart run desktop_updater:release sign --release dist/updater/feed/release-windows.json
 
-# --- feed (linux + windows): estende o publicado (VPS, fallback GitHub, ou novo) ---
+# --- feed (linux + windows): estende o publicado na VPS (fail-closed) ---
 # Higiene fail-closed: o desktop_updater compara SO buildNumber quando ambos
 # existem. Sem isso, um publish fora de ordem (ex. 0.1.21+54 depois de 0.2.1+53)
 # vira "downgrade oferecido como update".
 if curl -sfL "$UPDATES_LATEST/app-archive.json" -o dist/updater/feed/app-archive.json; then
   echo "extending VPS feed"
-elif curl -sfL "https://github.com/rodsilvavieira2/_4fun_cod_client/releases/latest/download/app-archive.json" \
-    -o dist/updater/feed/app-archive.json; then
-  echo "seeding VPS feed from GitHub"
 else
   echo "first feed release"
   rm -f dist/updater/feed/app-archive.json

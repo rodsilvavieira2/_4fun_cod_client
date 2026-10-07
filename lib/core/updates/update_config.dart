@@ -25,9 +25,41 @@ const String updateChannel = 'stable';
 /// (feed estático na VPS — SPEC spec-private-releases-vps 2026-09-17).
 const String updateBaseUrl = 'https://updates.srv1849611.hstgr.cloud/latest';
 
-/// Página de releases (fallback de download manual).
-const String updateReleasesPageUrl =
-    'https://github.com/rodsilvavieira2/_4fun_cod_client/releases';
+/// Listing do feed na VPS (fallback de download manual quando a versão
+/// ainda é desconhecida).
+const String updatesReleasesListingUrl =
+    'https://updates.srv1849611.hstgr.cloud/latest/';
+
+/// Extrai o core semver de `versão+build` (`1.2.4+59` → `1.2.4`).
+/// Retorna `null` quando o rótulo é nulo, vazio ou inválido.
+String? extractUpdateVersionCore(String? versionLabel) {
+  final raw = versionLabel?.trim();
+  if (raw == null || raw.isEmpty) return null;
+  final core = raw.split('+').first.trim();
+  if (core.isEmpty) return null;
+  final ok = RegExp(r'^\d+\.\d+\.\d+$').hasMatch(core);
+  return ok ? core : null;
+}
+
+/// URL de download manual direto da VPS por plataforma.
+///
+/// Linux → `tar.gz` (extração, cobre auto-update); Windows → `setup.exe`
+/// (Inno). Sem versão conhecida, retorna o listing `/latest/`.
+String manualDownloadUrl({
+  required bool isWindows,
+  required bool isLinux,
+  String? latestVersion,
+}) {
+  final version = extractUpdateVersionCore(latestVersion);
+  if (version == null) return updatesReleasesListingUrl;
+  if (isWindows) {
+    return 'https://updates.srv1849611.hstgr.cloud/v$version/4fun-cod-windows-x64-$version-setup.exe';
+  }
+  if (isLinux) {
+    return 'https://updates.srv1849611.hstgr.cloud/v$version/4fun-cod-linux-x64-$version.tar.gz';
+  }
+  return updatesReleasesListingUrl;
+}
 
 /// URL do índice assinado (`app-archive.json → release.json → artefato`).
 Uri get updateAppArchiveUrl => Uri.parse('$updateBaseUrl/app-archive.json');

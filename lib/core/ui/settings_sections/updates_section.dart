@@ -1,7 +1,9 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../links/external_link.dart';
 import '../../updates/app_update_state.dart';
 import '../../updates/update_config.dart';
 import '../../updates/update_providers.dart';
@@ -138,22 +140,75 @@ class UpdatesSection extends ConsumerWidget {
                   ),
                 SettingsRow(
                   icon: AppIcons.link,
-                  title: 'Link de download',
-                  trailing: AppButton(
-                    label: 'Copiar',
-                    icon: AppIcons.copy,
-                    size: AppButtonSize.sm,
-                    variant: AppButtonVariant.ghost,
-                    onPressed: () async {
-                      await Clipboard.setData(
-                        const ClipboardData(text: updateReleasesPageUrl),
-                      );
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Link copiado.')),
-                        );
-                      }
-                    },
+                  title: 'Download manual',
+                  subtitle: manualDownloadUrl(
+                    isWindows:
+                        defaultTargetPlatform == TargetPlatform.windows,
+                    isLinux: defaultTargetPlatform == TargetPlatform.linux,
+                    latestVersion:
+                        backend.latestVersion ?? backend.currentVersion,
+                  ),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      AppButton(
+                        label: 'Abrir',
+                        icon: AppIcons.link,
+                        size: AppButtonSize.sm,
+                        variant: AppButtonVariant.secondary,
+                        onPressed: () async {
+                          final url = manualDownloadUrl(
+                            isWindows:
+                                defaultTargetPlatform ==
+                                TargetPlatform.windows,
+                            isLinux:
+                                defaultTargetPlatform == TargetPlatform.linux,
+                            latestVersion:
+                                backend.latestVersion ??
+                                backend.currentVersion,
+                          );
+                          final ok = await openExternalLink(url);
+                          if (!ok && context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Não foi possível abrir o link.',
+                                ),
+                              ),
+                            );
+                          }
+                        },
+                      ),
+                      const SizedBox(width: 8),
+                      AppButton(
+                        label: 'Copiar',
+                        icon: AppIcons.copy,
+                        size: AppButtonSize.sm,
+                        variant: AppButtonVariant.ghost,
+                        onPressed: () async {
+                          final url = manualDownloadUrl(
+                            isWindows:
+                                defaultTargetPlatform ==
+                                TargetPlatform.windows,
+                            isLinux:
+                                defaultTargetPlatform == TargetPlatform.linux,
+                            latestVersion:
+                                backend.latestVersion ??
+                                backend.currentVersion,
+                          );
+                          await Clipboard.setData(
+                            ClipboardData(text: url),
+                          );
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Link copiado.'),
+                              ),
+                            );
+                          }
+                        },
+                      ),
+                    ],
                   ),
                 ),
               ],

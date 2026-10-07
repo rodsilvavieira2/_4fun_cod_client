@@ -87,7 +87,7 @@ Definido em `installer/windows.iss` (Inno Setup 6). `AppId=com.fourfun.codclient
 ## Feed de auto-update (desktop_updater, schema-v3 assinado)
 
 O pipeline publica, além dos instaladores, o feed que o app consulta em
-`.../releases/latest/download/app-archive.json` (canal `stable`):
+`https://updates.srv1849611.hstgr.cloud/latest/app-archive.json` (canal `stable`):
 
 ```text
 4FunCode-<ver>-linux.zip   + release-linux.json
