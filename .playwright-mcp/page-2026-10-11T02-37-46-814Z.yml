@@ -1,7 +1,0 @@
-- generic [active] [ref=f1e1]:
-  - banner [ref=f1e2]:
-    - generic [ref=f1e3]: 4fun
-    - generic [ref=f1e4]: "#voz"
-  - main [ref=f1e5]:
-    - status [ref=f1e6]: Conectando…
-  - contentinfo [ref=f1e8]: O link expira quando a transmissão termina. Sem conta, sem chat — só vídeo.

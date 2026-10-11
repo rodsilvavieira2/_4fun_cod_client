@@ -1,7 +1,0 @@
-- generic [active] [ref=e1]:
-  - banner [ref=e2]:
-    - generic [ref=e3]: 4fun
-    - generic [ref=e4]: transmissão ao vivo
-  - main [ref=e5]:
-    - status [ref=e6]: Conectando…
-  - contentinfo [ref=e8]: O link expira quando a transmissão termina. Sem conta, sem chat — só vídeo.

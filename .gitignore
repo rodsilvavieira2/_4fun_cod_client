@@ -79,3 +79,6 @@ packages/flutter_webrtc/third_party/libwebrtc/lib/libwebrtc.dll.lib
 signing-temp/
 # Keep the public Authenticode cert versioned.
 !certificates/public/*.cer
+
+# browser-harness session artifacts
+.playwright-mcp/
