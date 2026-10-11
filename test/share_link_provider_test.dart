@@ -112,7 +112,7 @@ void main() {
       expect(state().link, isNull);
     });
 
-    test('fim do share (true→false) revoga o link e volta a idle', () async {
+    test('fim do share (true→false) revoga o link após a carência', () async {
       final notifier = buildLinks();
       await notifier.createLink();
       await settle();
@@ -124,10 +124,53 @@ void main() {
 
       voice().setSharing(false);
       await settle();
+      // Dentro da carência ainda não revogou.
+      expect(repo.revokedCodes, isEmpty);
+      expect(state().status, ShareLinkStatus.ready);
+
+      await Future<void>.delayed(
+        ScreenShareLinkController.stopRevokeGrace + const Duration(seconds: 1),
+      );
 
       expect(repo.revokedCodes, ['CODE123456']);
       expect(state().status, ShareLinkStatus.idle);
       expect(state().link, isNull);
+    });
+
+    test('flicker transitório (false→true na carência) não revoga', () async {
+      buildLinks();
+      await container
+          .read(screenShareLinkProvider(_arg).notifier)
+          .createLink();
+      await settle();
+
+      voice().setSharing(true);
+      await settle();
+      voice().setSharing(false);
+      await settle();
+      voice().setSharing(true);
+      await Future<void>.delayed(
+        ScreenShareLinkController.stopRevokeGrace + const Duration(seconds: 1),
+      );
+
+      expect(repo.revokedCodes, isEmpty);
+      expect(state().status, ShareLinkStatus.ready);
+    });
+
+    test('fechar o dialog (dispose) NÃO revoga o link', () async {
+      final sub = container.listen(screenShareLinkProvider(_arg), (_, _) {});
+      await container
+          .read(screenShareLinkProvider(_arg).notifier)
+          .createLink();
+      await settle();
+      expect(state().status, ShareLinkStatus.ready);
+
+      // Dialog fechado = sem listeners = autoDispose.
+      sub.close();
+      await settle();
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+
+      expect(repo.revokedCodes, isEmpty);
     });
 
     test('fim do share sem link ativo não chama o backend', () async {

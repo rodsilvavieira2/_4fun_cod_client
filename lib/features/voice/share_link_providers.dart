@@ -40,31 +40,63 @@ class ScreenShareLinkState {
 /// Link de espectador do share local (`autoDispose.family` por canal).
 ///
 /// Criação é explícita ([createLink], via dialog). A expiração é AUTOMÁTICA:
-/// observa `isScreenSharing` e revoga best-effort no `true → false`
-/// (cobre parar pelo tile, pela control bar, `leave` e disconnect — o
-/// webhook no backend é o garantidor final). Revogar sempre volta para
-/// `idle`: novo share exige link novo.
+/// observa `isScreenSharing` e revoga best-effort no `true → false` com
+/// carência de 5s (cobre parar pelo tile, pela control bar, `leave` e
+/// disconnect, sem matar o link num flicker transitório — o webhook no
+/// backend é o garantidor final). Revogar sempre volta para `idle`: novo
+/// share exige link novo.
+///
+/// Fechar o dialog NÃO revoga: o dispose do provider só cancela o debounce
+/// pendente. (Antes o `onDispose` revogava — como só o dialog observa este
+/// provider, fechar o modal matava o link ~15s após copiar.)
 class ScreenShareLinkController
     extends
         AutoDisposeFamilyNotifier<
           ScreenShareLinkState,
           ({String serverId, String channelId})
         > {
+  /// Carência antes de revogar no fim do share (anti-flicker).
+  static const stopRevokeGrace = Duration(seconds: 5);
+
+  Timer? _stopDebounce;
+  bool _disposed = false;
+
   @override
   ScreenShareLinkState build(({String serverId, String channelId}) arg) {
     ref.listen(
       voiceControllerProvider(arg).select((voice) => voice.isScreenSharing),
       (previous, next) {
         if (previous == true && next == false) {
-          unawaited(revokeActive());
+          _scheduleStopRevoke();
+        } else if (next == true) {
+          _stopDebounce?.cancel();
         }
       },
     );
     ref.onDispose(() {
-      final code = state.link?.code;
-      if (code != null) unawaited(_revokeBestEffort(code));
+      // Só cancela o debounce: fechar o dialog / trocar de tela não é fim
+      // de share. O fim real revoga via listener acima; o webhook garante.
+      _disposed = true;
+      _stopDebounce?.cancel();
     });
     return const ScreenShareLinkState();
+  }
+
+  /// Agenda a revogação do fim do share; cancela se voltar a compartilhar
+  /// (ou o provider for descartado) dentro da carência.
+  void _scheduleStopRevoke() {
+    _stopDebounce?.cancel();
+    final code = state.link?.code;
+    if (code == null) return;
+    _stopDebounce = Timer(stopRevokeGrace, () {
+      if (_disposed) return;
+      final sharing = ref.read(
+        voiceControllerProvider(arg).select((voice) => voice.isScreenSharing),
+      );
+      if (sharing) return;
+      if (state.link?.code != code) return;
+      unawaited(revokeActive());
+    });
   }
 
   /// Cria o link (`POST share-links`). Erro vira `error` com mensagem —
@@ -109,7 +141,8 @@ class ScreenShareLinkController
 }
 
 /// Link de espectador do share local — `autoDispose.family`: ao trocar de
-/// canal o provider é descartado (e o `onDispose` revoga o link pendente).
+/// canal o provider é descartado sem revogar (o fim real do share revoga
+/// via listener/webhook; fechar dialog não mata o link).
 final screenShareLinkProvider =
     AutoDisposeNotifierProvider.family<
       ScreenShareLinkController,
