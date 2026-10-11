@@ -26,3 +26,26 @@ class VoiceJoinInfo {
   /// Nome da sala LiveKit (`ch_<channelId>`).
   final String roomName;
 }
+
+/// Link de transmissão — `POST /servers/:serverId/channels/:channelId/share-links`.
+///
+/// Capability URL (`/w/<code>`) que abre o espectador em qualquer browser.
+/// Expira quando a transmissão termina (novo share exige link novo).
+class ScreenShareLinkInfo {
+  const ScreenShareLinkInfo({
+    required this.code,
+    required this.url,
+    this.expiresAt,
+  });
+
+  factory ScreenShareLinkInfo.fromJson(Map<String, dynamic> json) =>
+      ScreenShareLinkInfo(
+        code: json['code'] as String,
+        url: json['url'] as String,
+        expiresAt: DateTime.tryParse(json['expiresAt'] as String? ?? ''),
+      );
+
+  final String code;
+  final String url;
+  final DateTime? expiresAt;
+}

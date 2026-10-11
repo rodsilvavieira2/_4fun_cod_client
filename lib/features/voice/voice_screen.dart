@@ -8,6 +8,7 @@ import '../../core/rtc/rtc_providers.dart';
 import '../../core/rtc/rtc_service.dart';
 import '../../core/rtc/rtc_video_view.dart';
 import '../../core/telemetry/telemetry_service.dart';
+import '../../core/ui/share_link_dialog.dart';
 import '../../core/ui/ui.dart';
 import 'go_live_modal.dart';
 import 'voice_fullscreen_window.dart';
@@ -76,6 +77,8 @@ class VoiceScreen extends ConsumerWidget {
                   arg: arg,
                   transmitQuality: null,
                   onToggleFullscreen: null,
+                  onShareLinkFor: (item) =>
+                      _screenShareLink(context, notifier, item, arg),
                 ),
               ),
             ],
@@ -294,6 +297,12 @@ class _ConnectedStageState extends ConsumerState<_ConnectedStage> {
               arg: widget.arg,
               transmitQuality: _transmitQualityLabel(state),
               onToggleFullscreen: widget.onToggleFullscreen,
+              onShareLinkFor: (item) => _screenShareLink(
+                context,
+                notifier,
+                item,
+                widget.arg,
+              ),
               overlayVisible: overlayVisible,
             ),
           ),
@@ -432,12 +441,16 @@ class _ParticipantsPanel extends StatelessWidget {
     required this.arg,
     required this.transmitQuality,
     required this.onToggleFullscreen,
+    required this.onShareLinkFor,
     this.overlayVisible = true,
   });
 
   final VoiceState state;
   final VoiceController notifier;
   final ({String serverId, String channelId}) arg;
+
+  /// Fábrica do "copiar link" por item (nulo fora do tile de tela local).
+  final VoidCallback? Function(_VoiceMediaItem item) onShareLinkFor;
 
   /// Qualidade do Go Live local (nulo quando o local não transmite ou é
   /// desconhecida). Cada tile de tela exibe só se for do local.
@@ -501,6 +514,7 @@ class _ParticipantsPanel extends StatelessWidget {
               notifier: notifier,
               arg: arg,
               transmitQuality: transmitQuality,
+              onShareLinkFor: onShareLinkFor,
               overlayVisible: overlayVisible,
             ),
           );
@@ -513,6 +527,7 @@ class _ParticipantsPanel extends StatelessWidget {
             arg: arg,
             transmitQuality: transmitQuality,
             onToggleFullscreen: onToggleFullscreen,
+            onShareLinkFor: onShareLinkFor,
             overlayVisible: overlayVisible,
           ),
         );
@@ -716,6 +731,23 @@ VoidCallback? _screenStopShare(VoiceController notifier, _VoiceMediaItem item) {
   return notifier.stopScreenShare;
 }
 
+/// Abrir o link da transmissão (toolbar do tile local). Nulo para remoto e
+/// não-screen — só quem compartilha pode gerar o link.
+VoidCallback? _screenShareLink(
+  BuildContext context,
+  VoiceController notifier,
+  _VoiceMediaItem item,
+  ({String serverId, String channelId}) arg,
+) {
+  if (item.source != VoiceVideoSource.screen) return null;
+  if (!notifier.isLocalParticipant(item.participant.id)) return null;
+  return () => showShareLinkDialog(
+    context,
+    serverId: arg.serverId,
+    channelId: arg.channelId,
+  );
+}
+
 /// Palco em grade: uma pessoa pode contribuir com dois tiles irmãos (tela e
 /// câmera); participantes sem vídeo continuam presentes através do avatar.
 class _VideoGrid extends StatelessWidget {
@@ -724,6 +756,7 @@ class _VideoGrid extends StatelessWidget {
     required this.notifier,
     required this.arg,
     required this.transmitQuality,
+    required this.onShareLinkFor,
     this.overlayVisible = true,
   });
 
@@ -733,6 +766,9 @@ class _VideoGrid extends StatelessWidget {
 
   /// Qualidade do Go Live local (cada tile de tela exibe só se for local).
   final String? transmitQuality;
+
+  /// Fábrica do "copiar link" por item (nulo fora do tile de tela local).
+  final VoidCallback? Function(_VoiceMediaItem item) onShareLinkFor;
 
   /// Fullscreen imersivo: false esconde os badges dos tiles junto com o dock.
   final bool overlayVisible;
@@ -795,9 +831,10 @@ class _VideoGrid extends StatelessWidget {
                         isWatching: _isWatching(notifier, item),
                         onTap: _gridOnTap(notifier, item),
                         // Toolbar da transmissão: assistir/parar (remoto) ou
-                        // parar o share (local). Click no tile só foca.
+                        // parar o share + copiar link (local). Click no tile só foca.
                         onToggleWatch: _screenToggleWatch(notifier, item),
                         onStopShare: _screenStopShare(notifier, item),
+                        onShareLink: onShareLinkFor(item),
                         // Overlay de transmissão: cada tile de tela tem o
                         // seu (LIVE + qualidade local); expandir = destacar.
                         qualityLabel: item.source == VoiceVideoSource.screen
@@ -877,6 +914,7 @@ class _SpotlightLayout extends StatelessWidget {
     required this.arg,
     required this.transmitQuality,
     required this.onToggleFullscreen,
+    required this.onShareLinkFor,
     this.overlayVisible = true,
   });
 
@@ -886,6 +924,9 @@ class _SpotlightLayout extends StatelessWidget {
 
   /// Qualidade do Go Live local (o tile de tela exibe só se for local).
   final String? transmitQuality;
+
+  /// Fábrica do "copiar link" por item (nulo fora do tile de tela local).
+  final VoidCallback? Function(_VoiceMediaItem item) onShareLinkFor;
 
   /// Expansão do tile em destaque (takeover fullscreen).
   final VoidCallback? onToggleFullscreen;
@@ -923,6 +964,7 @@ class _SpotlightLayout extends StatelessWidget {
         notifier: notifier,
         arg: arg,
         transmitQuality: transmitQuality,
+        onShareLinkFor: onShareLinkFor,
         overlayVisible: overlayVisible,
       );
     }
@@ -956,6 +998,7 @@ class _SpotlightLayout extends StatelessWidget {
               // Toolbar da transmissão no destaque (mesma do grid).
               onToggleWatch: _screenToggleWatch(notifier, selected),
               onStopShare: _screenStopShare(notifier, selected),
+              onShareLink: onShareLinkFor(selected),
               // Destaque de tela: overlay com LIVE + qualidade local;
               // expandir abre o takeover fullscreen.
               qualityLabel: selected.source == VoiceVideoSource.screen

@@ -22,6 +22,7 @@ class TransmitTileToolbar extends StatelessWidget {
     this.audioAvailable,
     this.onToggleWatch,
     this.onStopShare,
+    this.onShareLink,
     this.visible = true,
   });
 
@@ -39,6 +40,9 @@ class TransmitTileToolbar extends StatelessWidget {
 
   /// Parar o share (local). Nulo = sem botão.
   final VoidCallback? onStopShare;
+
+  /// Abrir o link de transmissão (local). Nulo = sem botão.
+  final VoidCallback? onShareLink;
 
   /// Fade-out individual do tile: false some com fade (fica só o vídeo).
   final bool visible;
@@ -77,6 +81,13 @@ class TransmitTileToolbar extends StatelessWidget {
           activeColor: AppTokens.accentDanger,
           tooltip: 'Parar compartilhamento',
           onPressed: onStopShare,
+        ),
+      if (isLocal && onShareLink != null)
+        _toolbarToggleButton(
+          colors: colors,
+          icon: AppIcons.link,
+          tooltip: 'Copiar link da transmissão',
+          onPressed: onShareLink,
         ),
     ];
     if (buttons.isEmpty) return const SizedBox.shrink();

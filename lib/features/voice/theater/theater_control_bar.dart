@@ -128,13 +128,21 @@ class TheaterControlBar extends ConsumerWidget {
   /// a mesma pastilha tonal 40px dos demais botões da barra.
   Widget _moreButton(BuildContext context, WidgetRef ref, TheaterUiState ui) {
     final colors = context.appColors;
+    // `isScreenSharing` é o share LOCAL (espelho do botão) — só o sharer
+    // vê o item de link habilitado.
+    final canShareLink = ref.watch(
+      voiceControllerProvider(
+        arg,
+      ).select((voice) => voice.isScreenSharing),
+    );
     return AppMenuButton<TheaterMoreAction>(
       tooltip: 'Layout e ações extras',
       offset: const Offset(0, -8),
       padding: EdgeInsets.zero,
       onSelected: (action) =>
           handleTheaterMoreAction(context, ref, arg, action),
-      itemBuilder: (_) => theaterMoreMenuItems(ui),
+      itemBuilder: (_) =>
+          theaterMoreMenuItems(ui, canShareLink: canShareLink),
       child: Container(
         width: 40,
         height: 40,

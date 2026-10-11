@@ -99,6 +99,7 @@ class VoiceVideoTile extends ConsumerStatefulWidget {
     this.onTap,
     this.onToggleWatch,
     this.onStopShare,
+    this.onShareLink,
     this.qualityLabel,
     this.onExpand,
     this.isWatching = true,
@@ -127,6 +128,9 @@ class VoiceVideoTile extends ConsumerStatefulWidget {
 
   /// Parar o compartilhamento local (toolbar do tile local). Nulo = sem botão.
   final VoidCallback? onStopShare;
+
+  /// Abrir o link de transmissão (toolbar do tile local). Nulo = sem botão.
+  final VoidCallback? onShareLink;
 
   /// Rótulo da qualidade transmitida pelo LOCAL (ex.: `1080p60`); nulo
   /// quando desconhecido. Só renderiza no tile de tela do participante
@@ -339,6 +343,7 @@ class _VoiceVideoTileState extends ConsumerState<VoiceVideoTile> {
                   audioAvailable: participant.isSystemAudioEnabled,
                   onToggleWatch: widget.onToggleWatch,
                   onStopShare: widget.onStopShare,
+                  onShareLink: widget.onShareLink,
                   visible: widget.overlayVisible && _toolbarVisible,
                 ),
               // Moldura fixa para leitura sobre vídeo; fala ativa ganha primary.

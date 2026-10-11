@@ -5,6 +5,7 @@ import '../../../core/theme/appearance_theme.dart';
 import '../../../core/ui/app_icon.dart';
 import '../../../core/ui/ds_tokens.dart';
 import '../../../core/ui/menus/app_menu.dart';
+import '../../../core/ui/share_link_dialog.dart';
 import '../voice_providers.dart';
 import '../voice_video_tile.dart';
 import 'theater_ui_provider.dart';
@@ -15,12 +16,14 @@ enum TheaterMoreAction {
   layoutGrid,
   layoutFocus,
   toggleOverlays,
+  shareLink,
 }
 
 /// Itens do menu `⋯` no padrão compacto [AppMenu] do app (32px, Geist 13).
 List<PopupMenuEntry<TheaterMoreAction>> theaterMoreMenuItems(
-  TheaterUiState ui,
-) => [
+  TheaterUiState ui, {
+  required bool canShareLink,
+}) => [
   AppMenuHeader<TheaterMoreAction>(title: 'Layout'),
   AppMenuCheckedItem<TheaterMoreAction>.labeled(
     value: TheaterMoreAction.layoutAuto,
@@ -43,6 +46,13 @@ List<PopupMenuEntry<TheaterMoreAction>> theaterMoreMenuItems(
     checked: ui.hideOverlays,
     label: 'Ocultar overlays',
   ),
+  AppMenuItem<TheaterMoreAction>.labeled(
+    value: TheaterMoreAction.shareLink,
+    label: 'Copiar link da transmissão',
+    icon: AppIcons.link,
+    // Só quem está compartilhando gera link (o link morre com o share).
+    enabled: canShareLink,
+  ),
 ];
 
 /// Executa a ação do menu `⋯` (chamado pelo `onSelected` do [AppMenuButton]).
@@ -62,6 +72,12 @@ void handleTheaterMoreAction(
       uiNotifier.setLayout(TheaterLayoutMode.focus);
     case TheaterMoreAction.toggleOverlays:
       uiNotifier.toggleOverlays();
+    case TheaterMoreAction.shareLink:
+      showShareLinkDialog(
+        context,
+        serverId: arg.serverId,
+        channelId: arg.channelId,
+      );
   }
 }
 

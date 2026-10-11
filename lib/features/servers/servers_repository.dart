@@ -413,4 +413,39 @@ class ServersRepository {
       throw ApiException.fromDio(e);
     }
   }
+
+  /// `POST /servers/:id/channels/:id/share-links` → 201 com o link de
+  /// transmissão (capability URL p/ espectador em browser, sem login).
+  /// Expira quando o share termina — novo share exige link novo.
+  Future<ScreenShareLinkInfo> createScreenShareLink(
+    String serverId,
+    String channelId,
+  ) async {
+    try {
+      final response = await _dio.post(
+        '/servers/$serverId/channels/$channelId/share-links',
+      );
+      return ScreenShareLinkInfo.fromJson(
+        response.data as Map<String, dynamic>,
+      );
+    } on DioException catch (e) {
+      throw ApiException.fromDio(e);
+    }
+  }
+
+  /// `DELETE /servers/:id/channels/:id/share-links/:code` → 200 idempotente.
+  /// Best-effort no fim do share (o webhook revoga de qualquer jeito).
+  Future<void> revokeScreenShareLink(
+    String serverId,
+    String channelId,
+    String code,
+  ) async {
+    try {
+      await _dio.delete(
+        '/servers/$serverId/channels/$channelId/share-links/$code',
+      );
+    } on DioException catch (e) {
+      throw ApiException.fromDio(e);
+    }
+  }
 }
